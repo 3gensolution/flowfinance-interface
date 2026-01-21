@@ -1,8 +1,8 @@
 'use client';
 
 import { useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
-import { Address, Abi } from 'viem';
-import { CONTRACT_ADDRESSES } from '@/config/contracts';
+import { Address, Abi, formatUnits } from 'viem';
+import { CONTRACT_ADDRESSES, getTokenByAddress } from '@/config/contracts';
 import LoanMarketPlaceABIJson from '@/contracts/LoanMarketPlaceABI.json';
 import ConfigurationABIJson from '@/contracts/ConfigurationABI.json';
 import LTVConfigABIJson from '@/contracts/LTVConfigABI.json';
@@ -254,6 +254,37 @@ export function useAssetLTVData(asset: Address | undefined) {
   });
 }
 
+// MockV3Aggregator ABI for updating prices on testnet
+const MockV3AggregatorABI = [
+  {
+    inputs: [],
+    name: 'latestRoundData',
+    outputs: [
+      { name: 'roundId', type: 'uint80' },
+      { name: 'answer', type: 'int256' },
+      { name: 'startedAt', type: 'uint256' },
+      { name: 'updatedAt', type: 'uint256' },
+      { name: 'answeredInRound', type: 'uint80' },
+    ],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [],
+    name: 'latestAnswer',
+    outputs: [{ name: '', type: 'int256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: '_answer', type: 'int256' }],
+    name: 'updateAnswer',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+] as const;
+
 export function useTokenPrice(tokenAddress: Address | undefined) {
   const priceFeedAddress = useReadContract({
     address: CONTRACT_ADDRESSES.configuration,
@@ -267,21 +298,7 @@ export function useTokenPrice(tokenAddress: Address | undefined) {
 
   const priceData = useReadContract({
     address: priceFeedAddress.data as Address,
-    abi: [
-      {
-        inputs: [],
-        name: 'latestRoundData',
-        outputs: [
-          { name: 'roundId', type: 'uint80' },
-          { name: 'answer', type: 'int256' },
-          { name: 'startedAt', type: 'uint256' },
-          { name: 'updatedAt', type: 'uint256' },
-          { name: 'answeredInRound', type: 'uint80' },
-        ],
-        stateMutability: 'view',
-        type: 'function',
-      },
-    ],
+    abi: MockV3AggregatorABI,
     functionName: 'latestRoundData',
     query: {
       enabled: !!priceFeedAddress.data && priceFeedAddress.data !== '0x0000000000000000000000000000000000000000',
@@ -308,6 +325,23 @@ export function useTokenPrice(tokenAddress: Address | undefined) {
     priceFeedAddress: priceFeedAddress.data,
     refetch: priceData.refetch,
   };
+}
+
+// Hook to refresh mock price feed on testnet
+// This calls updateAnswer with the current price to refresh the timestamp
+export function useRefreshMockPrice() {
+  const { writeContractAsync, isPending, error } = useWriteContract();
+
+  const refreshPrice = async (priceFeedAddress: Address, currentPrice: bigint) => {
+    return await writeContractAsync({
+      address: priceFeedAddress,
+      abi: MockV3AggregatorABI,
+      functionName: 'updateAnswer',
+      args: [currentPrice],
+    });
+  };
+
+  return { refreshPrice, isPending, error };
 }
 
 // Token balance
@@ -716,7 +750,11 @@ export function useBatchLoans(startId: number, count: number) {
       const data = result.result;
       const isArray = Array.isArray(data);
 
-      // Map based on actual ABI structure
+      // Map based on actual ABI structure from DataTypes.Loan
+      // Order: loanId, requestId, borrower, lender, collateralAsset, collateralAmount,
+      //        collateralReleased, borrowAsset, principalAmount, interestRate, duration,
+      //        startTime, dueDate, amountRepaid, status, lastInterestUpdate, gracePeriodEnd,
+      //        isCrossChain, sourceChainId, targetChainId, remoteChainLoanId
       let loanData;
       if (isArray) {
         const arr = data as readonly unknown[];
@@ -727,14 +765,21 @@ export function useBatchLoans(startId: number, count: number) {
           lender: arr[3],
           collateralAsset: arr[4],
           collateralAmount: arr[5],
-          borrowAsset: arr[6],
-          principalAmount: arr[7],
-          interestRate: arr[8],
-          duration: arr[9],
-          startTime: arr[10],
-          endTime: arr[11],
-          amountRepaid: arr[12],
-          status: arr[13],
+          collateralReleased: arr[6],
+          borrowAsset: arr[7],
+          principalAmount: arr[8],
+          interestRate: arr[9],
+          duration: arr[10],
+          startTime: arr[11],
+          dueDate: arr[12],
+          amountRepaid: arr[13],
+          status: arr[14],
+          lastInterestUpdate: arr[15],
+          gracePeriodEnd: arr[16],
+          isCrossChain: arr[17],
+          sourceChainId: arr[18],
+          targetChainId: arr[19],
+          remoteChainLoanId: arr[20],
         };
       } else {
         const obj = data as Record<string, unknown>;
@@ -745,14 +790,21 @@ export function useBatchLoans(startId: number, count: number) {
           lender: obj.lender,
           collateralAsset: obj.collateralAsset,
           collateralAmount: obj.collateralAmount,
+          collateralReleased: obj.collateralReleased,
           borrowAsset: obj.borrowAsset,
           principalAmount: obj.principalAmount,
           interestRate: obj.interestRate,
           duration: obj.duration,
           startTime: obj.startTime,
-          endTime: obj.endTime,
+          dueDate: obj.dueDate,
           amountRepaid: obj.amountRepaid,
           status: obj.status,
+          lastInterestUpdate: obj.lastInterestUpdate,
+          gracePeriodEnd: obj.gracePeriodEnd,
+          isCrossChain: obj.isCrossChain,
+          sourceChainId: obj.sourceChainId,
+          targetChainId: obj.targetChainId,
+          remoteChainLoanId: obj.remoteChainLoanId,
         };
       }
 
@@ -768,14 +820,21 @@ export function useBatchLoans(startId: number, count: number) {
         lender: loanData.lender as Address,
         collateralAsset: loanData.collateralAsset as Address,
         collateralAmount: loanData.collateralAmount as bigint,
+        collateralReleased: loanData.collateralReleased as bigint,
         borrowAsset: loanData.borrowAsset as Address,
         principalAmount: loanData.principalAmount as bigint,
         interestRate: loanData.interestRate as bigint,
         duration: loanData.duration as bigint,
         startTime: loanData.startTime as bigint,
-        endTime: loanData.endTime as bigint,
+        dueDate: loanData.dueDate as bigint,
         amountRepaid: loanData.amountRepaid as bigint,
         status: Number(loanData.status),
+        lastInterestUpdate: loanData.lastInterestUpdate as bigint,
+        gracePeriodEnd: loanData.gracePeriodEnd as bigint,
+        isCrossChain: loanData.isCrossChain as boolean,
+        sourceChainId: loanData.sourceChainId as bigint,
+        targetChainId: loanData.targetChainId as bigint,
+        remoteChainLoanId: loanData.remoteChainLoanId as bigint,
       };
     })
     .filter((l): l is NonNullable<typeof l> => l !== null);
@@ -796,25 +855,36 @@ export function usePlatformStats() {
   const { data: loans, isLoading, isError } = useBatchLoans(1, loansToFetch);
 
   // Calculate stats from loan data
+  // Use numbers for formatted values (human-readable with decimals applied)
   const stats = {
     totalLoans,
     activeLoans: 0,
-    totalBorrowed: BigInt(0),
-    totalCollateralValue: BigInt(0),
+    totalBorrowed: 0, // Formatted value in token units (e.g., 1000 USDC, not 1000000000)
+    totalCollateralValue: 0, // Formatted value in token units
     uniqueBorrowers: new Set<Address>(),
     uniqueLenders: new Set<Address>(),
   };
 
   (loans || []).forEach((loan) => {
+    // Get token info for proper decimal handling
+    const borrowToken = getTokenByAddress(loan.borrowAsset as Address);
+    const collateralToken = getTokenByAddress(loan.collateralAsset as Address);
+    const borrowDecimals = borrowToken?.decimals || 18;
+    const collateralDecimals = collateralToken?.decimals || 18;
+
     // LoanStatus: NULL=0, ACTIVE=1, REPAID=2, LIQUIDATED=3, DEFAULTED=4
     if (loan.status === 1) { // ACTIVE
       stats.activeLoans++;
       // For TVL, we only count active loans' collateral
-      stats.totalCollateralValue += loan.collateralAmount;
+      // Format using token decimals to get human-readable value
+      const collateralFormatted = Number(formatUnits(loan.collateralAmount as bigint, collateralDecimals));
+      stats.totalCollateralValue += collateralFormatted;
     }
 
     // Count all non-null loans for total borrowed
-    stats.totalBorrowed += loan.principalAmount;
+    // Format using token decimals to get human-readable value
+    const borrowedFormatted = Number(formatUnits(loan.principalAmount as bigint, borrowDecimals));
+    stats.totalBorrowed += borrowedFormatted;
 
     // Track unique users
     stats.uniqueBorrowers.add(loan.borrower as Address);
@@ -833,5 +903,109 @@ export function usePlatformStats() {
     },
     isLoading,
     isError,
+  };
+}
+
+// Fetch user's loan requests - filters from all requests
+export function useUserLoanRequestsBatch(userAddress: Address | undefined) {
+  const { data: nextRequestId, isLoading: isLoadingCount } = useNextLoanRequestId();
+  const requestCount = nextRequestId ? Number(nextRequestId) - 1 : 0;
+
+  const { data: allRequests, isLoading: isLoadingRequests, isError, refetch } = useBatchLoanRequests(1, Math.min(requestCount, 50));
+
+  // Filter for user's requests
+  const userRequests = (allRequests || []).filter((r) =>
+    userAddress && r.borrower.toLowerCase() === userAddress.toLowerCase()
+  );
+
+  return {
+    data: userRequests,
+    isLoading: isLoadingCount || isLoadingRequests,
+    isError,
+    refetch
+  };
+}
+
+// Fetch user's lender offers - filters from all offers
+export function useUserLenderOffersBatch(userAddress: Address | undefined) {
+  const { data: nextOfferId, isLoading: isLoadingCount } = useNextLenderOfferId();
+  const offerCount = nextOfferId ? Number(nextOfferId) - 1 : 0;
+
+  const { data: allOffers, isLoading: isLoadingOffers, isError, refetch } = useBatchLenderOffers(1, Math.min(offerCount, 50));
+
+  // Filter for user's offers
+  const userOffers = (allOffers || []).filter((o) =>
+    userAddress && o.lender.toLowerCase() === userAddress.toLowerCase()
+  );
+
+  return {
+    data: userOffers,
+    isLoading: isLoadingCount || isLoadingOffers,
+    isError,
+    refetch
+  };
+}
+
+// Fetch user's borrowed loans (where user is borrower)
+export function useUserBorrowedLoans(userAddress: Address | undefined) {
+  const { data: nextLoanId, isLoading: isLoadingCount } = useNextLoanId();
+  const loanCount = nextLoanId ? Number(nextLoanId) - 1 : 0;
+
+  const { data: allLoans, isLoading: isLoadingLoans, isError, refetch } = useBatchLoans(1, Math.min(loanCount, 50));
+
+  // Filter for user's borrowed loans
+  const userLoans = (allLoans || []).filter((l) =>
+    userAddress && l.borrower.toLowerCase() === userAddress.toLowerCase()
+  );
+
+  return {
+    data: userLoans,
+    isLoading: isLoadingCount || isLoadingLoans,
+    isError,
+    refetch
+  };
+}
+
+// Fetch user's lent loans (where user is lender)
+export function useUserLentLoans(userAddress: Address | undefined) {
+  const { data: nextLoanId, isLoading: isLoadingCount } = useNextLoanId();
+  const loanCount = nextLoanId ? Number(nextLoanId) - 1 : 0;
+
+  const { data: allLoans, isLoading: isLoadingLoans, isError, refetch } = useBatchLoans(1, Math.min(loanCount, 50));
+
+  // Filter for user's lent loans
+  const userLoans = (allLoans || []).filter((l) =>
+    userAddress && l.lender.toLowerCase() === userAddress.toLowerCase()
+  );
+
+  return {
+    data: userLoans,
+    isLoading: isLoadingCount || isLoadingLoans,
+    isError,
+    refetch
+  };
+}
+
+// Combined hook for all user dashboard data
+export function useUserDashboardData(userAddress: Address | undefined) {
+  const { data: borrowedLoans, isLoading: isLoadingBorrowed, refetch: refetchBorrowed } = useUserBorrowedLoans(userAddress);
+  const { data: lentLoans, isLoading: isLoadingLent, refetch: refetchLent } = useUserLentLoans(userAddress);
+  const { data: loanRequests, isLoading: isLoadingRequests, refetch: refetchRequests } = useUserLoanRequestsBatch(userAddress);
+  const { data: lenderOffers, isLoading: isLoadingOffers, refetch: refetchOffers } = useUserLenderOffersBatch(userAddress);
+
+  const refetch = () => {
+    refetchBorrowed();
+    refetchLent();
+    refetchRequests();
+    refetchOffers();
+  };
+
+  return {
+    borrowedLoans: borrowedLoans || [],
+    lentLoans: lentLoans || [],
+    loanRequests: loanRequests || [],
+    lenderOffers: lenderOffers || [],
+    isLoading: isLoadingBorrowed || isLoadingLent || isLoadingRequests || isLoadingOffers,
+    refetch,
   };
 }

@@ -15,13 +15,14 @@ import {
   useLTV,
   useTokenPrice,
   useMaxInterestRate,
-  useLiquidationThreshold
+  useLiquidationThreshold,
+  useRefreshMockPrice
 } from '@/hooks/useContracts';
 import { formatTokenAmount, daysToSeconds, getTokenDecimals } from '@/lib/utils';
 import { simulateContractWrite, formatSimulationError } from '@/lib/contractSimulation';
 import LoanMarketPlaceABIJson from '@/contracts/LoanMarketPlaceABI.json';
 import { Abi } from 'viem';
-import { ArrowRight, AlertCircle, CheckCircle, Info, TrendingUp, Shield, Loader2 } from 'lucide-react';
+import { ArrowRight, AlertCircle, CheckCircle, Info, TrendingUp, Shield, Loader2, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const LoanMarketPlaceABI = LoanMarketPlaceABIJson as Abi;
@@ -82,6 +83,7 @@ export function CreateLoanRequestForm() {
 
   const { approve, isPending: isApproving, isSuccess: approveSuccess } = useApproveToken();
   const { createRequest, isPending: isCreating, isSuccess: createSuccess, error: createError } = useCreateLoanRequest();
+  const { refreshPrice, isPending: isRefreshingPrice } = useRefreshMockPrice();
 
   const parsedCollateralAmount = collateralAmount
     ? parseUnits(collateralAmount, collateralDecimals)
@@ -182,6 +184,47 @@ export function CreateLoanRequestForm() {
       toast.error('Failed to create loan request');
     }
   }, [createError]);
+
+  // Handle refreshing stale price data on testnet
+  const handleRefreshPrices = async () => {
+    try {
+      const refreshPromises: Promise<void>[] = [];
+
+      // Refresh collateral token price if stale
+      if (collateralPriceHook.isStale && collateralPriceHook.priceFeedAddress && collateralPrice) {
+        const collateralPriceFeed = collateralPriceHook.priceFeedAddress as Address;
+        refreshPromises.push(
+          refreshPrice(collateralPriceFeed, collateralPrice)
+            .then(() => {
+              toast.success(`${TOKEN_LIST.find((t) => t.address === collateralToken)?.symbol} price refreshed!`);
+              collateralPriceHook.refetch();
+            })
+        );
+      }
+
+      // Refresh borrow token price if stale
+      if (borrowPriceHook.isStale && borrowPriceHook.priceFeedAddress && borrowPrice) {
+        const borrowPriceFeed = borrowPriceHook.priceFeedAddress as Address;
+        refreshPromises.push(
+          refreshPrice(borrowPriceFeed, borrowPrice)
+            .then(() => {
+              toast.success(`${TOKEN_LIST.find((t) => t.address === borrowToken)?.symbol} price refreshed!`);
+              borrowPriceHook.refetch();
+            })
+        );
+      }
+
+      if (refreshPromises.length === 0) {
+        toast.error('No stale prices to refresh');
+        return;
+      }
+
+      await Promise.all(refreshPromises);
+    } catch (error) {
+      console.error('Error refreshing prices:', error);
+      toast.error('Failed to refresh prices. You may not have permission to update the oracle.');
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -562,12 +605,23 @@ export function CreateLoanRequestForm() {
             <div className="glass-card p-4 border border-red-500/20 bg-red-500/5">
               <div className="flex gap-3">
                 <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-                <div className="space-y-1 text-sm">
+                <div className="space-y-2 text-sm flex-1">
                   <p className="text-red-400 font-medium">Price Data is Stale</p>
                   <p className="text-gray-400">
                     The price feed data is outdated. Transactions will fail until prices are refreshed.
                     This is common on testnets where price feeds update less frequently.
                   </p>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleRefreshPrices}
+                    loading={isRefreshingPrice}
+                    icon={<RefreshCw className="w-4 h-4" />}
+                    className="mt-2"
+                  >
+                    {isRefreshingPrice ? 'Refreshing...' : 'Refresh Price Feeds (Testnet)'}
+                  </Button>
                 </div>
               </div>
             </div>

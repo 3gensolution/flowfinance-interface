@@ -163,7 +163,7 @@ function MarketplaceContent() {
 
   return (
     <div className="min-h-screen py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto">
+      <div className="max-w-[1920px] mx-auto">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -403,7 +403,7 @@ export default function MarketplacePage() {
   return (
     <Suspense fallback={
       <div className="min-h-screen py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto flex justify-center py-12">
+        <div className="max-w-[1920px] mx-auto flex justify-center py-12">
           <Loader2 className="w-8 h-8 animate-spin text-primary-400" />
         </div>
       </div>

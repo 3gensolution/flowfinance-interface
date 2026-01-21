@@ -1,6 +1,5 @@
 'use client';
 
-import { motion } from 'framer-motion';
 import { Card } from '@/components/ui/Card';
 import {
   Wallet,
@@ -10,6 +9,7 @@ import {
   ArrowLeftRight,
   Lock,
 } from 'lucide-react';
+import { ScrollReveal, StaggerReveal } from '@/components/animations/ScrollReveal';
 
 const features = [
   {
@@ -50,33 +50,12 @@ const features = [
   },
 ];
 
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.1,
-    },
-  },
-};
-
-const itemVariants = {
-  hidden: { opacity: 0, y: 20 },
-  visible: { opacity: 1, y: 0 },
-};
-
 export function Features() {
   return (
-    <section className="py-20 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto">
+    <section className="relative py-20 px-4 sm:px-6 lg:px-8 bg-background">
+      <div className="max-w-[1920px] mx-auto">
         {/* Section Header */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.5 }}
-          className="text-center mb-16"
-        >
+        <ScrollReveal direction="up" className="text-center mb-16">
           <h2 className="text-3xl sm:text-4xl font-bold mb-4">
             Why <span className="gradient-text">FlowFinance</span>?
           </h2>
@@ -84,18 +63,15 @@ export function Features() {
             A trustless lending protocol designed for the modern DeFi user.
             Security, flexibility, and transparency at its core.
           </p>
-        </motion.div>
+        </ScrollReveal>
 
         {/* Features Grid */}
-        <motion.div
-          variants={containerVariants}
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true }}
+        <StaggerReveal
+          staggerDelay={0.1}
           className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
         >
           {features.map((feature) => (
-            <motion.div key={feature.title} variants={itemVariants}>
+            <div key={feature.title}>
               <Card hover className="h-full">
                 <div className={`w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center mb-4 ${feature.color}`}>
                   <feature.icon className="w-6 h-6" />
@@ -103,9 +79,9 @@ export function Features() {
                 <h3 className="text-xl font-semibold mb-2">{feature.title}</h3>
                 <p className="text-gray-400">{feature.description}</p>
               </Card>
-            </motion.div>
+            </div>
           ))}
-        </motion.div>
+        </StaggerReveal>
       </div>
     </section>
   );

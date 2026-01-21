@@ -1,22 +1,41 @@
 'use client';
 
 import Link from 'next/link';
-import { motion } from 'framer-motion';
+import { motion, useScroll, useTransform } from 'framer-motion';
+import dynamic from 'next/dynamic';
+import { useRef } from 'react';
 import { Button } from '@/components/ui/Button';
 import { ArrowRight, Shield, Zap, TrendingUp } from 'lucide-react';
 
+// Dynamic import to avoid SSR issues with Three.js
+const SpiralGalaxy = dynamic(
+  () => import('@/components/three/SpiralGalaxy').then((mod) => mod.SpiralGalaxy),
+  { ssr: false }
+);
+
 export function Hero() {
+  const heroRef = useRef<HTMLElement>(null);
+  const { scrollYProgress } = useScroll({
+    target: heroRef,
+    offset: ['start start', 'end start'],
+  });
+
+  // Fade out content as user scrolls
+  const contentOpacity = useTransform(scrollYProgress, [0, 0.5], [1, 0]);
+  const contentY = useTransform(scrollYProgress, [0, 0.5], [0, -50]);
+
   return (
-    <section className="relative min-h-screen flex items-center justify-center overflow-hidden pt-8">
-      {/* Background Effects */}
-      <div className="absolute inset-0 bg-hero-gradient" />
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary-500/20 rounded-full blur-3xl animate-pulse-slow" />
-      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-accent-500/20 rounded-full blur-3xl animate-pulse-slow" style={{ animationDelay: '2s' }} />
+    <section ref={heroRef} className="relative min-h-screen flex items-center justify-center pt-8 overflow-hidden">
+      {/* 3D Galaxy Background - Contained within Hero section only */}
+      <SpiralGalaxy />
 
-      {/* Grid Pattern */}
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:64px_64px]" />
+      {/* Bottom gradient fade to transition to next section */}
+      <div className="absolute bottom-0 left-0 right-0 h-40 bg-gradient-to-t from-background via-background/80 to-transparent pointer-events-none z-10" />
 
-      <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
+      <motion.div
+        className="relative max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-20 z-20"
+        style={{ opacity: contentOpacity, y: contentY }}
+      >
         <div className="text-center">
           {/* Badge */}
           <motion.div
@@ -92,7 +111,7 @@ export function Hero() {
             </div>
           </motion.div>
         </div>
-      </div>
+      </motion.div>
 
       {/* Scroll Indicator */}
       <motion.div
