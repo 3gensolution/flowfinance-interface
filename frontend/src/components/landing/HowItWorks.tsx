@@ -6,6 +6,7 @@ import { Wallet, FileText, HandCoins, CheckCircle2, ArrowDown } from 'lucide-rea
 import { ScrollReveal } from '@/components/animations/ScrollReveal';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import { useLenis } from 'lenis/react';
 
 if (typeof window !== 'undefined') {
   gsap.registerPlugin(ScrollTrigger);
@@ -79,6 +80,11 @@ function StepSectionDesktop({ title, titleColor, steps, bgColor, iconBgColor, ic
   const sectionRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLDivElement>(null);
   const stepsContainerRef = useRef<HTMLDivElement>(null);
+
+  // Sync Lenis with GSAP ScrollTrigger
+  useLenis(() => {
+    ScrollTrigger.update();
+  });
 
   useEffect(() => {
     if (!sectionRef.current || !titleRef.current || !stepsContainerRef.current) return;

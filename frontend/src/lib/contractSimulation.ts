@@ -70,17 +70,53 @@ export const formatSimulationError = (error: unknown): string => {
     }
 
     const err = error as SimulationError;
-    // Check for decoded error name in cause.data
+
+    // Helper function to check all text sources for a signature
+    const findSignatureInError = (): string | null => {
+        const allText = [
+            err.message,
+            err.shortMessage,
+            err.cause?.reason,
+            ...(err.metaMessages || []),
+        ].filter(Boolean).join(' ');
+
+        // Look for signature pattern like "0xe450d38c"
+        const sigMatch = allText.match(/0x[a-fA-F0-9]{8}/g);
+        if (sigMatch) {
+            for (const sig of sigMatch) {
+                const normalizedSig = sig.toLowerCase();
+                if (CUSTOM_ERROR_SIGNATURES[normalizedSig]) {
+                    return CUSTOM_ERROR_SIGNATURES[normalizedSig];
+                }
+            }
+        }
+        return null;
+    };
+
+    // PRIORITY 1: Check for known error signatures first (most reliable)
+    const signatureError = findSignatureInError();
+    if (signatureError) {
+        return signatureError;
+    }
+
+    // PRIORITY 2: Check cause signature directly
+    if (err.cause?.signature) {
+        const signature = err.cause.signature.toLowerCase();
+        if (CUSTOM_ERROR_SIGNATURES[signature]) {
+            return CUSTOM_ERROR_SIGNATURES[signature];
+        }
+    }
+
+    // PRIORITY 3: Check for decoded error name in cause.data
     if (err.cause?.data?.errorName) {
         const errorName = err.cause.data.errorName;
         if (CUSTOM_ERROR_NAMES[errorName]) {
             return CUSTOM_ERROR_NAMES[errorName];
         }
-        // Format the error name nicely if not in our map
         return formatErrorName(errorName, err.cause.data.args);
     }
 
-    // Check for decoded error name in err.data
+    // PRIORITY 4: Check for decoded error name in err.data
     if (err.data?.errorName) {
         const errorName = err.data.errorName;
         if (CUSTOM_ERROR_NAMES[errorName]) {
@@ -89,26 +125,28 @@ export const formatSimulationError = (error: unknown): string => {
         return formatErrorName(errorName, err.data.args);
     }
 
-    // Check for error signature in the message
-    const signatureMatch = err.message?.match(/0x[a-fA-F0-9]{8}/);
-    if (signatureMatch) {
-        const signature = signatureMatch[0].toLowerCase();
-        if (CUSTOM_ERROR_SIGNATURES[signature]) {
-            return CUSTOM_ERROR_SIGNATURES[signature];
+    // PRIORITY 5: Check the raw message for common Solidity require/revert strings
+    if (err.message) {
+        // Look for require/revert reason strings
+        const revertReasonMatch = err.message.match(/reverted with reason string ['"](.+?)['"]/i);
+        if (revertReasonMatch) {
+            return revertReasonMatch[1];
+        }
+
+        // Check for known error strings directly in message
+        if (err.message.includes('Price data is stale')) {
+            return 'Price data is stale. Please refresh the price feed before proceeding.';
+        }
+        if (err.message.includes('Invalid price')) {
+            return 'Invalid price data from oracle.';
+        }
+        if (err.message.includes('Price feed not updated')) {
+            return 'Price feed has not been updated yet.';
         }
     }
 
-    // Check cause signature
-    if (err.cause?.signature) {
-        const signature = err.cause.signature.toLowerCase();
-        if (CUSTOM_ERROR_SIGNATURES[signature]) {
-            return CUSTOM_ERROR_SIGNATURES[signature];
-        }
-    }
-
-    // Check metaMessages for more context
+    // PRIORITY 6: Check metaMessages for more context
     if (err.metaMessages && err.metaMessages.length > 0) {
-        // Look for useful info in metaMessages
         for (const msg of err.metaMessages) {
             if (msg.includes('ERC20InsufficientBalance')) {
                 return 'Insufficient token balance. You need more tokens to complete this transaction.';
@@ -117,32 +155,51 @@ export const formatSimulationError = (error: unknown): string => {
                 return 'Insufficient allowance. Please approve the token first.';
             }
             if (msg.includes('Price data is stale')) {
-                return 'Price data is stale. Please wait for price feeds to be refreshed.';
+                return 'Price data is stale. Please refresh the price feed before proceeding.';
+            }
+            const requireMatch = msg.match(/require\(.*?,\s*['"](.+?)['"]\)/);
+            if (requireMatch) {
+                return requireMatch[1];
             }
         }
     }
 
-    // Fallback to shortMessage
+    // PRIORITY 7: Fallback to shortMessage (but clean it up)
     if (err.shortMessage) {
-        // Clean up common patterns
         const msg = err.shortMessage;
 
-        // Extract custom error info if present
+        // Check for revert reason in shortMessage
+        if (msg.includes('Price data is stale')) {
+            return 'Price data is stale. Please refresh the price feed before proceeding.';
+        }
+
+        // Don't return raw "reverted with the following signature" messages
         if (msg.includes('reverted with the following signature')) {
-            const sigMatch = msg.match(/0x[a-fA-F0-9]{8}/);
-            if (sigMatch && CUSTOM_ERROR_SIGNATURES[sigMatch[0].toLowerCase()]) {
-                return CUSTOM_ERROR_SIGNATURES[sigMatch[0].toLowerCase()];
+            // We already checked signatures above, so return a generic message
+            return 'Transaction would fail. Please check your balance and try again.';
+        }
+
+        // Extract revert reason if present
+        const revertMatch = msg.match(/reverted[:\s]+(.+?)(?:\n|$)/i);
+        if (revertMatch && revertMatch[1] && revertMatch[1].length < 200) {
+            const reason = revertMatch[1].trim();
+            // Don't return if it just contains "with the following signature"
+            if (!reason.includes('with the following signature')) {
+                return reason;
             }
         }
 
-        return msg;
+        // If shortMessage is clean, return it
+        if (!msg.includes('signature') && msg.length < 200) {
+            return msg;
+        }
     }
 
     if (err.cause?.reason) {
         return err.cause.reason;
     }
 
-    return err.message || "Contract simulation failed";
+    return err.message || 'Transaction simulation failed';
 };
 
 /**

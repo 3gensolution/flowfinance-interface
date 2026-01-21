@@ -376,9 +376,10 @@ export function useTokenAllowance(
 
 // Write hooks
 export function useApproveToken() {
-  const { writeContract, data: hash, isPending, error } = useWriteContract();
+  const { writeContract, writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
+  // Fire-and-forget version (for backward compatibility)
   const approve = (tokenAddress: Address, spenderAddress: Address, amount: bigint) => {
     writeContract({
       address: tokenAddress,
@@ -388,7 +389,17 @@ export function useApproveToken() {
     });
   };
 
-  return { approve, hash, isPending, isConfirming, isSuccess, error };
+  // Async version that returns the transaction hash
+  const approveAsync = async (tokenAddress: Address, spenderAddress: Address, amount: bigint) => {
+    return await writeContractAsync({
+      address: tokenAddress,
+      abi: ERC20ABI,
+      functionName: 'approve',
+      args: [spenderAddress, amount],
+    });
+  };
+
+  return { approve, approveAsync, hash, isPending, isConfirming, isSuccess, error };
 }
 
 export function useCreateLoanRequest() {
@@ -470,9 +481,10 @@ export function useAcceptLenderOffer() {
 }
 
 export function useRepayLoan() {
-  const { writeContract, data: hash, isPending, error } = useWriteContract();
+  const { writeContract, writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
+  // Fire-and-forget version (for backward compatibility)
   const repay = (loanId: bigint, amount: bigint) => {
     writeContract({
       address: CONTRACT_ADDRESSES.loanMarketPlace,
@@ -482,7 +494,17 @@ export function useRepayLoan() {
     });
   };
 
-  return { repay, hash, isPending, isConfirming, isSuccess, error };
+  // Async version that returns the transaction hash
+  const repayAsync = async (loanId: bigint, amount: bigint) => {
+    return await writeContractAsync({
+      address: CONTRACT_ADDRESSES.loanMarketPlace,
+      abi: LoanMarketPlaceABI,
+      functionName: 'repayLoan',
+      args: [loanId, amount],
+    });
+  };
+
+  return { repay, repayAsync, hash, isPending, isConfirming, isSuccess, error };
 }
 
 export function useCancelLoanRequest() {
@@ -842,6 +864,25 @@ export function useBatchLoans(startId: number, count: number) {
   return { data: loans, isLoading, isError, refetch };
 }
 
+// Approximate USD prices for testnet tokens (for display purposes)
+// In production, these would come from price feeds
+const APPROX_USD_PRICES: Record<string, number> = {
+  ETH: 3200,
+  WETH: 3200,
+  WBTC: 95000,
+  USDC: 1,
+  USDT: 1,
+  DAI: 1,
+  LINK: 22,
+  UNI: 12,
+};
+
+// Get approximate USD price for a token
+function getApproxUSDPrice(tokenSymbol: string | undefined): number {
+  if (!tokenSymbol) return 1;
+  return APPROX_USD_PRICES[tokenSymbol] || 1;
+}
+
 // Platform Statistics - aggregates data from multiple contract calls using efficient multicall
 export function usePlatformStats() {
   const { data: nextLoanId } = useNextLoanId();
@@ -855,12 +896,12 @@ export function usePlatformStats() {
   const { data: loans, isLoading, isError } = useBatchLoans(1, loansToFetch);
 
   // Calculate stats from loan data
-  // Use numbers for formatted values (human-readable with decimals applied)
+  // Use numbers for formatted values in USD
   const stats = {
     totalLoans,
     activeLoans: 0,
-    totalBorrowed: 0, // Formatted value in token units (e.g., 1000 USDC, not 1000000000)
-    totalCollateralValue: 0, // Formatted value in token units
+    totalBorrowedUSD: 0, // Total borrowed converted to USD
+    totalCollateralUSD: 0, // Total collateral value in USD (TVL)
     uniqueBorrowers: new Set<Address>(),
     uniqueLenders: new Set<Address>(),
   };
@@ -872,19 +913,21 @@ export function usePlatformStats() {
     const borrowDecimals = borrowToken?.decimals || 18;
     const collateralDecimals = collateralToken?.decimals || 18;
 
+    // Get USD prices for conversion
+    const borrowPriceUSD = getApproxUSDPrice(borrowToken?.symbol);
+    const collateralPriceUSD = getApproxUSDPrice(collateralToken?.symbol);
+
     // LoanStatus: NULL=0, ACTIVE=1, REPAID=2, LIQUIDATED=3, DEFAULTED=4
     if (loan.status === 1) { // ACTIVE
       stats.activeLoans++;
-      // For TVL, we only count active loans' collateral
-      // Format using token decimals to get human-readable value
+      // For TVL, we only count active loans' collateral converted to USD
       const collateralFormatted = Number(formatUnits(loan.collateralAmount as bigint, collateralDecimals));
-      stats.totalCollateralValue += collateralFormatted;
+      stats.totalCollateralUSD += collateralFormatted * collateralPriceUSD;
     }
 
-    // Count all non-null loans for total borrowed
-    // Format using token decimals to get human-readable value
+    // Count all non-null loans for total borrowed, converted to USD
     const borrowedFormatted = Number(formatUnits(loan.principalAmount as bigint, borrowDecimals));
-    stats.totalBorrowed += borrowedFormatted;
+    stats.totalBorrowedUSD += borrowedFormatted * borrowPriceUSD;
 
     // Track unique users
     stats.uniqueBorrowers.add(loan.borrower as Address);
@@ -895,8 +938,8 @@ export function usePlatformStats() {
     data: {
       totalLoans: stats.totalLoans,
       activeLoans: stats.activeLoans,
-      totalBorrowed: stats.totalBorrowed,
-      totalCollateralValue: stats.totalCollateralValue,
+      totalBorrowed: stats.totalBorrowedUSD,
+      totalCollateralValue: stats.totalCollateralUSD,
       activeUsers: stats.uniqueBorrowers.size + stats.uniqueLenders.size,
       uniqueBorrowers: stats.uniqueBorrowers.size,
       uniqueLenders: stats.uniqueLenders.size,

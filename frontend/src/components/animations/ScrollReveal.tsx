@@ -3,6 +3,7 @@
 import { useEffect, useRef, ReactNode } from 'react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import { useLenis } from 'lenis/react';
 
 // Register plugin
 if (typeof window !== 'undefined') {
@@ -31,6 +32,11 @@ export function ScrollReveal({
   once = true,
 }: ScrollRevealProps) {
   const ref = useRef<HTMLDivElement>(null);
+
+  // Sync Lenis with GSAP ScrollTrigger
+  useLenis(() => {
+    ScrollTrigger.update();
+  });
 
   useEffect(() => {
     if (!ref.current) return;

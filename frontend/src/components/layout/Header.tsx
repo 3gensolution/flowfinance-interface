@@ -1,11 +1,12 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { ConnectButton } from '@/components/wallet/ConnectButton';
 import { cn } from '@/lib/utils';
 import { motion } from 'framer-motion';
-import { Menu, X, Landmark } from 'lucide-react';
+import { Menu, X } from 'lucide-react';
 import { useState } from 'react';
 
 const navLinks = [
@@ -26,12 +27,22 @@ export function Header() {
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2">
-            <div className="w-10 h-10 bg-gradient-to-r from-primary-500 to-accent-500 rounded-xl flex items-center justify-center">
-              <Landmark className="w-6 h-6 text-white" />
-            </div>
-            <span className="text-xl font-bold gradient-text hidden sm:block">
-              FlowFinance
-            </span>
+            {/* Mini logo for mobile */}
+            <Image
+              src="/mini-logo.png"
+              alt="FlowFinance"
+              width={40}
+              height={40}
+              className="rounded-xl sm:hidden"
+            />
+            {/* Full logo for desktop */}
+            <Image
+              src="/flow-dark-logo.png"
+              alt="FlowFinance"
+              width={160}
+              height={40}
+              className="hidden sm:block h-12 w-[160px] rounded-lg"
+            />
           </Link>
 
           {/* Desktop Navigation */}

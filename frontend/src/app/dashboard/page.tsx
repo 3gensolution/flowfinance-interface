@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { useAccount } from 'wagmi';
+import { useAccount, usePublicClient } from 'wagmi';
 import { motion } from 'framer-motion';
-import { formatUnits, Address, parseUnits } from 'viem';
+import { formatUnits, parseUnits } from 'viem';
 import { Card, StatCard } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { ActiveLoanCard, LoanRequestCard, LenderOfferCard } from '@/components/loan/LoanCard';
@@ -17,13 +17,18 @@ import {
   useLoanHealthFactor,
   useApproveToken,
   useTokenAllowance,
+  useTokenBalance,
   useCancelLoanRequest,
   useCancelLenderOffer,
+  useTokenPrice,
+  useRefreshMockPrice,
 } from '@/hooks/useContracts';
 import { CONTRACT_ADDRESSES, getTokenByAddress } from '@/config/contracts';
 import { simulateContractWrite, formatSimulationError } from '@/lib/contractSimulation';
 import LoanMarketPlaceABIJson from '@/contracts/LoanMarketPlaceABI.json';
-import { Abi } from 'viem';
+import { Abi, Address } from 'viem';
+
+const LoanMarketPlaceABI = LoanMarketPlaceABIJson as Abi;
 import {
   Wallet,
   TrendingUp,
@@ -35,21 +40,23 @@ import {
   Activity,
   Loader2,
   RefreshCw,
+  AlertTriangle,
 } from 'lucide-react';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
-
-const LoanMarketPlaceABI = LoanMarketPlaceABIJson as Abi;
 
 type Tab = 'borrowing' | 'lending' | 'requests' | 'offers';
 
 export default function DashboardPage() {
   const { address, isConnected } = useAccount();
+  const publicClient = usePublicClient();
   const [activeTab, setActiveTab] = useState<Tab>('borrowing');
   const [repayModalOpen, setRepayModalOpen] = useState(false);
   const [selectedLoanId, setSelectedLoanId] = useState<bigint | null>(null);
   const [repayAmount, setRepayAmount] = useState('');
   const [isRepaying, setIsRepaying] = useState(false);
+  const [isApprovingToken, setIsApprovingToken] = useState(false);
+  const [repayStep, setRepayStep] = useState<'input' | 'approve' | 'repay'>('input');
 
   // Fetch user dashboard data from contracts
   const {
@@ -62,8 +69,8 @@ export default function DashboardPage() {
   } = useUserDashboardData(address);
 
   // Contract write hooks
-  const { repay, isPending: isRepayPending } = useRepayLoan();
-  const { approve, isPending: isApproving } = useApproveToken();
+  const { repayAsync, isPending: isRepayPending } = useRepayLoan();
+  const { approveAsync } = useApproveToken();
   const { cancelRequest } = useCancelLoanRequest();
   const { cancelOffer } = useCancelLenderOffer();
 
@@ -83,6 +90,24 @@ export default function DashboardPage() {
     address,
     CONTRACT_ADDRESSES.loanMarketPlace
   );
+
+  // Get user's token balance for the borrow asset
+  const { data: userTokenBalance } = useTokenBalance(
+    selectedLoan?.borrowAsset,
+    address
+  );
+
+  // Get price data for the borrow asset to check staleness
+  const borrowAssetPrice = useTokenPrice(selectedLoan?.borrowAsset as Address | undefined);
+  const isPriceStale = borrowAssetPrice.isStale;
+  const priceFeedAddress = borrowAssetPrice.priceFeedAddress as Address | undefined;
+  const currentPrice = borrowAssetPrice.price;
+
+  // Hook to refresh mock price feed
+  const { refreshPrice, isPending: isRefreshingPrice } = useRefreshMockPrice();
+
+  // State for simulation error
+  const [simulationError, setSimulationError] = useState<string>('');
 
   // Filter active loans
   const activeBorrowedLoans = useMemo(() =>
@@ -159,69 +184,278 @@ export default function DashboardPage() {
   const handleRepayClick = (loanId: bigint) => {
     setSelectedLoanId(loanId);
     setRepayAmount('');
+    setRepayStep('input');
+    setSimulationError('');
     setRepayModalOpen(true);
   };
 
-  const handleRepaySubmit = async () => {
-    if (!selectedLoan || !repayAmount || !address) return;
+  // Check if approval is needed and determine the repay amount
+  const getRepayAmountBigInt = () => {
+    if (!selectedLoan || !repayAmount) return BigInt(0);
+    const tokenInfo = getTokenByAddress(selectedLoan.borrowAsset);
+    if (!tokenInfo) return BigInt(0);
+    try {
+      return parseUnits(repayAmount, tokenInfo.decimals);
+    } catch {
+      return BigInt(0);
+    }
+  };
 
-    setIsRepaying(true);
-    const toastId = toast.loading('Processing repayment...');
+  const repayAmountBigInt = getRepayAmountBigInt();
+  const currentAllowance = (allowance as bigint) || BigInt(0);
+  const userBalance = (userTokenBalance as bigint) || BigInt(0);
+  const needsApproval = repayAmountBigInt > BigInt(0) && currentAllowance < repayAmountBigInt;
+
+  // Check if user has any balance
+  const hasBalance = userBalance > BigInt(0);
+
+  // Calculate remaining amount to repay (total repayment - already paid)
+  const amountAlreadyRepaid = selectedLoan?.amountRepaid || BigInt(0);
+  const remainingToRepay = totalRepaymentAmount > amountAlreadyRepaid
+    ? totalRepaymentAmount - amountAlreadyRepaid
+    : BigInt(0);
+
+  // Calculate the maximum the user can repay (minimum of their balance and remaining owed)
+  const maxRepayableAmount = userBalance < remainingToRepay ? userBalance : remainingToRepay;
+
+  // Get token info for display
+  const selectedTokenInfo = selectedLoan ? getTokenByAddress(selectedLoan.borrowAsset) : null;
+  const formattedUserBalance = selectedTokenInfo && userBalance > BigInt(0)
+    ? formatUnits(userBalance, selectedTokenInfo.decimals)
+    : '0';
+  const formattedRemainingToRepay = selectedTokenInfo && remainingToRepay > BigInt(0)
+    ? formatUnits(remainingToRepay, selectedTokenInfo.decimals)
+    : '0';
+  const formattedMaxRepayable = selectedTokenInfo && maxRepayableAmount > BigInt(0)
+    ? formatUnits(maxRepayableAmount, selectedTokenInfo.decimals)
+    : '0';
+
+  // Handle proceeding from input step
+  const handleProceedToApproveOrRepay = () => {
+    // Don't proceed if no balance
+    if (!hasBalance) {
+      toast.error(`You don't have any ${selectedTokenInfo?.symbol || 'tokens'} to repay with.`);
+      return;
+    }
+
+    // Don't proceed if amount is 0
+    if (repayAmountBigInt === BigInt(0)) {
+      toast.error('Please enter an amount to repay.');
+      return;
+    }
+
+    if (needsApproval) {
+      setRepayStep('approve');
+    } else {
+      setRepayStep('repay');
+    }
+  };
+
+  // Handle approval step
+  const handleApprove = async () => {
+    if (!selectedLoan || !repayAmount || !address || !publicClient) return;
+
+    setIsApprovingToken(true);
+    const toastId = toast.loading('Approving token...');
 
     try {
       const tokenInfo = getTokenByAddress(selectedLoan.borrowAsset);
       if (!tokenInfo) throw new Error('Token not found');
 
-      const repayAmountBigInt = parseUnits(repayAmount, tokenInfo.decimals);
+      const amountToApprove = parseUnits(repayAmount, tokenInfo.decimals);
 
-      // Check if we need approval
-      const currentAllowance = allowance as bigint || BigInt(0);
-      if (currentAllowance < repayAmountBigInt) {
-        toast.loading('Approving token...', { id: toastId });
-        approve(
-          selectedLoan.borrowAsset,
-          CONTRACT_ADDRESSES.loanMarketPlace,
-          repayAmountBigInt
-        );
-        // Wait a bit for approval to process
-        await new Promise(resolve => setTimeout(resolve, 3000));
-        await refetchAllowance();
+      // Send approval transaction and get the hash
+      const approvalHash = await approveAsync(
+        selectedLoan.borrowAsset,
+        CONTRACT_ADDRESSES.loanMarketPlace,
+        amountToApprove
+      );
+
+      // Wait for approval transaction to be confirmed
+      toast.loading('Waiting for confirmation...', { id: toastId });
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: approvalHash });
+
+      // Check if transaction was successful
+      if (receipt.status === 'reverted') {
+        toast.error('Approval transaction failed. Please try again.', { id: toastId });
+        setIsApprovingToken(false);
+        return;
       }
 
-      // Simulate the repay transaction
-      toast.loading('Simulating transaction...', { id: toastId });
+      // Refetch allowance and wait for it to update
+      toast.loading('Verifying allowance...', { id: toastId });
+      const { data: newAllowance } = await refetchAllowance();
+
+      // Verify the allowance is now sufficient
+      const updatedAllowance = (newAllowance as bigint) || BigInt(0);
+      if (updatedAllowance < amountToApprove) {
+        // Sometimes the RPC might be slow - wait a bit and try again
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        const { data: retryAllowance } = await refetchAllowance();
+        const finalAllowance = (retryAllowance as bigint) || BigInt(0);
+
+        if (finalAllowance < amountToApprove) {
+          toast.error('Allowance not updated. Please try again.', { id: toastId });
+          setIsApprovingToken(false);
+          return;
+        }
+      }
+
+      toast.success('Token approved! You can now repay.', { id: toastId });
+
+      // Move to repay step only after confirmed
+      setRepayStep('repay');
+    } catch (error: unknown) {
+      const errorMsg = formatSimulationError(error);
+      toast.error(errorMsg, { id: toastId });
+    } finally {
+      setIsApprovingToken(false);
+    }
+  };
+
+  // Check if this is a partial repayment (requires price check)
+  const isPartialRepayment = totalRepaymentAmount > BigInt(0) && repayAmountBigInt > BigInt(0) && repayAmountBigInt < totalRepaymentAmount;
+
+  // Handle refreshing the price feed
+  const handleRefreshPrice = async () => {
+    if (!priceFeedAddress || !currentPrice) {
+      toast.error('Price feed not available');
+      return;
+    }
+
+    const toastId = toast.loading('Refreshing price feed...');
+    try {
+      const hash = await refreshPrice(priceFeedAddress, currentPrice);
+      if (publicClient) {
+        await publicClient.waitForTransactionReceipt({ hash });
+      }
+      // Refetch the price data
+      await borrowAssetPrice.refetch();
+      toast.success('Price feed refreshed!', { id: toastId });
+      setSimulationError('');
+    } catch (error: unknown) {
+      const errorMsg = formatSimulationError(error);
+      toast.error(`Failed to refresh price: ${errorMsg}`, { id: toastId });
+    }
+  };
+
+  // Handle repay step
+  const handleRepaySubmit = async () => {
+    if (!selectedLoan || !repayAmount || !address || !publicClient) return;
+
+    // Double-check allowance before repaying
+    const tokenInfo = getTokenByAddress(selectedLoan.borrowAsset);
+    if (!tokenInfo) return;
+
+    const amountToRepay = parseUnits(repayAmount, tokenInfo.decimals);
+    const latestAllowance = (allowance as bigint) || BigInt(0);
+
+    if (latestAllowance < amountToRepay) {
+      toast.error('Insufficient allowance. Please approve first.');
+      setRepayStep('approve');
+      return;
+    }
+
+    setIsRepaying(true);
+    setSimulationError('');
+    const toastId = toast.loading('Simulating transaction...');
+
+    try {
+      // Simulate the repay transaction first to catch errors before spending gas
       const simulation = await simulateContractWrite({
         address: CONTRACT_ADDRESSES.loanMarketPlace,
         abi: LoanMarketPlaceABI,
         functionName: 'repayLoan',
-        args: [selectedLoan.loanId, repayAmountBigInt],
+        args: [selectedLoan.loanId, amountToRepay],
+        account: address,
       });
 
       if (!simulation.success) {
-        throw new Error(simulation.errorMessage || 'Simulation failed');
+        // Get the most detailed error message possible
+        let errorMsg = simulation.errorMessage || 'Transaction simulation failed';
+
+        // If we have the raw error, try to extract more details
+        if (simulation.error) {
+          const rawError = simulation.error;
+          // Check for revert reason in the error
+          if (rawError.message && rawError.message.includes('revert')) {
+            const revertMatch = rawError.message.match(/revert[:\s]*(.*?)(?:\n|$)/i);
+            if (revertMatch && revertMatch[1]) {
+              errorMsg = revertMatch[1].trim();
+            }
+          }
+          // Check shortMessage for more context
+          if (rawError.shortMessage && rawError.shortMessage !== errorMsg) {
+            errorMsg = rawError.shortMessage;
+          }
+          // Log full error for debugging
+          console.error('Simulation error details:', {
+            message: rawError.message,
+            shortMessage: rawError.shortMessage,
+            cause: rawError.cause,
+            data: rawError.data,
+          });
+        }
+
+        setSimulationError(errorMsg);
+        toast.error(errorMsg, { id: toastId });
+        setIsRepaying(false);
+        return;
       }
 
-      // Execute repay
-      toast.loading('Confirming repayment...', { id: toastId });
-      repay(selectedLoan.loanId, repayAmountBigInt);
+      // Simulation passed, now execute the actual transaction
+      toast.loading('Repaying loan...', { id: toastId });
+      const repayHash = await repayAsync(selectedLoan.loanId, amountToRepay);
+
+      // Wait for repay transaction to be confirmed
+      toast.loading('Waiting for confirmation...', { id: toastId });
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: repayHash });
+
+      // Check if transaction was successful
+      if (receipt.status === 'reverted') {
+        toast.error('Transaction reverted. Please try again.', { id: toastId });
+        return;
+      }
 
       toast.success('Loan repaid successfully!', { id: toastId });
       setRepayModalOpen(false);
       setSelectedLoanId(null);
+      setRepayStep('input');
+      setSimulationError('');
       refetch();
     } catch (error: unknown) {
       const errorMsg = formatSimulationError(error);
+      setSimulationError(errorMsg);
       toast.error(errorMsg, { id: toastId });
     } finally {
       setIsRepaying(false);
     }
   };
 
-  const handleSetFullRepayment = () => {
-    if (selectedLoan && totalRepaymentAmount > BigInt(0)) {
-      const tokenInfo = getTokenByAddress(selectedLoan.borrowAsset);
-      if (tokenInfo) {
-        setRepayAmount(formatUnits(totalRepaymentAmount, tokenInfo.decimals));
+  // Handle setting max repayment amount (respects user balance and remaining amount)
+  const handleSetMaxRepayment = () => {
+    if (selectedLoan && selectedTokenInfo) {
+      // If user has no balance, show error
+      if (userBalance === BigInt(0)) {
+        toast.error(`You don't have any ${selectedTokenInfo.symbol} to repay with.`);
+        return;
+      }
+
+      // Set to the maximum repayable amount (min of balance and remaining owed)
+      const amountToSet = maxRepayableAmount;
+      setRepayAmount(formatUnits(amountToSet, selectedTokenInfo.decimals));
+
+      // Inform user about the amount being set
+      if (userBalance < remainingToRepay) {
+        toast(`Amount set to your balance: ${formattedUserBalance} ${selectedTokenInfo.symbol} (partial repayment)`, {
+          icon: 'ℹ️',
+          duration: 3000,
+        });
+      } else if (userBalance >= remainingToRepay) {
+        toast(`Amount set to remaining: ${formattedRemainingToRepay} ${selectedTokenInfo.symbol} (full repayment)`, {
+          icon: '✓',
+          duration: 3000,
+        });
       }
     }
   };
@@ -538,11 +772,15 @@ export default function DashboardPage() {
       {/* Repay Modal */}
       <Modal
         isOpen={repayModalOpen}
-        onClose={() => setRepayModalOpen(false)}
+        onClose={() => {
+          setRepayModalOpen(false);
+          setRepayStep('input');
+        }}
         title="Repay Loan"
       >
         {selectedLoan && (
           <div className="space-y-4">
+            {/* Loan Info */}
             <div className="p-4 bg-gray-800/50 rounded-lg space-y-2">
               <div className="flex justify-between">
                 <span className="text-gray-400">Loan ID</span>
@@ -578,50 +816,268 @@ export default function DashboardPage() {
                   )} {getTokenByAddress(selectedLoan.borrowAsset)?.symbol}
                 </span>
               </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Repayment Amount
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="number"
-                  value={repayAmount}
-                  onChange={(e) => setRepayAmount(e.target.value)}
-                  placeholder="Enter amount"
-                  className="input-field flex-1"
-                />
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={handleSetFullRepayment}
-                >
-                  Max
-                </Button>
+              <div className="flex justify-between border-t border-gray-700 pt-2 mt-2">
+                <span className="text-gray-400 font-medium">Remaining to Repay</span>
+                <span className="text-primary-400 font-bold">
+                  {formattedRemainingToRepay} {selectedTokenInfo?.symbol}
+                </span>
               </div>
-              <p className="text-xs text-gray-500 mt-1">
-                Enter the amount you want to repay. Full repayment will return all collateral.
-              </p>
+              <div className="flex justify-between pt-2">
+                <span className="text-gray-400">Your Balance</span>
+                <span className={`font-semibold ${hasBalance ? 'text-green-400' : 'text-red-400'}`}>
+                  {formattedUserBalance} {selectedTokenInfo?.symbol}
+                </span>
+              </div>
+              {userBalance < remainingToRepay && hasBalance && (
+                <p className="text-xs text-yellow-500 mt-1">
+                  Your balance is less than the remaining amount. You can make a partial repayment.
+                </p>
+              )}
             </div>
 
-            <div className="flex gap-3 pt-4">
-              <Button
-                variant="secondary"
-                onClick={() => setRepayModalOpen(false)}
-                className="flex-1"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleRepaySubmit}
-                disabled={!repayAmount || isRepaying || isRepayPending || isApproving}
-                loading={isRepaying || isRepayPending || isApproving}
-                className="flex-1"
-              >
-                {isApproving ? 'Approving...' : isRepaying || isRepayPending ? 'Repaying...' : 'Repay'}
-              </Button>
-            </div>
+            {/* Step Indicator */}
+            {repayStep !== 'input' && (
+              <div className="flex items-center justify-center gap-2 py-2">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                  repayStep === 'approve' ? 'bg-primary-500 text-white' : 'bg-green-500 text-white'
+                }`}>
+                  1
+                </div>
+                <div className={`w-12 h-1 ${repayStep === 'repay' ? 'bg-green-500' : 'bg-gray-600'}`} />
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                  repayStep === 'repay' ? 'bg-primary-500 text-white' : 'bg-gray-600 text-gray-400'
+                }`}>
+                  2
+                </div>
+              </div>
+            )}
+
+            {/* Step: Input Amount */}
+            {repayStep === 'input' && (
+              <>
+                {/* No balance warning with faucet link */}
+                {!hasBalance && (
+                  <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+                    <p className="text-red-400 text-sm mb-2">
+                      You don&apos;t have any {selectedTokenInfo?.symbol || 'tokens'} to repay with.
+                    </p>
+                    <Link
+                      href="/faucet"
+                      className="inline-flex items-center gap-1 text-sm text-primary-400 hover:text-primary-300 underline"
+                      onClick={() => setRepayModalOpen(false)}
+                    >
+                      Get testnet tokens from Faucet →
+                    </Link>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Repayment Amount
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      value={repayAmount}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        // Allow empty input
+                        if (value === '') {
+                          setRepayAmount('');
+                          return;
+                        }
+                        // Parse and validate
+                        try {
+                          const inputAmount = parseUnits(value, selectedTokenInfo?.decimals || 18);
+                          // Cap at the maximum repayable (min of balance and remaining)
+                          if (inputAmount > maxRepayableAmount && maxRepayableAmount > BigInt(0)) {
+                            setRepayAmount(formattedMaxRepayable);
+                            const reason = userBalance < remainingToRepay
+                              ? `your balance (${formattedUserBalance})`
+                              : `remaining amount (${formattedRemainingToRepay})`;
+                            toast(`Amount capped to ${reason} ${selectedTokenInfo?.symbol}`, {
+                              icon: 'ℹ️',
+                              duration: 2000,
+                            });
+                          } else {
+                            setRepayAmount(value);
+                          }
+                        } catch {
+                          setRepayAmount(value);
+                        }
+                      }}
+                      placeholder="Enter amount"
+                      className="input-field flex-1"
+                      disabled={!hasBalance}
+                    />
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={handleSetMaxRepayment}
+                      disabled={!hasBalance}
+                    >
+                      Max
+                    </Button>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {hasBalance
+                      ? userBalance >= remainingToRepay
+                        ? 'Enter the amount you want to repay. Full repayment will return all collateral.'
+                        : `Max you can repay: ${formattedMaxRepayable} ${selectedTokenInfo?.symbol} (limited by your balance)`
+                      : 'You need tokens to make a repayment.'
+                    }
+                  </p>
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                  <Button
+                    variant="secondary"
+                    onClick={() => setRepayModalOpen(false)}
+                    className="flex-1"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleProceedToApproveOrRepay}
+                    disabled={!hasBalance || !repayAmount || repayAmountBigInt === BigInt(0)}
+                    className="flex-1"
+                  >
+                    {!hasBalance ? 'No Balance' : 'Continue'}
+                  </Button>
+                </div>
+              </>
+            )}
+
+            {/* Step: Approve Token */}
+            {repayStep === 'approve' && (
+              <>
+                <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                  <p className="text-yellow-400 font-medium mb-1">Approval Required</p>
+                  <p className="text-sm text-gray-400">
+                    You need to approve the contract to spend {repayAmount} {getTokenByAddress(selectedLoan.borrowAsset)?.symbol} before you can repay.
+                  </p>
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                  <Button
+                    variant="secondary"
+                    onClick={() => setRepayStep('input')}
+                    className="flex-1"
+                    disabled={isApprovingToken}
+                  >
+                    Back
+                  </Button>
+                  <Button
+                    onClick={handleApprove}
+                    disabled={isApprovingToken}
+                    loading={isApprovingToken}
+                    className="flex-1"
+                  >
+                    {isApprovingToken ? 'Approving...' : 'Approve'}
+                  </Button>
+                </div>
+              </>
+            )}
+
+            {/* Step: Repay */}
+            {repayStep === 'repay' && (
+              <>
+                {/* Price Stale Warning for partial repayments */}
+                {isPriceStale && isPartialRepayment && (
+                  <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="text-red-400 font-medium mb-1">Price Data is Stale</p>
+                        <p className="text-sm text-gray-400 mb-3">
+                          The price feed data is older than 15 minutes. Partial repayments require fresh price data.
+                          Please refresh the price feed before repaying.
+                        </p>
+                        <Button
+                          size="sm"
+                          onClick={handleRefreshPrice}
+                          disabled={isRefreshingPrice}
+                          loading={isRefreshingPrice}
+                          className="w-full"
+                        >
+                          <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshingPrice ? 'animate-spin' : ''}`} />
+                          {isRefreshingPrice ? 'Refreshing...' : 'Refresh Price Feed'}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Simulation Error Display */}
+                {simulationError && (
+                  <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-red-400 font-medium mb-1">Transaction Will Fail</p>
+                        <p className="text-sm text-gray-400">{simulationError}</p>
+                        {simulationError.toLowerCase().includes('stale') && priceFeedAddress && currentPrice && (
+                          <Button
+                            size="sm"
+                            onClick={handleRefreshPrice}
+                            disabled={isRefreshingPrice}
+                            loading={isRefreshingPrice}
+                            className="mt-3 w-full"
+                          >
+                            <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshingPrice ? 'animate-spin' : ''}`} />
+                            {isRefreshingPrice ? 'Refreshing...' : 'Refresh Price Feed'}
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Ready to repay message (only show if no errors) */}
+                {!isPriceStale && !simulationError && (
+                  <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
+                    <p className="text-green-400 font-medium mb-1">Ready to Repay</p>
+                    <p className="text-sm text-gray-400">
+                      You are about to repay {repayAmount} {getTokenByAddress(selectedLoan.borrowAsset)?.symbol} to your loan.
+                      {!isPartialRepayment && ' This is a full repayment - all collateral will be returned.'}
+                    </p>
+                  </div>
+                )}
+
+                {/* Ready but with stale price warning for full repayment */}
+                {isPriceStale && !isPartialRepayment && !simulationError && (
+                  <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
+                    <p className="text-green-400 font-medium mb-1">Ready to Repay</p>
+                    <p className="text-sm text-gray-400">
+                      You are about to fully repay {repayAmount} {getTokenByAddress(selectedLoan.borrowAsset)?.symbol}.
+                      Full repayments do not require price data.
+                    </p>
+                  </div>
+                )}
+
+                <div className="flex gap-3 pt-4">
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      setRepayStep('input');
+                      setSimulationError('');
+                    }}
+                    className="flex-1"
+                    disabled={isRepaying}
+                  >
+                    Back
+                  </Button>
+                  <Button
+                    onClick={handleRepaySubmit}
+                    disabled={isRepaying || isRepayPending || (isPriceStale && isPartialRepayment)}
+                    loading={isRepaying || isRepayPending}
+                    className="flex-1"
+                  >
+                    {isRepaying || isRepayPending ? 'Repaying...' : 'Confirm Repay'}
+                  </Button>
+                </div>
+              </>
+            )}
           </div>
         )}
       </Modal>

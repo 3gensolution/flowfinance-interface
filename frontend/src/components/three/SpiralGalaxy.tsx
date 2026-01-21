@@ -1,7 +1,7 @@
 'use client';
 
-import { useRef, useMemo } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
+import { useRef, useMemo, useState, useEffect } from 'react';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 
 interface GalaxyParams {
@@ -16,8 +16,34 @@ interface GalaxyParams {
   outsideColor: string;
 }
 
-function Galaxy() {
+interface MousePosition {
+  x: number;
+  y: number;
+}
+
+// Mouse position context for the 3D scene
+function useMousePosition() {
+  const [mousePosition, setMousePosition] = useState<MousePosition>({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const handleMouseMove = (event: MouseEvent) => {
+      // Normalize mouse position to -1 to 1 range
+      setMousePosition({
+        x: (event.clientX / window.innerWidth) * 2 - 1,
+        y: -(event.clientY / window.innerHeight) * 2 + 1,
+      });
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    return () => window.removeEventListener('mousemove', handleMouseMove);
+  }, []);
+
+  return mousePosition;
+}
+
+function Galaxy({ mousePosition }: { mousePosition: MousePosition }) {
   const pointsRef = useRef<THREE.Points>(null);
+  const targetRotation = useRef({ x: 0, y: 0 });
 
   const params: GalaxyParams = useMemo(() => ({
     count: 50000,
@@ -68,7 +94,16 @@ function Galaxy() {
 
   useFrame((state) => {
     if (pointsRef.current) {
-      pointsRef.current.rotation.y = state.clock.elapsedTime * 0.05;
+      // Base rotation
+      const baseRotationY = state.clock.elapsedTime * 0.05;
+
+      // Mouse-influenced rotation (smooth interpolation)
+      targetRotation.current.x = mousePosition.y * 0.3;
+      targetRotation.current.y = mousePosition.x * 0.3;
+
+      // Smooth lerp to target rotation
+      pointsRef.current.rotation.x += (targetRotation.current.x - pointsRef.current.rotation.x) * 0.05;
+      pointsRef.current.rotation.y = baseRotationY + targetRotation.current.y;
     }
   });
 
@@ -101,8 +136,9 @@ function Galaxy() {
   );
 }
 
-function Stars() {
+function Stars({ mousePosition }: { mousePosition: MousePosition }) {
   const starsRef = useRef<THREE.Points>(null);
+  const targetPosition = useRef({ x: 0, y: 0 });
 
   const positions = useMemo(() => {
     const positions = new Float32Array(2000 * 3);
@@ -119,6 +155,13 @@ function Stars() {
     if (starsRef.current) {
       starsRef.current.rotation.y = state.clock.elapsedTime * 0.02;
       starsRef.current.rotation.x = state.clock.elapsedTime * 0.01;
+
+      // Subtle parallax effect on stars based on mouse
+      targetPosition.current.x = mousePosition.x * 0.5;
+      targetPosition.current.y = mousePosition.y * 0.5;
+
+      starsRef.current.position.x += (targetPosition.current.x - starsRef.current.position.x) * 0.02;
+      starsRef.current.position.y += (targetPosition.current.y - starsRef.current.position.y) * 0.02;
     }
   });
 
@@ -143,7 +186,132 @@ function Stars() {
   );
 }
 
+// Interactive particles that follow the mouse
+function InteractiveParticles({ mousePosition }: { mousePosition: MousePosition }) {
+  const particlesRef = useRef<THREE.Points>(null);
+  const { viewport } = useThree();
+
+  const count = 200;
+  const { positions, velocities, originalPositions } = useMemo(() => {
+    const positions = new Float32Array(count * 3);
+    const velocities = new Float32Array(count * 3);
+    const originalPositions = new Float32Array(count * 3);
+
+    for (let i = 0; i < count; i++) {
+      const i3 = i * 3;
+      const x = (Math.random() - 0.5) * 10;
+      const y = (Math.random() - 0.5) * 6;
+      const z = (Math.random() - 0.5) * 4;
+
+      positions[i3] = x;
+      positions[i3 + 1] = y;
+      positions[i3 + 2] = z;
+
+      originalPositions[i3] = x;
+      originalPositions[i3 + 1] = y;
+      originalPositions[i3 + 2] = z;
+
+      velocities[i3] = 0;
+      velocities[i3 + 1] = 0;
+      velocities[i3 + 2] = 0;
+    }
+
+    return { positions, velocities, originalPositions };
+  }, []);
+
+  useFrame(() => {
+    if (particlesRef.current) {
+      const positionAttribute = particlesRef.current.geometry.attributes.position;
+      const posArray = positionAttribute.array as Float32Array;
+
+      // Convert mouse position to world coordinates
+      const mouseX = mousePosition.x * (viewport.width / 2);
+      const mouseY = mousePosition.y * (viewport.height / 2);
+
+      for (let i = 0; i < count; i++) {
+        const i3 = i * 3;
+
+        // Calculate distance from mouse
+        const dx = mouseX - posArray[i3];
+        const dy = mouseY - posArray[i3 + 1];
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        // Particles are attracted to mouse when close, repelled when very close
+        const attractionRadius = 3;
+        const repulsionRadius = 1;
+
+        if (distance < attractionRadius && distance > 0.01) {
+          const force = (attractionRadius - distance) / attractionRadius;
+
+          if (distance < repulsionRadius) {
+            // Repel
+            velocities[i3] -= (dx / distance) * force * 0.02;
+            velocities[i3 + 1] -= (dy / distance) * force * 0.02;
+          } else {
+            // Attract
+            velocities[i3] += (dx / distance) * force * 0.01;
+            velocities[i3 + 1] += (dy / distance) * force * 0.01;
+          }
+        }
+
+        // Return to original position
+        velocities[i3] += (originalPositions[i3] - posArray[i3]) * 0.01;
+        velocities[i3 + 1] += (originalPositions[i3 + 1] - posArray[i3 + 1]) * 0.01;
+        velocities[i3 + 2] += (originalPositions[i3 + 2] - posArray[i3 + 2]) * 0.01;
+
+        // Apply friction
+        velocities[i3] *= 0.95;
+        velocities[i3 + 1] *= 0.95;
+        velocities[i3 + 2] *= 0.95;
+
+        // Update position
+        posArray[i3] += velocities[i3];
+        posArray[i3 + 1] += velocities[i3 + 1];
+        posArray[i3 + 2] += velocities[i3 + 2];
+      }
+
+      positionAttribute.needsUpdate = true;
+    }
+  });
+
+  return (
+    <points ref={particlesRef}>
+      <bufferGeometry>
+        <bufferAttribute
+          attach="attributes-position"
+          count={count}
+          array={positions}
+          itemSize={3}
+        />
+      </bufferGeometry>
+      <pointsMaterial
+        size={0.03}
+        sizeAttenuation={true}
+        color="#a78bfa"
+        transparent={true}
+        opacity={0.7}
+        blending={THREE.AdditiveBlending}
+      />
+    </points>
+  );
+}
+
+// Scene component that uses mouse position
+function Scene({ mousePosition }: { mousePosition: MousePosition }) {
+  return (
+    <>
+      <color attach="background" args={['#0a0a0f']} />
+      <ambientLight intensity={0.5} />
+      <Galaxy mousePosition={mousePosition} />
+      <Stars mousePosition={mousePosition} />
+      <InteractiveParticles mousePosition={mousePosition} />
+    </>
+  );
+}
+
 export function SpiralGalaxy() {
+  const mousePosition = useMousePosition();
+
   return (
     <div className="absolute inset-0 w-full h-full overflow-hidden" style={{ zIndex: 0 }}>
       <Canvas
@@ -151,10 +319,7 @@ export function SpiralGalaxy() {
         style={{ background: 'transparent' }}
         gl={{ alpha: true, antialias: true }}
       >
-        <color attach="background" args={['#0a0a0f']} />
-        <ambientLight intensity={0.5} />
-        <Galaxy />
-        <Stars />
+        <Scene mousePosition={mousePosition} />
       </Canvas>
     </div>
   );
