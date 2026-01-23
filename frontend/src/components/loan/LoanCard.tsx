@@ -231,6 +231,7 @@ export function LenderOfferCard({ offer, onAccept, onCancel, isOwner, loading }:
 interface ActiveLoanCardProps {
   loan: Loan;
   healthFactor?: bigint;
+  isLoadingHealth?: boolean;
   repaymentAmount?: bigint;
   onRepay?: () => void;
   onLiquidate?: () => void;
@@ -241,6 +242,7 @@ interface ActiveLoanCardProps {
 export function ActiveLoanCard({
   loan,
   healthFactor,
+  isLoadingHealth,
   repaymentAmount,
   onRepay,
   onLiquidate,
@@ -256,8 +258,8 @@ export function ActiveLoanCard({
   const { price: borrowPrice } = useTokenPrice(loan.borrowAsset);
   const { price: collateralPrice } = useTokenPrice(loan.collateralAsset);
 
-  const healthStatus = healthFactor ? getHealthStatus(healthFactor) : 'healthy';
-  const healthFactorDisplay = healthFactor ? (Number(healthFactor) / 100).toFixed(2) : '--';
+  const healthStatus = healthFactor ? getHealthStatus(healthFactor) : undefined;
+  const healthFactorDisplay = isLoadingHealth ? 'Loading...' : healthFactor ? (Number(healthFactor) / 100).toFixed(2) : '--';
   const remainingCollateral = loan.collateralAmount - loan.collateralReleased;
 
   // Calculate USD values
@@ -317,7 +319,13 @@ export function ActiveLoanCard({
         <div className="glass-card p-3 mb-4">
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm text-gray-400">Health Factor</span>
-            <HealthBadge status={healthStatus} value={healthFactorDisplay} />
+            {isLoadingHealth ? (
+              <span className="text-xs text-gray-500 animate-pulse">Loading...</span>
+            ) : healthStatus ? (
+              <HealthBadge status={healthStatus} value={healthFactorDisplay} />
+            ) : (
+              <span className="text-xs text-gray-500">--</span>
+            )}
           </div>
           {repaymentAmount && (
             <div className="flex items-center justify-between">

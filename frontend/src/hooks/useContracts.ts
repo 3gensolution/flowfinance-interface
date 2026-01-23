@@ -1,7 +1,9 @@
 'use client';
 
-import { useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import { useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt, useWatchContractEvent, usePublicClient } from 'wagmi';
+import { useQueryClient } from '@tanstack/react-query';
 import { Address, Abi, formatUnits } from 'viem';
+import { useEffect, useCallback } from 'react';
 import { CONTRACT_ADDRESSES, getTokenByAddress } from '@/config/contracts';
 import LoanMarketPlaceABIJson from '@/contracts/LoanMarketPlaceABI.json';
 import ConfigurationABIJson from '@/contracts/ConfigurationABI.json';
@@ -405,6 +407,13 @@ export function useApproveToken() {
 export function useCreateLoanRequest() {
   const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const { invalidateAll } = useInvalidateContractQueries();
+
+  useEffect(() => {
+    if (isSuccess) {
+      invalidateAll();
+    }
+  }, [isSuccess, invalidateAll]);
 
   const createRequest = async (
     collateralToken: Address,
@@ -428,6 +437,11 @@ export function useCreateLoanRequest() {
 export function useFundLoanRequest() {
   const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const { invalidateAll } = useInvalidateContractQueries();
+
+  useEffect(() => {
+    if (isSuccess) invalidateAll();
+  }, [isSuccess, invalidateAll]);
 
   const fundRequest = (requestId: bigint) => {
     writeContract({
@@ -444,6 +458,11 @@ export function useFundLoanRequest() {
 export function useCreateLenderOffer() {
   const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const { invalidateAll } = useInvalidateContractQueries();
+
+  useEffect(() => {
+    if (isSuccess) invalidateAll();
+  }, [isSuccess, invalidateAll]);
 
   const createOffer = (
     lendAsset: Address,
@@ -467,6 +486,11 @@ export function useCreateLenderOffer() {
 export function useAcceptLenderOffer() {
   const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const { invalidateAll } = useInvalidateContractQueries();
+
+  useEffect(() => {
+    if (isSuccess) invalidateAll();
+  }, [isSuccess, invalidateAll]);
 
   const acceptOffer = (offerId: bigint, collateralAmount: bigint) => {
     writeContract({
@@ -483,6 +507,11 @@ export function useAcceptLenderOffer() {
 export function useRepayLoan() {
   const { writeContract, writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const { invalidateAll } = useInvalidateContractQueries();
+
+  useEffect(() => {
+    if (isSuccess) invalidateAll();
+  }, [isSuccess, invalidateAll]);
 
   // Fire-and-forget version (for backward compatibility)
   const repay = (loanId: bigint, amount: bigint) => {
@@ -510,6 +539,11 @@ export function useRepayLoan() {
 export function useCancelLoanRequest() {
   const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const { invalidateAll } = useInvalidateContractQueries();
+
+  useEffect(() => {
+    if (isSuccess) invalidateAll();
+  }, [isSuccess, invalidateAll]);
 
   const cancelRequest = (requestId: bigint) => {
     writeContract({
@@ -526,6 +560,11 @@ export function useCancelLoanRequest() {
 export function useCancelLenderOffer() {
   const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const { invalidateAll } = useInvalidateContractQueries();
+
+  useEffect(() => {
+    if (isSuccess) invalidateAll();
+  }, [isSuccess, invalidateAll]);
 
   const cancelOffer = (offerId: bigint) => {
     writeContract({
@@ -574,6 +613,11 @@ export function useApproveExtension() {
 export function useLiquidateLoan() {
   const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const { invalidateAll } = useInvalidateContractQueries();
+
+  useEffect(() => {
+    if (isSuccess) invalidateAll();
+  }, [isSuccess, invalidateAll]);
 
   const liquidate = (loanId: bigint) => {
     writeContract({
@@ -1036,12 +1080,12 @@ export function useUserDashboardData(userAddress: Address | undefined) {
   const { data: loanRequests, isLoading: isLoadingRequests, refetch: refetchRequests } = useUserLoanRequestsBatch(userAddress);
   const { data: lenderOffers, isLoading: isLoadingOffers, refetch: refetchOffers } = useUserLenderOffersBatch(userAddress);
 
-  const refetch = () => {
+  const refetch = useCallback(() => {
     refetchBorrowed();
     refetchLent();
     refetchRequests();
     refetchOffers();
-  };
+  }, [refetchBorrowed, refetchLent, refetchRequests, refetchOffers]);
 
   return {
     borrowedLoans: borrowedLoans || [],
@@ -1051,4 +1095,117 @@ export function useUserDashboardData(userAddress: Address | undefined) {
     isLoading: isLoadingBorrowed || isLoadingLent || isLoadingRequests || isLoadingOffers,
     refetch,
   };
+}
+
+// Hook to invalidate all contract-related queries after blockchain writes
+export function useInvalidateContractQueries() {
+  const queryClient = useQueryClient();
+
+  const invalidateAll = useCallback(() => {
+    // Invalidate all wagmi readContract queries
+    queryClient.invalidateQueries({ queryKey: ['readContract'] });
+    queryClient.invalidateQueries({ queryKey: ['readContracts'] });
+    queryClient.invalidateQueries({ queryKey: ['balance'] });
+  }, [queryClient]);
+
+  return { invalidateAll };
+}
+
+// Hook that watches for LoanMarketPlace contract events and auto-invalidates queries
+export function useContractEventListener() {
+  const { invalidateAll } = useInvalidateContractQueries();
+
+  // Watch for loan-related events
+  useWatchContractEvent({
+    address: CONTRACT_ADDRESSES.loanMarketPlace,
+    abi: LoanMarketPlaceABI,
+    eventName: 'LoanRequestCreated',
+    onLogs: () => {
+      invalidateAll();
+    },
+  });
+
+  useWatchContractEvent({
+    address: CONTRACT_ADDRESSES.loanMarketPlace,
+    abi: LoanMarketPlaceABI,
+    eventName: 'LoanFunded',
+    onLogs: () => {
+      invalidateAll();
+    },
+  });
+
+  useWatchContractEvent({
+    address: CONTRACT_ADDRESSES.loanMarketPlace,
+    abi: LoanMarketPlaceABI,
+    eventName: 'LenderOfferCreated',
+    onLogs: () => {
+      invalidateAll();
+    },
+  });
+
+  useWatchContractEvent({
+    address: CONTRACT_ADDRESSES.loanMarketPlace,
+    abi: LoanMarketPlaceABI,
+    eventName: 'LenderOfferAccepted',
+    onLogs: () => {
+      invalidateAll();
+    },
+  });
+
+  useWatchContractEvent({
+    address: CONTRACT_ADDRESSES.loanMarketPlace,
+    abi: LoanMarketPlaceABI,
+    eventName: 'LoanRepaid',
+    onLogs: () => {
+      invalidateAll();
+    },
+  });
+
+  useWatchContractEvent({
+    address: CONTRACT_ADDRESSES.loanMarketPlace,
+    abi: LoanMarketPlaceABI,
+    eventName: 'LoanLiquidated',
+    onLogs: () => {
+      invalidateAll();
+    },
+  });
+
+  useWatchContractEvent({
+    address: CONTRACT_ADDRESSES.loanMarketPlace,
+    abi: LoanMarketPlaceABI,
+    eventName: 'LoanRequestCancelled',
+    onLogs: () => {
+      invalidateAll();
+    },
+  });
+
+  useWatchContractEvent({
+    address: CONTRACT_ADDRESSES.loanMarketPlace,
+    abi: LoanMarketPlaceABI,
+    eventName: 'LenderOfferCancelled',
+    onLogs: () => {
+      invalidateAll();
+    },
+  });
+}
+
+// Hook that auto-invalidates queries when a transaction hash is confirmed
+export function useAutoRefreshOnTx(hash: `0x${string}` | undefined) {
+  const { invalidateAll } = useInvalidateContractQueries();
+  const publicClient = usePublicClient();
+
+  useEffect(() => {
+    if (!hash || !publicClient) return;
+
+    publicClient.waitForTransactionReceipt({ hash }).then((receipt) => {
+      if (receipt.status === 'success') {
+        // Small delay to ensure blockchain state is updated
+        setTimeout(() => {
+          invalidateAll();
+        }, 1000);
+      }
+    }).catch(() => {
+      // Ignore errors - tx might have already been processed
+    });
+  }, [hash, publicClient, invalidateAll]);
 }

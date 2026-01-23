@@ -13,18 +13,22 @@ import {
   useBatchLoanRequests,
   useBatchLenderOffers
 } from '@/hooks/useContracts';
+import { useSupplierDetails } from '@/hooks/useSupplier';
 import { LoanRequestStatus } from '@/types';
-import { Search, Filter, TrendingUp, FileText, Loader2, RefreshCw, Clock } from 'lucide-react';
+import { Search, Filter, TrendingUp, FileText, Loader2, RefreshCw, Clock, Banknote, Coins } from 'lucide-react';
 import Link from 'next/link';
 import { getTokenDecimals } from '@/lib/utils';
 
 type Tab = 'requests' | 'offers';
+type MarketType = 'crypto' | 'fiat';
 
 function MarketplaceContent() {
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<Tab>('requests');
+  const [marketType, setMarketType] = useState<MarketType>('crypto');
   const [searchTerm, setSearchTerm] = useState('');
   const { address } = useAccount();
+  const { isVerified: isVerifiedSupplier } = useSupplierDetails(address);
 
   // Handle tab query parameter
   useEffect(() => {
@@ -179,6 +183,42 @@ function MarketplaceContent() {
           </p>
         </motion.div>
 
+        {/* Market Type Tabs (Crypto / Fiat) */}
+        {isVerifiedSupplier && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.05 }}
+            className="flex justify-center gap-2 mb-6"
+          >
+            <button
+              onClick={() => setMarketType('crypto')}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-sm transition-all ${
+                marketType === 'crypto'
+                  ? 'bg-primary-500/20 text-primary-400 border border-primary-500/30'
+                  : 'bg-white/5 text-gray-400 border border-gray-700 hover:border-gray-600'
+              }`}
+            >
+              <Coins className="w-4 h-4" />
+              Crypto
+            </button>
+            <button
+              onClick={() => setMarketType('fiat')}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-sm transition-all ${
+                marketType === 'fiat'
+                  ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                  : 'bg-white/5 text-gray-400 border border-gray-700 hover:border-gray-600'
+              }`}
+            >
+              <Banknote className="w-4 h-4" />
+              Fiat
+            </button>
+          </motion.div>
+        )}
+
+        {/* Crypto Marketplace */}
+        {marketType === 'crypto' && (
+          <>
         {/* Stats */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -394,6 +434,43 @@ function MarketplaceContent() {
             </div>
           </Card>
         </motion.div>
+          </>
+        )}
+
+        {/* Fiat Marketplace */}
+        {marketType === 'fiat' && isVerifiedSupplier && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+          >
+            <Card className="text-center py-16">
+              <Banknote className="w-16 h-16 text-green-400 mx-auto mb-6" />
+              <h3 className="text-2xl font-semibold mb-3">Fiat Loan Marketplace</h3>
+              <p className="text-gray-400 max-w-md mx-auto mb-6">
+                Browse and fund fiat loan requests from verified borrowers.
+                Provide liquidity in traditional currencies backed by crypto collateral.
+              </p>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 max-w-lg mx-auto mb-8">
+                <div className="p-3 bg-white/5 rounded-lg">
+                  <p className="text-xs text-gray-400">Active Fiat Loans</p>
+                  <p className="text-lg font-bold text-green-400">0</p>
+                </div>
+                <div className="p-3 bg-white/5 rounded-lg">
+                  <p className="text-xs text-gray-400">Total Volume</p>
+                  <p className="text-lg font-bold text-green-400">$0</p>
+                </div>
+                <div className="p-3 bg-white/5 rounded-lg col-span-2 md:col-span-1">
+                  <p className="text-xs text-gray-400">Avg Rate</p>
+                  <p className="text-lg font-bold text-green-400">12%</p>
+                </div>
+              </div>
+              <p className="text-sm text-gray-500">
+                No fiat loan requests available at the moment. Check back soon!
+              </p>
+            </Card>
+          </motion.div>
+        )}
       </div>
     </div>
   );

@@ -6,9 +6,10 @@ import { useRouter } from 'next/navigation';
 import { Address, parseUnits, formatUnits } from 'viem';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Input, Select } from '@/components/ui/Input';
+import { Select } from '@/components/ui/Input';
 import { TOKEN_LIST, CONTRACT_ADDRESSES } from '@/config/contracts';
 import { useApproveToken, useCreateLenderOffer, useTokenBalance, useTokenAllowance, useTokenPrice, useLTV } from '@/hooks/useContracts';
+import { PriceFeedDisplay } from '@/components/loan/PriceFeedDisplay';
 import { formatTokenAmount, daysToSeconds, getTokenDecimals } from '@/lib/utils';
 import { ArrowRight, AlertCircle, CheckCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -36,7 +37,7 @@ export function CreateLenderOfferForm() {
   const [lendToken, setLendToken] = useState<Address>(TOKEN_LIST[1].address);
   const [lendAmount, setLendAmount] = useState('');
   const [collateralToken, setCollateralToken] = useState<Address>(TOKEN_LIST[0].address);
-  const [interestRate, setInterestRate] = useState('12');
+  const interestRate = '12'; // Fixed at 12% APY
   const [duration, setDuration] = useState('30');
   const [step, setStep] = useState<'form' | 'approve' | 'confirm'>('form');
   const [simulationError, setSimulationError] = useState<string>('');
@@ -315,20 +316,38 @@ export function CreateLenderOfferForm() {
                 value={lendToken}
                 onChange={(e) => setLendToken(e.target.value as Address)}
               />
-              <Input
-                label="Lend Amount"
-                type="number"
-                step="any"
-                placeholder="0.0"
-                value={lendAmount}
-                onChange={(e) => handleLendAmountChange(e.target.value)}
-                suffix={TOKEN_LIST.find((t) => t.address === lendToken)?.symbol}
-              />
-              {lendUSD > 0 && (
-                <p className="text-xs text-gray-500 -mt-2">
-                  ≈ ${lendUSD.toFixed(2)} USD
-                </p>
-              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Lend Amount</label>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1">
+                    <input
+                      type="number"
+                      step="any"
+                      placeholder="0.0"
+                      value={lendAmount}
+                      onChange={(e) => handleLendAmountChange(e.target.value)}
+                      className="input-field w-full"
+                    />
+                  </div>
+                  {maxLendBalanceNumber > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setLendAmount(maxLendBalance)}
+                      className="px-3 py-2 text-xs font-semibold text-primary-400 hover:text-primary-300 bg-primary-400/10 hover:bg-primary-400/20 rounded-lg transition-colors"
+                    >
+                      MAX
+                    </button>
+                  )}
+                  <span className="text-sm text-gray-400 min-w-[40px]">
+                    {TOKEN_LIST.find((t) => t.address === lendToken)?.symbol}
+                  </span>
+                </div>
+                {lendUSD > 0 && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    ≈ ${lendUSD.toFixed(2)} USD
+                  </p>
+                )}
+              </div>
               {lendBalance !== undefined && lendBalance !== null && (
                 <div className="text-sm space-y-2">
                   <div className="flex justify-between">
@@ -336,15 +355,6 @@ export function CreateLenderOfferForm() {
                       Balance: {formatTokenAmount(lendBalance as bigint, lendDecimals)}{' '}
                       {TOKEN_LIST.find((t) => t.address === lendToken)?.symbol}
                     </span>
-                    {maxLendBalanceNumber > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => setLendAmount(maxLendBalance)}
-                        className="text-primary-400 hover:text-primary-300 font-medium"
-                      >
-                        Max
-                      </button>
-                    )}
                   </div>
 
                   {/* Zero Balance Warning */}
@@ -401,16 +411,22 @@ export function CreateLenderOfferForm() {
                 onChange={(e) => setCollateralToken(e.target.value as Address)}
               />
               <div>
-                <Input
-                  label="Minimum Collateral Amount (Auto-calculated)"
-                  type="text"
-                  placeholder="Enter lend amount first"
-                  value={minCollateralAmount}
-                  readOnly
-                  disabled
-                  suffix={TOKEN_LIST.find((t) => t.address === collateralToken)?.symbol}
-                  className="bg-white/5 cursor-not-allowed"
-                />
+                <label className="block text-sm font-medium text-gray-300 mb-2">Min Collateral (Auto-calculated)</label>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1">
+                    <input
+                      type="text"
+                      placeholder="Enter lend amount first"
+                      value={minCollateralAmount}
+                      readOnly
+                      disabled
+                      className="input-field w-full bg-white/5 cursor-not-allowed"
+                    />
+                  </div>
+                  <span className="text-sm text-gray-400 min-w-[40px]">
+                    {TOKEN_LIST.find((t) => t.address === collateralToken)?.symbol}
+                  </span>
+                </div>
                 {collateralUSD > 0 && (
                   <p className="text-xs text-gray-500 mt-1">
                     ≈ ${collateralUSD.toFixed(2)} USD
@@ -471,20 +487,8 @@ export function CreateLenderOfferForm() {
                 </div>
               )}
 
-              {/* Price Stale Warning */}
-              {isPriceStale && (
-                <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-                  <div className="flex gap-2 items-start">
-                    <AlertCircle className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-yellow-400 font-medium text-sm">Price Data Stale</p>
-                      <p className="text-gray-400 text-xs mt-1">
-                        Price data may be outdated. Please wait for updated prices before proceeding.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
+              {/* Price Feeds */}
+              <PriceFeedDisplay tokenAddress={collateralToken} variant="compact" />
 
               {/* LTV Display */}
               {ltvPercentage > 0 && (
@@ -498,18 +502,23 @@ export function CreateLenderOfferForm() {
             </div>
           </div>
 
+          {/* Price Feeds */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <PriceFeedDisplay tokenAddress={lendToken} variant="compact" />
+            <PriceFeedDisplay tokenAddress={collateralToken} variant="compact" />
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Input
-              label="Interest Rate (APY %)"
-              type="number"
-              step="0.1"
-              min="0"
-              max="100"
-              placeholder="12"
-              value={interestRate}
-              onChange={(e) => setInterestRate(e.target.value)}
-              suffix="%"
-            />
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Interest Rate (APY)</label>
+              <div className="flex items-center h-[42px] px-4 bg-gray-800/50 border border-gray-600 rounded-lg">
+                <span className="text-lg font-semibold text-primary-400">12%</span>
+                <span className="ml-2 text-sm text-gray-400">Fixed APY</span>
+              </div>
+              <p className="text-xs text-gray-400 mt-1">
+                Fixed interest rate for all loans
+              </p>
+            </div>
             <Select
               label="Loan Duration"
               options={durationOptions}

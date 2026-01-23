@@ -29,6 +29,7 @@ import LoanMarketPlaceABIJson from '@/contracts/LoanMarketPlaceABI.json';
 import { Abi, Address } from 'viem';
 
 const LoanMarketPlaceABI = LoanMarketPlaceABIJson as Abi;
+import { SupplierSection } from '@/components/supplier/SupplierSection';
 import {
   Wallet,
   TrendingUp,
@@ -557,6 +558,16 @@ export default function DashboardPage() {
             subValue={`${stats.pendingRequestsCount} requests, ${stats.pendingOffersCount} offers`}
             icon={<Activity className="w-5 h-5" />}
           />
+        </motion.div>
+
+        {/* Supplier Section */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15 }}
+          className="mb-8"
+        >
+          <SupplierSection />
         </motion.div>
 
         {/* Loading State */}
@@ -1117,7 +1128,7 @@ function ActiveLoanCardWithData({
   isBorrower: boolean;
   onRepay?: () => void;
 }) {
-  const { data: healthFactor } = useLoanHealthFactor(loan.loanId);
+  const { data: healthFactor, isLoading: isLoadingHealth } = useLoanHealthFactor(loan.loanId);
   const { data: repaymentAmount } = useRepaymentAmount(loan.loanId);
 
   // Convert the loan data to the expected Loan type
@@ -1126,10 +1137,14 @@ function ActiveLoanCardWithData({
     status: loan.status as LoanStatus,
   };
 
+  // Only pass health factor if actually loaded from blockchain
+  const healthFactorValue = healthFactor ? healthFactor as bigint : undefined;
+
   return (
     <ActiveLoanCard
       loan={loanData}
-      healthFactor={healthFactor ? healthFactor as bigint : BigInt(10000)}
+      healthFactor={healthFactorValue}
+      isLoadingHealth={isLoadingHealth}
       repaymentAmount={repaymentAmount ? repaymentAmount as bigint : undefined}
       isBorrower={isBorrower}
       onRepay={onRepay}

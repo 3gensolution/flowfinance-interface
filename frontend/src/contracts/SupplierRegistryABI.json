@@ -1,0 +1,97 @@
+[
+  {
+    "inputs": [
+      { "internalType": "enum DataTypes.SupplierType", "name": "supplierType", "type": "uint8" },
+      { "internalType": "string", "name": "name", "type": "string" },
+      { "internalType": "string", "name": "businessRegistrationNumber", "type": "string" },
+      { "internalType": "string", "name": "kycDocumentHash", "type": "string" }
+    ],
+    "name": "registerSupplier",
+    "outputs": [],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "address", "name": "supplier", "type": "address" }
+    ],
+    "name": "getSupplierDetails",
+    "outputs": [
+      {
+        "components": [
+          { "internalType": "address", "name": "supplierAddress", "type": "address" },
+          { "internalType": "enum DataTypes.SupplierType", "name": "supplierType", "type": "uint8" },
+          { "internalType": "string", "name": "name", "type": "string" },
+          { "internalType": "string", "name": "businessRegistrationNumber", "type": "string" },
+          { "internalType": "string", "name": "kycDocumentHash", "type": "string" },
+          { "internalType": "bool", "name": "isVerified", "type": "bool" },
+          { "internalType": "bool", "name": "isActive", "type": "bool" },
+          { "internalType": "uint256", "name": "registeredAt", "type": "uint256" },
+          { "internalType": "uint256", "name": "totalLoansProvided", "type": "uint256" },
+          { "internalType": "uint256", "name": "totalVolumeProvided", "type": "uint256" },
+          { "internalType": "uint256", "name": "reputationScore", "type": "uint256" },
+          { "internalType": "uint256", "name": "stakedAmount", "type": "uint256" },
+          { "internalType": "uint256", "name": "averageRating", "type": "uint256" },
+          { "internalType": "uint256", "name": "numberOfRatings", "type": "uint256" }
+        ],
+        "internalType": "struct DataTypes.Supplier",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "getActiveSuppliers",
+    "outputs": [
+      { "internalType": "address[]", "name": "", "type": "address[]" }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "minimumSupplierStake",
+    "outputs": [
+      { "internalType": "uint256", "name": "", "type": "uint256" }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "addStake",
+    "outputs": [],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "uint256", "name": "amount", "type": "uint256" }
+    ],
+    "name": "withdrawStake",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "type": "event",
+    "name": "SupplierRegistered",
+    "inputs": [
+      { "name": "supplier", "type": "address", "indexed": true },
+      { "name": "name", "type": "string", "indexed": false },
+      { "name": "supplierType", "type": "uint8", "indexed": false }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "SupplierVerified",
+    "inputs": [
+      { "name": "supplier", "type": "address", "indexed": true }
+    ],
+    "anonymous": false
+  }
+]

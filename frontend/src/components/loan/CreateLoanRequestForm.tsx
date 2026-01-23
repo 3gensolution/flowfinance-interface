@@ -5,7 +5,7 @@ import { useAccount } from 'wagmi';
 import { Address, parseUnits, formatUnits } from 'viem';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Input, Select } from '@/components/ui/Input';
+import { Select } from '@/components/ui/Input';
 import { TOKEN_LIST, CONTRACT_ADDRESSES } from '@/config/contracts';
 import {
   useApproveToken,
@@ -14,15 +14,15 @@ import {
   useTokenAllowance,
   useLTV,
   useTokenPrice,
-  useMaxInterestRate,
   useLiquidationThreshold,
-  useRefreshMockPrice
+  useHealthFactor,
 } from '@/hooks/useContracts';
+import { PriceFeedDisplay } from '@/components/loan/PriceFeedDisplay';
 import { formatTokenAmount, daysToSeconds, getTokenDecimals } from '@/lib/utils';
 import { simulateContractWrite, formatSimulationError } from '@/lib/contractSimulation';
 import LoanMarketPlaceABIJson from '@/contracts/LoanMarketPlaceABI.json';
 import { Abi } from 'viem';
-import { ArrowRight, AlertCircle, CheckCircle, Info, TrendingUp, Shield, Loader2, RefreshCw } from 'lucide-react';
+import { ArrowRight, AlertCircle, CheckCircle, Info, TrendingUp, Shield, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const LoanMarketPlaceABI = LoanMarketPlaceABIJson as Abi;
@@ -44,7 +44,7 @@ export function CreateLoanRequestForm() {
   const [collateralAmount, setCollateralAmount] = useState('');
   const [borrowToken, setBorrowToken] = useState<Address>(TOKEN_LIST[1].address);
   const [borrowAmount, setBorrowAmount] = useState('');
-  const [interestRate, setInterestRate] = useState('');
+  const interestRate = '12'; // Fixed at 12% APY
   const [duration, setDuration] = useState('30');
   const [step, setStep] = useState<'form' | 'approve' | 'confirm'>('form');
   const [simulationError, setSimulationError] = useState<string>('');
@@ -70,20 +70,14 @@ export function CreateLoanRequestForm() {
 
   // Check if any price data is stale
   const isPriceStale = collateralPriceHook.isStale || borrowPriceHook.isStale;
-  const minSecondsUntilStale = Math.min(
-    collateralPriceHook.secondsUntilStale || Infinity,
-    borrowPriceHook.secondsUntilStale || Infinity
-  );
 
   // Fetch LTV and configuration
   const durationDays = parseInt(duration);
   const { data: ltvBps, isLoading: isLoadingLTV, error: ltvError } = useLTV(collateralToken, durationDays);
   const { data: liquidationThresholdBps } = useLiquidationThreshold(collateralToken, durationDays);
-  const { data: maxInterestRateBps } = useMaxInterestRate();
 
   const { approve, isPending: isApproving, isSuccess: approveSuccess } = useApproveToken();
   const { createRequest, isPending: isCreating, isSuccess: createSuccess, error: createError } = useCreateLoanRequest();
-  const { refreshPrice, isPending: isRefreshingPrice } = useRefreshMockPrice();
 
   const parsedCollateralAmount = collateralAmount
     ? parseUnits(collateralAmount, collateralDecimals)
@@ -93,6 +87,23 @@ export function CreateLoanRequestForm() {
 
   // Track if we're calculating (waiting for prices and LTV)
   const isDataLoading = collateralPriceHook.isLoading || borrowPriceHook.isLoading || isLoadingLTV;
+
+  // Compute loanAmountUSD for on-chain health factor query
+  const parsedBorrowForHealth = borrowAmount ? (() => {
+    try {
+      const borrowAmountBigInt = parseUnits(borrowAmount, borrowDecimals);
+      return borrowPrice ? (borrowAmountBigInt * (borrowPrice as bigint)) / BigInt(10 ** borrowDecimals) : undefined;
+    } catch { return undefined; }
+  })() : undefined;
+
+  // On-chain health factor from LTVConfig contract
+  const { data: onChainHealthFactor } = useHealthFactor(
+    collateralToken,
+    parsedCollateralAmount > BigInt(0) ? parsedCollateralAmount : undefined,
+    collateralPrice as bigint | undefined,
+    parsedBorrowForHealth,
+    durationDays
+  );
 
   // Calculate maximum borrow amount based on LTV
   useEffect(() => {
@@ -153,14 +164,6 @@ export function CreateLoanRequestForm() {
     }
   }, [collateralAmount, collateralPrice, borrowPrice, ltvBps, collateralDecimals, borrowDecimals, isDataLoading, ltvError, duration]);
 
-  // Set default interest rate based on max interest rate from contract
-  useEffect(() => {
-    if (maxInterestRateBps && !interestRate) {
-      // Default to 50% of max interest rate
-      const defaultRate = Number(maxInterestRateBps) / 100 / 2;
-      setInterestRate(defaultRate.toString());
-    }
-  }, [maxInterestRateBps, interestRate]);
 
   useEffect(() => {
     if (approveSuccess) {
@@ -185,57 +188,12 @@ export function CreateLoanRequestForm() {
     }
   }, [createError]);
 
-  // Handle refreshing stale price data on testnet
-  const handleRefreshPrices = async () => {
-    try {
-      const refreshPromises: Promise<void>[] = [];
-
-      // Refresh collateral token price if stale
-      if (collateralPriceHook.isStale && collateralPriceHook.priceFeedAddress && collateralPrice) {
-        const collateralPriceFeed = collateralPriceHook.priceFeedAddress as Address;
-        refreshPromises.push(
-          refreshPrice(collateralPriceFeed, collateralPrice)
-            .then(() => {
-              toast.success(`${TOKEN_LIST.find((t) => t.address === collateralToken)?.symbol} price refreshed!`);
-              collateralPriceHook.refetch();
-            })
-        );
-      }
-
-      // Refresh borrow token price if stale
-      if (borrowPriceHook.isStale && borrowPriceHook.priceFeedAddress && borrowPrice) {
-        const borrowPriceFeed = borrowPriceHook.priceFeedAddress as Address;
-        refreshPromises.push(
-          refreshPrice(borrowPriceFeed, borrowPrice)
-            .then(() => {
-              toast.success(`${TOKEN_LIST.find((t) => t.address === borrowToken)?.symbol} price refreshed!`);
-              borrowPriceHook.refetch();
-            })
-        );
-      }
-
-      if (refreshPromises.length === 0) {
-        toast.error('No stale prices to refresh');
-        return;
-      }
-
-      await Promise.all(refreshPromises);
-    } catch (error) {
-      console.error('Error refreshing prices:', error);
-      toast.error('Failed to refresh prices. You may not have permission to update the oracle.');
-    }
-  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!collateralAmount || !borrowAmount) {
       toast.error('Please fill in all fields');
-      return;
-    }
-
-    if (!interestRate || parseFloat(interestRate) <= 0) {
-      toast.error('Please enter a valid interest rate');
       return;
     }
 
@@ -346,7 +304,6 @@ export function CreateLoanRequestForm() {
   // Calculate LTV percentage and liquidation threshold for display
   const ltvPercentage = ltvBps ? (Number(ltvBps) / 100).toFixed(2) : '0';
   const liquidationPercentage = liquidationThresholdBps ? (Number(liquidationThresholdBps) / 100).toFixed(2) : '0';
-  const maxInterestRatePercentage = maxInterestRateBps ? (Number(maxInterestRateBps) / 100).toFixed(2) : '100';
 
   // Calculate USD values
   const collateralUSD = collateralAmount && collateralPrice
@@ -357,11 +314,13 @@ export function CreateLoanRequestForm() {
     ? (parseFloat(borrowAmount) * Number(borrowPrice)) / 1e8
     : 0;
 
-  // Calculate health factor: (collateralUSD * liquidationThreshold) / loanUSD
-  // Health factor > 1 means healthy, < 1 means liquidatable
-  const healthFactor = borrowUSD > 0 && liquidationThresholdBps
-    ? (collateralUSD * Number(liquidationThresholdBps)) / (borrowUSD * 10000)
-    : 0;
+  // Health factor from blockchain (1e18 = 100% / 1.0)
+  // Convert from 1e18 scale to decimal: healthFactor / 1e18
+  const healthFactor = onChainHealthFactor
+    ? Number(onChainHealthFactor as bigint) / 1e18
+    : borrowUSD > 0 && liquidationThresholdBps
+      ? (collateralUSD * Number(liquidationThresholdBps)) / (borrowUSD * 10000)
+      : 0;
 
   // Calculate max balance in human-readable format
   const maxCollateralBalance = collateralBalance
@@ -404,8 +363,6 @@ export function CreateLoanRequestForm() {
     parseFloat(collateralAmount) > 0 &&
     borrowAmount &&
     parseFloat(borrowAmount) > 0 &&
-    interestRate &&
-    parseFloat(interestRate) > 0 &&
     !isCalculating &&
     !isPriceStale &&
     !hasZeroBalance &&
@@ -452,25 +409,32 @@ export function CreateLoanRequestForm() {
                 value={collateralToken}
                 onChange={(e) => setCollateralToken(e.target.value as Address)}
               />
-              <div className="relative">
-                <Input
-                  label="Collateral Amount"
-                  type="number"
-                  step="any"
-                  placeholder="0.0"
-                  value={collateralAmount}
-                  onChange={(e) => handleCollateralAmountChange(e.target.value)}
-                  suffix={TOKEN_LIST.find((t) => t.address === collateralToken)?.symbol}
-                />
-                {maxCollateralBalanceNumber > 0 && (
-                  <button
-                    type="button"
-                    onClick={handleSetMaxBalance}
-                    className="absolute right-16 top-9 text-xs text-primary-400 hover:text-primary-300 font-medium"
-                  >
-                    MAX
-                  </button>
-                )}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Collateral Amount</label>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1">
+                    <input
+                      type="number"
+                      step="any"
+                      placeholder="0.0"
+                      value={collateralAmount}
+                      onChange={(e) => handleCollateralAmountChange(e.target.value)}
+                      className="input-field w-full"
+                    />
+                  </div>
+                  {maxCollateralBalanceNumber > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleSetMaxBalance}
+                      className="px-3 py-2 text-xs font-semibold text-primary-400 hover:text-primary-300 bg-primary-400/10 hover:bg-primary-400/20 rounded-lg transition-colors"
+                    >
+                      MAX
+                    </button>
+                  )}
+                  <span className="text-sm text-gray-400 min-w-[40px]">
+                    {TOKEN_LIST.find((t) => t.address === collateralToken)?.symbol}
+                  </span>
+                </div>
               </div>
               <div className="flex justify-between text-sm">
                 {collateralBalance !== undefined && collateralBalance !== null && (
@@ -538,22 +502,24 @@ export function CreateLoanRequestForm() {
                 onChange={(e) => setBorrowToken(e.target.value as Address)}
               />
               <div>
-                <div className="relative">
-                  <Input
-                    label="Borrow Amount (Auto-calculated)"
-                    type="text"
-                    value={isCalculating ? 'Calculating...' : borrowAmount}
-                    readOnly
-                    disabled
-                    suffix={TOKEN_LIST.find((t) => t.address === borrowToken)?.symbol}
-                    className="bg-gray-800/50 cursor-not-allowed"
-                  />
-                  <div className="absolute right-3 top-9">
+                <label className="block text-sm font-medium text-gray-300 mb-2">Borrow Amount (Auto-calculated)</label>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1">
+                    <input
+                      type="text"
+                      value={isCalculating ? 'Calculating...' : borrowAmount}
+                      readOnly
+                      disabled
+                      className="input-field w-full bg-gray-800/50 cursor-not-allowed"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2 min-w-[60px]">
                     {isCalculating ? (
                       <Loader2 className="w-4 h-4 text-primary-400 animate-spin" />
-                    ) : (
-                      <Info className="w-4 h-4 text-gray-400" />
-                    )}
+                    ) : null}
+                    <span className="text-sm text-gray-400">
+                      {TOKEN_LIST.find((t) => t.address === borrowToken)?.symbol}
+                    </span>
                   </div>
                 </div>
                 {borrowUSD > 0 && (
@@ -577,19 +543,13 @@ export function CreateLoanRequestForm() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <Input
-                label={`Interest Rate (APY %) - Max: ${maxInterestRatePercentage}%`}
-                type="number"
-                step="0.1"
-                min="0"
-                max={maxInterestRatePercentage}
-                placeholder="10"
-                value={interestRate}
-                onChange={(e) => setInterestRate(e.target.value)}
-                suffix="%"
-              />
+              <label className="block text-sm font-medium text-gray-300 mb-2">Interest Rate (APY)</label>
+              <div className="flex items-center h-[42px] px-4 bg-gray-800/50 border border-gray-600 rounded-lg">
+                <span className="text-lg font-semibold text-primary-400">12%</span>
+                <span className="ml-2 text-sm text-gray-400">Fixed APY</span>
+              </div>
               <p className="text-xs text-gray-400 mt-1">
-                Lower rates are more attractive to lenders
+                Fixed interest rate for all loans
               </p>
             </div>
             <Select
@@ -600,48 +560,11 @@ export function CreateLoanRequestForm() {
             />
           </div>
 
-          {/* Price Staleness Warning */}
-          {isPriceStale && (
-            <div className="glass-card p-4 border border-red-500/20 bg-red-500/5">
-              <div className="flex gap-3">
-                <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-                <div className="space-y-2 text-sm flex-1">
-                  <p className="text-red-400 font-medium">Price Data is Stale</p>
-                  <p className="text-gray-400">
-                    The price feed data is outdated. Transactions will fail until prices are refreshed.
-                    This is common on testnets where price feeds update less frequently.
-                  </p>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={handleRefreshPrices}
-                    loading={isRefreshingPrice}
-                    icon={<RefreshCw className="w-4 h-4" />}
-                    className="mt-2"
-                  >
-                    {isRefreshingPrice ? 'Refreshing...' : 'Refresh Price Feeds (Testnet)'}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Price Freshness Indicator */}
-          {!isPriceStale && minSecondsUntilStale < 300 && minSecondsUntilStale > 0 && (
-            <div className="glass-card p-4 border border-yellow-500/20 bg-yellow-500/5">
-              <div className="flex gap-3">
-                <AlertCircle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
-                <div className="space-y-1 text-sm">
-                  <p className="text-yellow-400 font-medium">Price Data Expiring Soon</p>
-                  <p className="text-gray-400">
-                    Price data will become stale in {Math.floor(minSecondsUntilStale / 60)}:{(minSecondsUntilStale % 60).toString().padStart(2, '0')} minutes.
-                    Complete your transaction soon.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
+          {/* Price Feeds */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <PriceFeedDisplay tokenAddress={collateralToken} variant="compact" />
+            <PriceFeedDisplay tokenAddress={borrowToken} variant="compact" />
+          </div>
 
           {/* Info Banner */}
           <div className="glass-card p-4 border border-blue-500/20">

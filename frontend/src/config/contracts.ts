@@ -6,6 +6,7 @@ export const CONTRACT_ADDRESSES = {
   configuration: process.env.NEXT_PUBLIC_CONFIGURATION_ADDRESS as Address || '0x0000000000000000000000000000000000000000' as Address,
   collateralEscrow: process.env.NEXT_PUBLIC_COLLATERAL_ESCROW_ADDRESS as Address || '0x0000000000000000000000000000000000000000' as Address,
   ltvConfig: process.env.NEXT_PUBLIC_LTV_CONFIG_ADDRESS as Address || '0x0000000000000000000000000000000000000000' as Address,
+  supplierRegistry: process.env.NEXT_PUBLIC_SUPPLIER_REGISTRY_ADDRESS as Address || '0x0000000000000000000000000000000000000000' as Address,
 } as const;
 
 // Native ETH address (used as placeholder for native token)
