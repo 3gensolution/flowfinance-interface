@@ -17,6 +17,7 @@ import {
   useApproveToken,
   useTokenBalance,
   useTokenAllowance,
+  useLTV,
 } from '@/hooks/useContracts';
 import { LoanRequestStatus } from '@/types';
 import {
@@ -121,10 +122,12 @@ export default function OfferDetailPage() {
     ? formatTokenAmount(offer.minCollateralAmount, collateralDecimals)
     : '0';
 
-  // Calculate LTV for the minimum collateral
-  const currentLTV = minCollateralUSD > 0 && lendUSD > 0
-    ? (lendUSD / minCollateralUSD) * 100
-    : 0;
+  // Get LTV from contract (duration is in seconds, convert to days)
+  const durationDays = offer ? Math.ceil(Number(offer.duration) / (24 * 60 * 60)) : 0;
+  const { data: ltvBps } = useLTV(offer?.requiredCollateralAsset, durationDays);
+
+  // LTV from contract is in basis points (10000 = 100%)
+  const currentLTV = ltvBps ? Number(ltvBps) / 100 : 0;
 
   // Balance calculations
   const maxCollateralBalance = borrowerCollateralBalance

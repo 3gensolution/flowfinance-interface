@@ -1,12 +1,14 @@
 import { Address } from 'viem';
 
-// Contract addresses on Base Sepolia
+// Contract addresses on Base Sepolia (Proxy Addresses - interact directly with these)
 export const CONTRACT_ADDRESSES = {
   loanMarketPlace: process.env.NEXT_PUBLIC_LOAN_MARKETPLACE_ADDRESS as Address || '0x0000000000000000000000000000000000000000' as Address,
   configuration: process.env.NEXT_PUBLIC_CONFIGURATION_ADDRESS as Address || '0x0000000000000000000000000000000000000000' as Address,
   collateralEscrow: process.env.NEXT_PUBLIC_COLLATERAL_ESCROW_ADDRESS as Address || '0x0000000000000000000000000000000000000000' as Address,
   ltvConfig: process.env.NEXT_PUBLIC_LTV_CONFIG_ADDRESS as Address || '0x0000000000000000000000000000000000000000' as Address,
   supplierRegistry: process.env.NEXT_PUBLIC_SUPPLIER_REGISTRY_ADDRESS as Address || '0x0000000000000000000000000000000000000000' as Address,
+  fiatOracle: process.env.NEXT_PUBLIC_FIAT_ORACLE_ADDRESS as Address || '0x0000000000000000000000000000000000000000' as Address,
+  fiatLoanBridge: process.env.NEXT_PUBLIC_FIAT_LOAN_BRIDGE_ADDRESS as Address || '0x0000000000000000000000000000000000000000' as Address,
 } as const;
 
 // Native ETH address (used as placeholder for native token)

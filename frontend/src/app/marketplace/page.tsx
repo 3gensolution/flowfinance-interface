@@ -6,16 +6,23 @@ import { useAccount } from 'wagmi';
 import { useSearchParams } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { LoanRequestCard, LenderOfferCard } from '@/components/loan/LoanCard';
+import { LoanRequestCard, LenderOfferCard, FiatLoanRequestCard } from '@/components/loan/LoanCard';
 import {
   useNextLoanRequestId,
   useNextLenderOfferId,
   useBatchLoanRequests,
   useBatchLenderOffers
 } from '@/hooks/useContracts';
+import {
+  usePendingFiatLoansWithDetails,
+  useActiveFiatLoansWithDetails,
+  useFiatLoanStats,
+  FiatLoanStatus,
+  useAcceptFiatLoanRequest,
+} from '@/hooks/useFiatLoan';
 import { useSupplierDetails } from '@/hooks/useSupplier';
 import { LoanRequestStatus } from '@/types';
-import { Search, Filter, TrendingUp, FileText, Loader2, RefreshCw, Clock, Banknote, Coins } from 'lucide-react';
+import { Search, Filter, TrendingUp, FileText, Loader2, RefreshCw, Clock, Banknote, Coins, DollarSign } from 'lucide-react';
 import Link from 'next/link';
 import { getTokenDecimals } from '@/lib/utils';
 
@@ -28,7 +35,10 @@ function MarketplaceContent() {
   const [marketType, setMarketType] = useState<MarketType>('crypto');
   const [searchTerm, setSearchTerm] = useState('');
   const { address } = useAccount();
-  const { isVerified: isVerifiedSupplier } = useSupplierDetails(address);
+
+  // Supplier status for fiat loans
+  const { isVerified: isSupplierVerified, isActive: isSupplierActive } = useSupplierDetails(address);
+  const isVerifiedSupplier = isSupplierVerified && isSupplierActive;
 
   // Handle tab query parameter
   useEffect(() => {
@@ -61,6 +71,41 @@ function MarketplaceContent() {
     isLoading: isLoadingOffers,
     refetch: refetchOffers
   } = useBatchLenderOffers(1, Math.min(offerCount, 20));
+
+  // Fiat loan data
+  const {
+    data: pendingFiatLoans,
+    isLoading: isLoadingPendingFiat,
+    refetch: refetchPendingFiat
+  } = usePendingFiatLoansWithDetails();
+
+  const {
+    isLoading: isLoadingActiveFiat,
+    refetch: refetchActiveFiat
+  } = useActiveFiatLoansWithDetails();
+
+  const { data: fiatStats, isLoading: isLoadingFiatStats } = useFiatLoanStats();
+
+  // Accept fiat loan request hook
+  const { acceptFiatLoanRequest, isPending: isAcceptingFiat } = useAcceptFiatLoanRequest();
+
+  // Filter fiat loans for display (exclude user's own)
+  const displayPendingFiatLoans = useMemo(() => {
+    if (!pendingFiatLoans) return [];
+    return pendingFiatLoans.filter((loan) => {
+      if (address && loan.borrower.toLowerCase() === address.toLowerCase()) return false;
+      return loan.status === FiatLoanStatus.PENDING_SUPPLIER;
+    });
+  }, [pendingFiatLoans, address]);
+
+  // User's own pending fiat loans
+  const userPendingFiatLoans = useMemo(() => {
+    if (!pendingFiatLoans || !address) return 0;
+    return pendingFiatLoans.filter((loan) =>
+      loan.borrower.toLowerCase() === address.toLowerCase() &&
+      loan.status === FiatLoanStatus.PENDING_SUPPLIER
+    ).length;
+  }, [pendingFiatLoans, address]);
 
   // Filter for PENDING status and exclude user's own requests
   const loanRequests = useMemo(() => {
@@ -161,9 +206,12 @@ function MarketplaceContent() {
     refetchOfferCount();
     refetchRequests();
     refetchOffers();
+    refetchPendingFiat();
+    refetchActiveFiat();
   };
 
   const isLoading = isLoadingRequests || isLoadingOffers;
+  const isFiatLoading = isLoadingPendingFiat || isLoadingActiveFiat || isLoadingFiatStats;
 
   return (
     <div className="min-h-screen py-12 px-4 sm:px-6 lg:px-8">
@@ -184,37 +232,35 @@ function MarketplaceContent() {
         </motion.div>
 
         {/* Market Type Tabs (Crypto / Fiat) */}
-        {isVerifiedSupplier && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.05 }}
-            className="flex justify-center gap-2 mb-6"
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.05 }}
+          className="flex justify-center gap-2 mb-6"
+        >
+          <button
+            onClick={() => setMarketType('crypto')}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-sm transition-all ${
+              marketType === 'crypto'
+                ? 'bg-primary-500/20 text-primary-400 border border-primary-500/30'
+                : 'bg-white/5 text-gray-400 border border-gray-700 hover:border-gray-600'
+            }`}
           >
-            <button
-              onClick={() => setMarketType('crypto')}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-sm transition-all ${
-                marketType === 'crypto'
-                  ? 'bg-primary-500/20 text-primary-400 border border-primary-500/30'
-                  : 'bg-white/5 text-gray-400 border border-gray-700 hover:border-gray-600'
-              }`}
-            >
-              <Coins className="w-4 h-4" />
-              Crypto
-            </button>
-            <button
-              onClick={() => setMarketType('fiat')}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-sm transition-all ${
-                marketType === 'fiat'
-                  ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-                  : 'bg-white/5 text-gray-400 border border-gray-700 hover:border-gray-600'
-              }`}
-            >
-              <Banknote className="w-4 h-4" />
-              Fiat
-            </button>
-          </motion.div>
-        )}
+            <Coins className="w-4 h-4" />
+            Crypto
+          </button>
+          <button
+            onClick={() => setMarketType('fiat')}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-sm transition-all ${
+              marketType === 'fiat'
+                ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                : 'bg-white/5 text-gray-400 border border-gray-700 hover:border-gray-600'
+            }`}
+          >
+            <Banknote className="w-4 h-4" />
+            Fiat
+          </button>
+        </motion.div>
 
         {/* Crypto Marketplace */}
         {marketType === 'crypto' && (
@@ -438,38 +484,182 @@ function MarketplaceContent() {
         )}
 
         {/* Fiat Marketplace */}
-        {marketType === 'fiat' && isVerifiedSupplier && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-          >
-            <Card className="text-center py-16">
-              <Banknote className="w-16 h-16 text-green-400 mx-auto mb-6" />
-              <h3 className="text-2xl font-semibold mb-3">Fiat Loan Marketplace</h3>
-              <p className="text-gray-400 max-w-md mx-auto mb-6">
-                Browse and fund fiat loan requests from verified borrowers.
-                Provide liquidity in traditional currencies backed by crypto collateral.
-              </p>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 max-w-lg mx-auto mb-8">
-                <div className="p-3 bg-white/5 rounded-lg">
-                  <p className="text-xs text-gray-400">Active Fiat Loans</p>
-                  <p className="text-lg font-bold text-green-400">0</p>
-                </div>
-                <div className="p-3 bg-white/5 rounded-lg">
-                  <p className="text-xs text-gray-400">Total Volume</p>
-                  <p className="text-lg font-bold text-green-400">$0</p>
-                </div>
-                <div className="p-3 bg-white/5 rounded-lg col-span-2 md:col-span-1">
-                  <p className="text-xs text-gray-400">Avg Rate</p>
-                  <p className="text-lg font-bold text-green-400">12%</p>
-                </div>
+        {marketType === 'fiat' && (
+          <>
+            {/* Fiat Stats */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
+              className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8"
+            >
+              <Card className="text-center border-green-500/20">
+                <p className="text-gray-400 text-sm">Pending Requests</p>
+                <p className="text-2xl font-bold text-green-400">
+                  {fiatStats?.pendingCount || 0}
+                </p>
+              </Card>
+              <Card className="text-center border-green-500/20">
+                <p className="text-gray-400 text-sm">Active Loans</p>
+                <p className="text-2xl font-bold text-green-400">
+                  {fiatStats?.activeCount || 0}
+                </p>
+              </Card>
+              <Card className="text-center border-green-500/20">
+                <p className="text-gray-400 text-sm">Avg Interest Rate</p>
+                <p className="text-2xl font-bold text-green-400">
+                  {fiatStats?.avgInterestRate?.toFixed(1) || '0'}%
+                </p>
+              </Card>
+              <Card className="text-center border-green-500/20">
+                <p className="text-gray-400 text-sm">Total Volume</p>
+                <p className="text-2xl font-bold text-green-400">
+                  ${((fiatStats?.totalPendingVolume || 0) + (fiatStats?.totalActiveVolume || 0)).toLocaleString()}
+                </p>
+              </Card>
+            </motion.div>
+
+            {/* Fiat Action Bar */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6"
+            >
+              <div className="flex gap-2">
+                <Button
+                  variant="primary"
+                  className="bg-green-600 hover:bg-green-700"
+                  icon={<DollarSign className="w-4 h-4" />}
+                >
+                  Fiat Loan Requests
+                </Button>
               </div>
-              <p className="text-sm text-gray-500">
-                No fiat loan requests available at the moment. Check back soon!
-              </p>
-            </Card>
-          </motion.div>
+
+              <div className="flex gap-2 w-full sm:w-auto">
+                <Button
+                  variant="secondary"
+                  icon={isFiatLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                  onClick={handleRefresh}
+                  disabled={isFiatLoading}
+                >
+                  Refresh
+                </Button>
+              </div>
+            </motion.div>
+
+            {/* User's Own Pending Fiat Loans Info */}
+            {userPendingFiatLoans > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mb-6"
+              >
+                <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4 flex items-start gap-3">
+                  <Clock className="w-5 h-5 text-green-400 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-green-400 font-medium">
+                      You have {userPendingFiatLoans} pending fiat loan request{userPendingFiatLoans > 1 ? 's' : ''} awaiting funding
+                    </p>
+                    <p className="text-gray-400 text-sm mt-1">
+                      Your own requests are not shown here. They are visible to verified fiat suppliers who can fund them.
+                    </p>
+                    <Link href="/dashboard" className="text-green-400 text-sm hover:underline mt-2 inline-block">
+                      View your requests in Dashboard →
+                    </Link>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            {/* Supplier Notice */}
+            {!isVerifiedSupplier && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mb-6"
+              >
+                <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 flex items-start gap-3">
+                  <Banknote className="w-5 h-5 text-yellow-400 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-yellow-400 font-medium">
+                      Become a Fiat Supplier to Fund Loans
+                    </p>
+                    <p className="text-gray-400 text-sm mt-1">
+                      To fund fiat loan requests, you need to register and get verified as a fiat supplier.
+                    </p>
+                    <Link href="/dashboard" className="text-yellow-400 text-sm hover:underline mt-2 inline-block">
+                      Register as Supplier →
+                    </Link>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            {/* Fiat Loan Requests Grid */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.3 }}
+            >
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {isFiatLoading ? (
+                  <div className="col-span-full flex justify-center py-12">
+                    <Loader2 className="w-8 h-8 animate-spin text-green-400" />
+                  </div>
+                ) : displayPendingFiatLoans.length > 0 ? (
+                  displayPendingFiatLoans.map((loan) => (
+                    <FiatLoanRequestCard
+                      key={loan.loanId.toString()}
+                      loan={loan}
+                      isOwner={false}
+                      isSupplier={isVerifiedSupplier}
+                      onFund={isVerifiedSupplier ? async () => {
+                        try {
+                          await acceptFiatLoanRequest(loan.loanId);
+                        } catch (error) {
+                          console.error('Failed to fund fiat loan:', error);
+                        }
+                      } : undefined}
+                      loading={isAcceptingFiat}
+                    />
+                  ))
+                ) : (
+                  <div className="col-span-full">
+                    <Card className="text-center py-12 border-green-500/20">
+                      <Banknote className="w-12 h-12 text-green-400 mx-auto mb-4" />
+                      <h3 className="text-xl font-semibold mb-2">No Pending Fiat Loan Requests</h3>
+                      <p className="text-gray-400 mb-4">
+                        There are no pending fiat loan requests at the moment.
+                      </p>
+                      <Link href="/borrow">
+                        <Button className="bg-green-600 hover:bg-green-700">Create a Fiat Loan Request</Button>
+                      </Link>
+                    </Card>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+
+            {/* Fiat CTA */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.4 }}
+              className="mt-12 text-center"
+            >
+              <Card className="inline-block border-green-500/20">
+                <p className="text-gray-400 mb-4">
+                  Need fiat liquidity backed by your crypto?
+                </p>
+                <div className="flex gap-4 justify-center">
+                  <Link href="/borrow">
+                    <Button className="bg-green-600 hover:bg-green-700">Create Fiat Loan Request</Button>
+                  </Link>
+                </div>
+              </Card>
+            </motion.div>
+          </>
         )}
       </div>
     </div>

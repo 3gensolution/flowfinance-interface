@@ -112,16 +112,13 @@ export function useRegisterSupplier() {
   const registerSupplier = async (
     supplierType: SupplierType,
     name: string,
-    businessRegistrationNumber: string,
-    kycDocumentHash: string,
-    stakeAmount: bigint
+    businessRegistrationNumber: string
   ) => {
     return await writeContractAsync({
       address: CONTRACT_ADDRESSES.supplierRegistry,
       abi: SupplierRegistryABI,
       functionName: 'registerSupplier',
-      args: [supplierType, name, businessRegistrationNumber, kycDocumentHash],
-      value: stakeAmount,
+      args: [supplierType, name, businessRegistrationNumber],
     });
   };
 

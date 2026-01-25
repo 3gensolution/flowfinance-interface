@@ -5,8 +5,9 @@ import { Badge, LoanStatusBadge, RequestStatusBadge, HealthBadge } from '@/compo
 import { Button } from '@/components/ui/Button';
 import { Loan, LoanRequest, LenderOffer, LoanStatus, LoanRequestStatus, getHealthStatus } from '@/types';
 import { formatTokenAmount, formatPercentage, formatDuration, formatTimeUntil, getTokenSymbol, getTokenDecimals, getHealthFactorColor } from '@/lib/utils';
-import { useTokenPrice } from '@/hooks/useContracts';
-import { Clock, TrendingUp, Shield, ExternalLink } from 'lucide-react';
+import { useTokenPrice, useLTV } from '@/hooks/useContracts';
+import { FiatLoan, FiatLoanStatus } from '@/hooks/useFiatLoan';
+import { Clock, TrendingUp, Shield, ExternalLink, DollarSign } from 'lucide-react';
 import Link from 'next/link';
 
 // Helper to format USD values
@@ -43,8 +44,12 @@ export function LoanRequestCard({ request, onFund, onCancel, isOwner, loading }:
     ? (Number(request.collateralAmount) / Math.pow(10, Number(collateralDecimals))) * Number(collateralPrice) / 1e8
     : 0;
 
-  // Calculate LTV
-  const ltv = collateralUSD > 0 ? (borrowUSD / collateralUSD) * 100 : 0;
+  // Get LTV from contract (duration is in seconds, convert to days)
+  const durationDays = Math.ceil(Number(request.duration) / (24 * 60 * 60));
+  const { data: ltvBps } = useLTV(request.collateralToken, durationDays);
+
+  // LTV from contract is in basis points (10000 = 100%)
+  const ltv = ltvBps ? Number(ltvBps) / 100 : 0;
 
   return (
     <Card hover className="flex flex-col h-full">
@@ -148,8 +153,12 @@ export function LenderOfferCard({ offer, onAccept, onCancel, isOwner, loading }:
     ? (Number(offer.minCollateralAmount) / Math.pow(10, Number(collateralDecimals))) * Number(collateralPrice) / 1e8
     : 0;
 
-  // Calculate LTV
-  const ltv = collateralUSD > 0 ? (lendUSD / collateralUSD) * 100 : 0;
+  // Get LTV from contract (duration is in seconds, convert to days)
+  const durationDays = Math.ceil(Number(offer.duration) / (24 * 60 * 60));
+  const { data: ltvBps } = useLTV(offer.requiredCollateralAsset, durationDays);
+
+  // LTV from contract is in basis points (10000 = 100%)
+  const ltv = ltvBps ? Number(ltvBps) / 100 : 0;
 
   return (
     <Card hover className="flex flex-col h-full">
@@ -359,6 +368,137 @@ export function ActiveLoanCard({
           </Button>
         )}
         <Link href={`/loan/${loan.loanId}`} className="flex-1">
+          <Button variant="secondary" className="w-full" icon={<ExternalLink className="w-4 h-4" />}>
+            Details
+          </Button>
+        </Link>
+      </div>
+    </Card>
+  );
+}
+
+// Fiat Loan Request Card
+interface FiatLoanRequestCardProps {
+  loan: FiatLoan;
+  onFund?: () => void;
+  onCancel?: () => void;
+  isOwner?: boolean;
+  isSupplier?: boolean;
+  loading?: boolean;
+}
+
+export function FiatLoanRequestCard({ loan, onFund, onCancel, isOwner, isSupplier, loading }: FiatLoanRequestCardProps) {
+  const collateralSymbol = getTokenSymbol(loan.collateralAsset);
+  const collateralDecimals = getTokenDecimals(loan.collateralAsset);
+
+  // Get USD price for collateral
+  const { price: collateralPrice } = useTokenPrice(loan.collateralAsset);
+
+  // Calculate USD values
+  const fiatAmount = Number(loan.fiatAmountCents) / 100;
+  const collateralUSD = collateralPrice
+    ? (Number(loan.collateralAmount) / Math.pow(10, Number(collateralDecimals))) * Number(collateralPrice) / 1e8
+    : 0;
+
+  // Get LTV from contract (duration is in seconds, convert to days)
+  const durationDays = Math.ceil(Number(loan.duration) / (24 * 60 * 60));
+  const { data: ltvBps } = useLTV(loan.collateralAsset, durationDays);
+
+  // LTV from contract is in basis points (10000 = 100%)
+  const ltv = ltvBps ? Number(ltvBps) / 100 : 0;
+
+  // Format expiration (7 days from creation for pending loans)
+  const expiresAt = Number(loan.createdAt) + (7 * 24 * 60 * 60);
+
+  // Status badge color
+  const getStatusBadge = () => {
+    switch (loan.status) {
+      case FiatLoanStatus.PENDING_SUPPLIER:
+        return <Badge variant="warning" size="sm">Pending</Badge>;
+      case FiatLoanStatus.ACTIVE:
+        return <Badge variant="success" size="sm">Active</Badge>;
+      case FiatLoanStatus.REPAID:
+        return <Badge variant="info" size="sm">Repaid</Badge>;
+      case FiatLoanStatus.LIQUIDATED:
+        return <Badge variant="danger" size="sm">Liquidated</Badge>;
+      case FiatLoanStatus.CANCELLED:
+        return <Badge variant="default" size="sm">Cancelled</Badge>;
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <Card hover className="flex flex-col h-full border-green-500/20">
+      <div className="flex items-start justify-between mb-4">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <DollarSign className="w-5 h-5 text-green-400" />
+            <span className="text-lg font-bold text-green-400">
+              ${fiatAmount.toLocaleString()} {loan.currency}
+            </span>
+          </div>
+          <p className="text-sm text-gray-400 mt-1">
+            Collateral: {formatTokenAmount(loan.collateralAmount, collateralDecimals)} {collateralSymbol}
+            {collateralUSD > 0 && (
+              <span className="text-gray-500"> ({formatUSD(collateralUSD)})</span>
+            )}
+          </p>
+        </div>
+        {getStatusBadge()}
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 mb-4">
+        <div className="flex items-center gap-2">
+          <TrendingUp className="w-4 h-4 text-green-400" />
+          <div>
+            <p className="text-xs text-gray-400">Interest Rate</p>
+            <p className="font-medium">{formatPercentage(loan.interestRate)}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Clock className="w-4 h-4 text-primary-400" />
+          <div>
+            <p className="text-xs text-gray-400">Duration</p>
+            <p className="font-medium">{formatDuration(loan.duration)}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* LTV Display */}
+      {ltv > 0 && (
+        <div className="flex items-center justify-between mb-3 px-2 py-1.5 bg-green-500/10 rounded-lg border border-green-500/20">
+          <span className="text-xs text-gray-400">LTV Ratio</span>
+          <span className={`text-sm font-medium ${ltv > 80 ? 'text-red-400' : ltv > 70 ? 'text-yellow-400' : 'text-green-400'}`}>
+            {ltv.toFixed(1)}%
+          </span>
+        </div>
+      )}
+
+      {loan.status === FiatLoanStatus.PENDING_SUPPLIER && (
+        <div className="text-sm text-gray-400 mb-4">
+          Expires: {formatTimeUntil(BigInt(expiresAt))}
+        </div>
+      )}
+
+      {loan.status === FiatLoanStatus.ACTIVE && loan.dueDate > BigInt(0) && (
+        <div className="text-sm text-gray-400 mb-4">
+          Due: {new Date(Number(loan.dueDate) * 1000).toLocaleDateString()}
+        </div>
+      )}
+
+      <div className="mt-auto flex gap-2">
+        {loan.status === FiatLoanStatus.PENDING_SUPPLIER && !isOwner && isSupplier && onFund && (
+          <Button onClick={onFund} loading={loading} className="flex-1 bg-green-600 hover:bg-green-700">
+            Fund Request
+          </Button>
+        )}
+        {loan.status === FiatLoanStatus.PENDING_SUPPLIER && isOwner && onCancel && (
+          <Button variant="danger" onClick={onCancel} loading={loading} className="flex-1">
+            Cancel
+          </Button>
+        )}
+        <Link href={`/fiat-loan/${loan.loanId}`} className="flex-1">
           <Button variant="secondary" className="w-full" icon={<ExternalLink className="w-4 h-4" />}>
             Details
           </Button>

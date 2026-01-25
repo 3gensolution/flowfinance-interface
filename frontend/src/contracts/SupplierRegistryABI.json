@@ -3,12 +3,11 @@
     "inputs": [
       { "internalType": "enum DataTypes.SupplierType", "name": "supplierType", "type": "uint8" },
       { "internalType": "string", "name": "name", "type": "string" },
-      { "internalType": "string", "name": "businessRegistrationNumber", "type": "string" },
-      { "internalType": "string", "name": "kycDocumentHash", "type": "string" }
+      { "internalType": "string", "name": "businessRegistrationNumber", "type": "string" }
     ],
     "name": "registerSupplier",
     "outputs": [],
-    "stateMutability": "payable",
+    "stateMutability": "nonpayable",
     "type": "function"
   },
   {

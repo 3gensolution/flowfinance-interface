@@ -9,23 +9,17 @@ import { Select } from '@/components/ui/Input';
 import { TOKEN_LIST, CONTRACT_ADDRESSES } from '@/config/contracts';
 import {
   useApproveToken,
-  useCreateLoanRequest,
   useTokenBalance,
   useTokenAllowance,
   useLTV,
   useTokenPrice,
   useLiquidationThreshold,
-  useHealthFactor,
 } from '@/hooks/useContracts';
+import { useCreateFiatLoanRequest } from '@/hooks/useFiatLoan';
 import { PriceFeedDisplay } from '@/components/loan/PriceFeedDisplay';
 import { formatTokenAmount, daysToSeconds, getTokenDecimals } from '@/lib/utils';
-import { simulateContractWrite, formatSimulationError } from '@/lib/contractSimulation';
-import LoanMarketPlaceABIJson from '@/contracts/LoanMarketPlaceABI.json';
-import { Abi } from 'viem';
-import { ArrowRight, AlertCircle, CheckCircle, Info, TrendingUp, Shield, Loader2 } from 'lucide-react';
+import { ArrowRight, AlertCircle, CheckCircle, Info, TrendingUp, Shield, Loader2, DollarSign, Banknote } from 'lucide-react';
 import toast from 'react-hot-toast';
-
-const LoanMarketPlaceABI = LoanMarketPlaceABIJson as Abi;
 
 const durationOptions = [
   { value: '7', label: '7 days' },
@@ -37,13 +31,23 @@ const durationOptions = [
   { value: '365', label: '365 days' },
 ];
 
-export function CreateLoanRequestForm() {
+const currencyOptions = [
+  { value: 'USD', label: 'USD - US Dollar' },
+  { value: 'NGN', label: 'NGN - Nigerian Naira' },
+  { value: 'EUR', label: 'EUR - Euro' },
+  { value: 'GBP', label: 'GBP - British Pound' },
+  { value: 'KES', label: 'KES - Kenyan Shilling' },
+  { value: 'GHS', label: 'GHS - Ghanaian Cedi' },
+  { value: 'ZAR', label: 'ZAR - South African Rand' },
+];
+
+export function CreateFiatLoanRequestForm() {
   const { address, isConnected } = useAccount();
 
   const [collateralToken, setCollateralToken] = useState<Address>(TOKEN_LIST[0].address);
   const [collateralAmount, setCollateralAmount] = useState('');
-  const [borrowToken, setBorrowToken] = useState<Address>(TOKEN_LIST[1].address);
-  const [borrowAmount, setBorrowAmount] = useState('');
+  const [fiatAmount, setFiatAmount] = useState('');
+  const [currency, setCurrency] = useState('USD');
   const interestRate = '12'; // Fixed at 12% APY
   const [duration, setDuration] = useState('30');
   const [step, setStep] = useState<'form' | 'approve' | 'confirm'>('form');
@@ -51,25 +55,19 @@ export function CreateLoanRequestForm() {
   const [isCalculating, setIsCalculating] = useState(false);
 
   const collateralDecimals = getTokenDecimals(collateralToken);
-  const borrowDecimals = getTokenDecimals(borrowToken);
 
   // Fetch token balances and prices
   const { data: collateralBalance } = useTokenBalance(collateralToken, address);
   const { data: allowance, refetch: refetchAllowance } = useTokenAllowance(
     collateralToken,
     address,
-    CONTRACT_ADDRESSES.loanMarketPlace
+    CONTRACT_ADDRESSES.fiatLoanBridge
   );
 
-  // Fetch token prices (with staleness info)
+  // Fetch token prices
   const collateralPriceHook = useTokenPrice(collateralToken);
-  const borrowPriceHook = useTokenPrice(borrowToken);
-
   const collateralPrice = collateralPriceHook.price;
-  const borrowPrice = borrowPriceHook.price;
-
-  // Check if any price data is stale
-  const isPriceStale = collateralPriceHook.isStale || borrowPriceHook.isStale;
+  const isPriceStale = collateralPriceHook.isStale;
 
   // Fetch LTV and configuration
   const durationDays = parseInt(duration);
@@ -77,7 +75,7 @@ export function CreateLoanRequestForm() {
   const { data: liquidationThresholdBps } = useLiquidationThreshold(collateralToken, durationDays);
 
   const { approve, isPending: isApproving, isSuccess: approveSuccess } = useApproveToken();
-  const { createRequest, isPending: isCreating, isSuccess: createSuccess, error: createError } = useCreateLoanRequest();
+  const { createFiatLoanRequest, isPending: isCreating, isSuccess: createSuccess, error: createError } = useCreateFiatLoanRequest();
 
   const parsedCollateralAmount = collateralAmount
     ? parseUnits(collateralAmount, collateralDecimals)
@@ -86,84 +84,56 @@ export function CreateLoanRequestForm() {
   const needsApproval = allowance !== undefined && parsedCollateralAmount > (allowance as bigint);
 
   // Track if we're calculating (waiting for prices and LTV)
-  const isDataLoading = collateralPriceHook.isLoading || borrowPriceHook.isLoading || isLoadingLTV;
+  const isDataLoading = collateralPriceHook.isLoading || isLoadingLTV;
 
-  // Compute loanAmountUSD for on-chain health factor query
-  const parsedBorrowForHealth = borrowAmount ? (() => {
-    try {
-      const borrowAmountBigInt = parseUnits(borrowAmount, borrowDecimals);
-      return borrowPrice ? (borrowAmountBigInt * (borrowPrice as bigint)) / BigInt(10 ** borrowDecimals) : undefined;
-    } catch { return undefined; }
-  })() : undefined;
-
-  // On-chain health factor from LTVConfig contract
-  const { data: onChainHealthFactor } = useHealthFactor(
-    collateralToken,
-    parsedCollateralAmount > BigInt(0) ? parsedCollateralAmount : undefined,
-    collateralPrice as bigint | undefined,
-    parsedBorrowForHealth,
-    durationDays
-  );
-
-  // Calculate maximum borrow amount based on LTV
+  // Calculate maximum fiat borrow amount based on LTV
   useEffect(() => {
-    // Reset borrow amount if no collateral amount
     if (!collateralAmount || parseFloat(collateralAmount) <= 0) {
-      setBorrowAmount('');
+      setFiatAmount('');
       setIsCalculating(false);
       setSimulationError('');
       return;
     }
 
-    // Show loading if we're waiting for data
     if (isDataLoading) {
       setIsCalculating(true);
       return;
     }
 
-    // Calculate if we have all required data
-    if (collateralAmount && collateralPrice && borrowPrice && ltvBps) {
+    if (collateralAmount && collateralPrice && ltvBps) {
       setIsCalculating(true);
       setSimulationError('');
 
       try {
         const collateralAmountBigInt = parseUnits(collateralAmount, collateralDecimals);
 
-        // Calculate collateral value in USD
-        // collateralAmount (18 decimals) * price (8 decimals) / 10^18 = value in USD with 8 decimals
+        // Calculate collateral value in USD (8 decimals from Chainlink)
         const collateralValueUSD = (collateralAmountBigInt * (collateralPrice as bigint)) / BigInt(10 ** collateralDecimals);
 
         // Apply LTV (ltvBps is in basis points, 10000 = 100%)
         const maxLoanUSD = (collateralValueUSD * (ltvBps as bigint)) / BigInt(10000);
 
-        // Convert to borrow token amount
-        // maxLoanUSD (8 decimals) * 10^borrowDecimals / price (8 decimals) = borrow amount
-        const maxBorrowAmount = (maxLoanUSD * BigInt(10 ** borrowDecimals)) / (borrowPrice as bigint);
+        // Convert to cents (multiply by 100, divide by 1e8 for Chainlink decimals)
+        const maxFiatCents = (maxLoanUSD * BigInt(100)) / BigInt(1e8);
+        const maxFiatDollars = Number(maxFiatCents) / 100;
 
-        // Set the borrow amount (read-only)
-        const maxBorrowFormatted = formatUnits(maxBorrowAmount, borrowDecimals);
-        const finalAmount = parseFloat(maxBorrowFormatted).toFixed(6);
-
-        setBorrowAmount(finalAmount);
+        setFiatAmount(maxFiatDollars.toFixed(2));
       } catch (error) {
-        console.error('Error calculating borrow amount:', error);
-        setBorrowAmount('0');
-        setSimulationError('Error calculating borrow amount');
+        console.error('Error calculating fiat amount:', error);
+        setFiatAmount('0');
+        setSimulationError('Error calculating fiat amount');
       } finally {
         setIsCalculating(false);
       }
     } else {
-      // Check if there's an LTV error (asset not enabled)
       if (ltvError && collateralAmount) {
         const errorMsg = (ltvError as Error & { shortMessage?: string })?.shortMessage || 'Asset not enabled in LTV configuration';
         setSimulationError(errorMsg);
-        setBorrowAmount('');
+        setFiatAmount('');
       }
-
       setIsCalculating(false);
     }
-  }, [collateralAmount, collateralPrice, borrowPrice, ltvBps, collateralDecimals, borrowDecimals, isDataLoading, ltvError, duration]);
-
+  }, [collateralAmount, collateralPrice, ltvBps, collateralDecimals, isDataLoading, ltvError, duration]);
 
   useEffect(() => {
     if (approveSuccess) {
@@ -175,24 +145,23 @@ export function CreateLoanRequestForm() {
 
   useEffect(() => {
     if (createSuccess) {
-      toast.success('Loan request created successfully!');
+      toast.success('Fiat loan request created successfully!');
       setCollateralAmount('');
-      setBorrowAmount('');
+      setFiatAmount('');
       setStep('form');
     }
   }, [createSuccess]);
 
   useEffect(() => {
     if (createError) {
-      toast.error('Failed to create loan request');
+      toast.error('Failed to create fiat loan request');
     }
   }, [createError]);
-
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!collateralAmount || !borrowAmount) {
+    if (!collateralAmount || !fiatAmount) {
       toast.error('Please fill in all fields');
       return;
     }
@@ -223,36 +192,9 @@ export function CreateLoanRequestForm() {
   const handleApprove = async () => {
     try {
       setSimulationError('');
-
-      // Simulate approval first
-      const simulation = await simulateContractWrite({
-        address: collateralToken,
-        abi: [
-          {
-            inputs: [
-              { name: 'spender', type: 'address' },
-              { name: 'amount', type: 'uint256' }
-            ],
-            name: 'approve',
-            outputs: [{ name: '', type: 'bool' }],
-            stateMutability: 'nonpayable',
-            type: 'function',
-          }
-        ],
-        functionName: 'approve',
-        args: [CONTRACT_ADDRESSES.loanMarketPlace, parsedCollateralAmount],
-      });
-
-      if (!simulation.success) {
-        setSimulationError(simulation.errorMessage || 'Simulation failed');
-        toast.error(simulation.errorMessage || 'Transaction will fail. Please check your inputs.');
-        return;
-      }
-
-      // Proceed with actual approval
-      approve(collateralToken, CONTRACT_ADDRESSES.loanMarketPlace, parsedCollateralAmount);
+      approve(collateralToken, CONTRACT_ADDRESSES.fiatLoanBridge, parsedCollateralAmount);
     } catch (error: unknown) {
-      const errorMsg = formatSimulationError(error);
+      const errorMsg = error instanceof Error ? error.message : 'Approval failed';
       setSimulationError(errorMsg);
       toast.error(errorMsg);
     }
@@ -262,35 +204,21 @@ export function CreateLoanRequestForm() {
     try {
       setSimulationError('');
 
-      const parsedBorrowAmount = parseUnits(borrowAmount, borrowDecimals);
+      // Convert fiat amount to cents
+      const fiatAmountCents = BigInt(Math.floor(parseFloat(fiatAmount) * 100));
       const interestRateBps = BigInt(Math.floor(parseFloat(interestRate) * 100));
       const durationSeconds = daysToSeconds(parseInt(duration));
 
-      // Simulate the transaction first
-      const simulation = await simulateContractWrite({
-        address: CONTRACT_ADDRESSES.loanMarketPlace,
-        abi: LoanMarketPlaceABI,
-        functionName: 'createLoanRequest',
-        args: [collateralToken, parsedCollateralAmount, borrowToken, parsedBorrowAmount, interestRateBps, durationSeconds],
-      });
-
-      if (!simulation.success) {
-        setSimulationError(simulation.errorMessage || 'Simulation failed');
-        toast.error(simulation.errorMessage || 'Transaction will fail. Please check your inputs.');
-        return;
-      }
-
-      // Proceed with actual transaction
-      await createRequest(
+      await createFiatLoanRequest(
         collateralToken,
         parsedCollateralAmount,
-        borrowToken,
-        parsedBorrowAmount,
+        fiatAmountCents,
+        currency,
         interestRateBps,
         durationSeconds
       );
     } catch (error: unknown) {
-      const errorMsg = formatSimulationError(error);
+      const errorMsg = error instanceof Error ? error.message : 'Transaction failed';
       setSimulationError(errorMsg);
       toast.error(errorMsg);
     }
@@ -304,25 +232,11 @@ export function CreateLoanRequestForm() {
   // Calculate LTV percentage and liquidation threshold for display
   const ltvPercentage = ltvBps ? (Number(ltvBps) / 100).toFixed(2) : '0';
   const liquidationPercentage = liquidationThresholdBps ? (Number(liquidationThresholdBps) / 100).toFixed(2) : '0';
-  console.log('ltvPercentage', ltvPercentage, 'ltvBps', ltvBps);
-  console.log('liquidationPercentage', liquidationPercentage)
 
   // Calculate USD values
   const collateralUSD = collateralAmount && collateralPrice
-    ? (parseFloat(collateralAmount) * Number(collateralPrice)) / 1e8 // Chainlink prices have 8 decimals
+    ? (parseFloat(collateralAmount) * Number(collateralPrice)) / 1e8
     : 0;
-
-  const borrowUSD = borrowAmount && borrowPrice
-    ? (parseFloat(borrowAmount) * Number(borrowPrice)) / 1e8
-    : 0;
-
-  // Health factor from blockchain (1e18 = 100% / 1.0)
-  // Convert from 1e18 scale to decimal: healthFactor / 1e18
-  const healthFactor = onChainHealthFactor
-    ? Number(onChainHealthFactor as bigint) / 1e18
-    : borrowUSD > 0 && liquidationThresholdBps
-      ? (collateralUSD * Number(liquidationThresholdBps)) / (borrowUSD * 10000)
-      : 0;
 
   // Calculate max balance in human-readable format
   const maxCollateralBalance = collateralBalance
@@ -342,11 +256,9 @@ export function CreateLoanRequestForm() {
     }
 
     const numValue = parseFloat(value);
-
-    // If user enters more than their balance, cap it at max balance
     if (numValue > maxCollateralBalanceNumber && maxCollateralBalanceNumber > 0) {
       setCollateralAmount(maxCollateralBalance);
-      toast('Amount capped to your maximum balance', { icon: 'ℹ️' });
+      toast('Amount capped to your maximum balance', { icon: 'i' });
     } else {
       setCollateralAmount(value);
     }
@@ -363,8 +275,8 @@ export function CreateLoanRequestForm() {
   const isFormValid =
     collateralAmount &&
     parseFloat(collateralAmount) > 0 &&
-    borrowAmount &&
-    parseFloat(borrowAmount) > 0 &&
+    fiatAmount &&
+    parseFloat(fiatAmount) > 0 &&
     !isCalculating &&
     !isPriceStale &&
     !hasZeroBalance &&
@@ -372,17 +284,22 @@ export function CreateLoanRequestForm() {
 
   if (!isConnected) {
     return (
-      <Card className="text-center py-12">
-        <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+      <Card className="text-center py-12 border-green-500/20">
+        <AlertCircle className="w-12 h-12 text-green-400 mx-auto mb-4" />
         <h3 className="text-xl font-semibold mb-2">Connect Your Wallet</h3>
-        <p className="text-gray-400">Please connect your wallet to create a loan request</p>
+        <p className="text-gray-400">Please connect your wallet to create a fiat loan request</p>
       </Card>
     );
   }
 
   return (
-    <Card>
-      <h2 className="text-2xl font-bold mb-6">Create Loan Request</h2>
+    <Card className="border-green-500/20">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="p-2 bg-green-500/20 rounded-lg">
+          <Banknote className="w-6 h-6 text-green-400" />
+        </div>
+        <h2 className="text-2xl font-bold">Create Fiat Loan Request</h2>
+      </div>
 
       {step === 'form' && (
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -394,8 +311,7 @@ export function CreateLoanRequestForm() {
                 <div>
                   <p className="text-sm text-yellow-400 font-medium">Asset Not Enabled</p>
                   <p className="text-sm text-gray-400 mt-1">
-                    The selected collateral token is not enabled in the LTV configuration contract.
-                    Please select a different token or contact the admin to enable this asset.
+                    The selected collateral token is not enabled. Please select a different token.
                   </p>
                 </div>
               </div>
@@ -403,8 +319,9 @@ export function CreateLoanRequestForm() {
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Collateral Section */}
             <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-primary-400">Collateral</h3>
+              <h3 className="text-lg font-semibold text-green-400">Collateral (Crypto)</h3>
               <Select
                 label="Collateral Token"
                 options={tokenOptions}
@@ -428,7 +345,7 @@ export function CreateLoanRequestForm() {
                     <button
                       type="button"
                       onClick={handleSetMaxBalance}
-                      className="px-3 py-2 text-xs font-semibold text-primary-400 hover:text-primary-300 bg-primary-400/10 hover:bg-primary-400/20 rounded-lg transition-colors"
+                      className="px-3 py-2 text-xs font-semibold text-green-400 hover:text-green-300 bg-green-400/10 hover:bg-green-400/20 rounded-lg transition-colors"
                     >
                       MAX
                     </button>
@@ -439,7 +356,7 @@ export function CreateLoanRequestForm() {
                 </div>
               </div>
               <div className="flex justify-between text-sm">
-                {collateralBalance !== undefined && collateralBalance !== null && (
+                {collateralBalance !== undefined && (
                   <p className="text-gray-400">
                     Balance: {formatTokenAmount(collateralBalance as bigint, collateralDecimals)}{' '}
                     {TOKEN_LIST.find((t) => t.address === collateralToken)?.symbol}
@@ -452,7 +369,7 @@ export function CreateLoanRequestForm() {
                 )}
               </div>
 
-              {/* Zero Balance Warning */}
+              {/* Balance Warnings */}
               {hasZeroBalance && (
                 <div className="glass-card p-3 border border-yellow-500/20 bg-yellow-500/5">
                   <div className="flex gap-2 items-start">
@@ -460,80 +377,57 @@ export function CreateLoanRequestForm() {
                     <div className="text-sm">
                       <p className="text-yellow-400 font-medium">No {TOKEN_LIST.find((t) => t.address === collateralToken)?.symbol} Balance</p>
                       <p className="text-gray-400 mt-1">
-                        You need {TOKEN_LIST.find((t) => t.address === collateralToken)?.symbol} tokens to use as collateral.{' '}
-                        <a
-                          href="/faucet"
-                          className="text-primary-400 hover:text-primary-300 hover:underline font-medium"
-                        >
-                          Get test tokens from the faucet
-                        </a>
+                        <a href="/faucet" className="text-green-400 hover:underline">Get test tokens from the faucet</a>
                       </p>
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* Insufficient Balance Warning */}
               {hasInsufficientBalance && !hasZeroBalance && (
                 <div className="glass-card p-3 border border-red-500/20 bg-red-500/5">
                   <div className="flex gap-2 items-start">
                     <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
                     <div className="text-sm">
                       <p className="text-red-400 font-medium">Insufficient Balance</p>
-                      <p className="text-gray-400 mt-1">
-                        You only have {formatTokenAmount(collateralBalance as bigint, collateralDecimals)} {TOKEN_LIST.find((t) => t.address === collateralToken)?.symbol}.{' '}
-                        <a
-                          href="/faucet"
-                          className="text-primary-400 hover:text-primary-300 hover:underline font-medium"
-                        >
-                          Get more tokens from the faucet
-                        </a>
-                      </p>
                     </div>
                   </div>
                 </div>
               )}
             </div>
 
+            {/* Fiat Section */}
             <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-accent-400">Borrow</h3>
+              <h3 className="text-lg font-semibold text-green-400">Borrow (Fiat)</h3>
               <Select
-                label="Borrow Token"
-                options={tokenOptions}
-                value={borrowToken}
-                onChange={(e) => setBorrowToken(e.target.value as Address)}
+                label="Currency"
+                options={currencyOptions}
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value)}
               />
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Borrow Amount (Auto-calculated)</label>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Fiat Amount (Auto-calculated)</label>
                 <div className="flex items-center gap-2">
-                  <div className="flex-1">
+                  <div className="flex-1 relative">
+                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-green-400" />
                     <input
                       type="text"
-                      value={isCalculating ? 'Calculating...' : borrowAmount}
+                      value={isCalculating ? 'Calculating...' : fiatAmount}
                       readOnly
                       disabled
-                      className="input-field w-full bg-gray-800/50 cursor-not-allowed"
+                      className="input-field w-full pl-9 bg-gray-800/50 cursor-not-allowed"
                     />
                   </div>
                   <div className="flex items-center gap-2 min-w-[60px]">
-                    {isCalculating ? (
-                      <Loader2 className="w-4 h-4 text-primary-400 animate-spin" />
-                    ) : null}
-                    <span className="text-sm text-gray-400">
-                      {TOKEN_LIST.find((t) => t.address === borrowToken)?.symbol}
-                    </span>
+                    {isCalculating && <Loader2 className="w-4 h-4 text-green-400 animate-spin" />}
+                    <span className="text-sm text-gray-400">{currency}</span>
                   </div>
                 </div>
-                {borrowUSD > 0 && (
-                  <p className="text-sm text-gray-500 mt-1">
-                    ≈ ${borrowUSD.toFixed(2)} USD
-                  </p>
-                )}
               </div>
-              <div className="glass-card p-3 space-y-1">
+              <div className="glass-card p-3 space-y-1 border-green-500/20">
                 <p className="text-xs text-gray-400 flex items-center gap-1">
                   <TrendingUp className="w-3 h-3" />
-                  Max LTV for {duration} days: <span className="text-primary-400 font-medium">{ltvPercentage}%</span>
+                  Max LTV for {duration} days: <span className="text-green-400 font-medium">{ltvPercentage}%</span>
                 </p>
                 <p className="text-xs text-gray-400 flex items-center gap-1">
                   <Shield className="w-3 h-3" />
@@ -546,13 +440,10 @@ export function CreateLoanRequestForm() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">Interest Rate (APY)</label>
-              <div className="flex items-center h-[42px] px-4 bg-gray-800/50 border border-gray-600 rounded-lg">
-                <span className="text-lg font-semibold text-primary-400">12%</span>
+              <div className="flex items-center h-[42px] px-4 bg-gray-800/50 border border-green-500/30 rounded-lg">
+                <span className="text-lg font-semibold text-green-400">12%</span>
                 <span className="ml-2 text-sm text-gray-400">Fixed APY</span>
               </div>
-              <p className="text-xs text-gray-400 mt-1">
-                Fixed interest rate for all loans
-              </p>
             </div>
             <Select
               label="Loan Duration"
@@ -562,91 +453,63 @@ export function CreateLoanRequestForm() {
             />
           </div>
 
-          {/* Price Feeds */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <PriceFeedDisplay tokenAddress={collateralToken} variant="compact" />
-            <PriceFeedDisplay tokenAddress={borrowToken} variant="compact" />
-          </div>
+          {/* Price Feed */}
+          <PriceFeedDisplay tokenAddress={collateralToken} variant="compact" />
 
           {/* Info Banner */}
-          <div className="glass-card p-4 border border-blue-500/20">
+          <div className="glass-card p-4 border border-green-500/20">
             <div className="flex gap-3">
-              <Info className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
+              <Info className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
               <div className="space-y-2 text-sm">
                 <p className="text-gray-300">
-                  <strong>How it works:</strong> Your collateral amount determines how much you can borrow based on the Loan-to-Value (LTV) ratio.
+                  <strong>How Fiat Loans Work:</strong>
                 </p>
-                <p className="text-gray-400">
-                  The borrow amount is automatically calculated to maximize your borrowing power while staying safe from liquidation.
-                </p>
+                <ol className="list-decimal list-inside text-gray-400 space-y-1">
+                  <li>You lock crypto collateral in the smart contract</li>
+                  <li>A verified fiat supplier sees your request and provides the fiat funds</li>
+                  <li>You receive fiat via bank transfer or mobile money</li>
+                  <li>Repay in fiat to get your collateral back</li>
+                </ol>
               </div>
             </div>
           </div>
 
-          <div className="glass-card p-4 space-y-2">
+          {/* Loan Summary */}
+          <div className="glass-card p-4 space-y-2 border-green-500/20">
             <h4 className="font-semibold text-gray-300">Loan Summary</h4>
             <div className="flex justify-between text-sm">
               <span className="text-gray-400">Collateral</span>
               <div className="text-right">
-                <div>
-                  {collateralAmount || '0'} {TOKEN_LIST.find((t) => t.address === collateralToken)?.symbol}
-                </div>
-                {collateralUSD > 0 && (
-                  <div className="text-xs text-gray-500">
-                    ≈ ${collateralUSD.toFixed(2)} USD
-                  </div>
-                )}
+                <div>{collateralAmount || '0'} {TOKEN_LIST.find((t) => t.address === collateralToken)?.symbol}</div>
+                {collateralUSD > 0 && <div className="text-xs text-gray-500">≈ ${collateralUSD.toFixed(2)}</div>}
               </div>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-gray-400">You will receive</span>
-              <div className="text-right">
-                <div className="text-accent-400 font-medium">
-                  {borrowAmount || '0'} {TOKEN_LIST.find((t) => t.address === borrowToken)?.symbol}
-                </div>
-                {borrowUSD > 0 && (
-                  <div className="text-xs text-gray-500">
-                    ≈ ${borrowUSD.toFixed(2)} USD
-                  </div>
-                )}
-              </div>
+              <span className="text-green-400 font-medium">${fiatAmount || '0'} {currency}</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-gray-400">Interest Rate (APY)</span>
-              <span>{interestRate || '0'}%</span>
+              <span>{interestRate}%</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-gray-400">Duration</span>
               <span>{duration} days</span>
             </div>
-            <div className="flex justify-between text-sm border-t border-gray-700 pt-2 mt-2">
-              <span className="text-gray-400">Health Factor</span>
-              <span className={`font-medium ${healthFactor >= 1.5 ? 'text-green-400' : healthFactor >= 1.2 ? 'text-yellow-400' : 'text-red-400'}`}>
-                {healthFactor > 0 ? healthFactor.toFixed(2) : '--'}
-              </span>
-            </div>
-            {healthFactor > 0 && healthFactor < 1.5 && (
-              <div className="text-xs text-yellow-400 mt-2">
-                ⚠️ Low health factor. Consider reducing borrow amount or adding more collateral.
-              </div>
-            )}
           </div>
 
           {simulationError && (
             <div className="glass-card p-4 border border-red-500/20 bg-red-500/5">
               <div className="flex gap-3">
                 <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm text-red-400 font-medium">Transaction Error</p>
-                  <p className="text-sm text-gray-400 mt-1">{simulationError}</p>
-                </div>
+                <p className="text-sm text-red-400">{simulationError}</p>
               </div>
             </div>
           )}
 
           <Button
             type="submit"
-            className="w-full"
+            className="w-full bg-green-600 hover:bg-green-700"
             icon={<ArrowRight className="w-5 h-5" />}
             disabled={!isFormValid}
           >
@@ -663,11 +526,8 @@ export function CreateLoanRequestForm() {
           <div>
             <h3 className="text-xl font-semibold mb-2">Approve Token</h3>
             <p className="text-gray-400">
-              You need to approve the contract to use your{' '}
+              You need to approve the FiatLoanBridge contract to use your{' '}
               {TOKEN_LIST.find((t) => t.address === collateralToken)?.symbol} as collateral
-            </p>
-            <p className="text-sm text-gray-500 mt-2">
-              This is a one-time approval. We will simulate the transaction first to ensure it will succeed.
             </p>
           </div>
           {simulationError && (
@@ -679,7 +539,7 @@ export function CreateLoanRequestForm() {
             <Button variant="secondary" onClick={() => setStep('form')} className="flex-1">
               Back
             </Button>
-            <Button onClick={handleApprove} loading={isApproving} className="flex-1">
+            <Button onClick={handleApprove} loading={isApproving} className="flex-1 bg-green-600 hover:bg-green-700">
               {isApproving ? 'Approving...' : 'Approve'}
             </Button>
           </div>
@@ -692,16 +552,12 @@ export function CreateLoanRequestForm() {
             <CheckCircle className="w-8 h-8 text-green-400" />
           </div>
           <div>
-            <h3 className="text-xl font-semibold mb-2">Confirm Loan Request</h3>
+            <h3 className="text-xl font-semibold mb-2">Confirm Fiat Loan Request</h3>
             <p className="text-gray-400">
-              Create your loan request for {borrowAmount}{' '}
-              {TOKEN_LIST.find((t) => t.address === borrowToken)?.symbol}
-            </p>
-            <p className="text-sm text-gray-500 mt-2">
-              We will simulate the transaction first to ensure it will succeed.
+              Create your fiat loan request for ${fiatAmount} {currency}
             </p>
           </div>
-          <div className="glass-card p-4 space-y-2 text-left">
+          <div className="glass-card p-4 space-y-2 text-left border-green-500/20">
             <div className="flex justify-between text-sm">
               <span className="text-gray-400">Collateral</span>
               <div className="text-right">
@@ -710,11 +566,8 @@ export function CreateLoanRequestForm() {
               </div>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-gray-400">Borrow</span>
-              <div className="text-right">
-                <div className="text-accent-400 font-medium">{borrowAmount} {TOKEN_LIST.find((t) => t.address === borrowToken)?.symbol}</div>
-                {borrowUSD > 0 && <div className="text-xs text-gray-500">≈ ${borrowUSD.toFixed(2)}</div>}
-              </div>
+              <span className="text-gray-400">Fiat Amount</span>
+              <span className="text-green-400 font-medium">${fiatAmount} {currency}</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-gray-400">Interest Rate</span>
@@ -723,12 +576,6 @@ export function CreateLoanRequestForm() {
             <div className="flex justify-between text-sm">
               <span className="text-gray-400">Duration</span>
               <span>{duration} days</span>
-            </div>
-            <div className="flex justify-between text-sm border-t border-gray-700 pt-2 mt-2">
-              <span className="text-gray-400">Health Factor</span>
-              <span className={`font-medium ${healthFactor >= 1.5 ? 'text-green-400' : healthFactor >= 1.2 ? 'text-yellow-400' : 'text-red-400'}`}>
-                {healthFactor > 0 ? healthFactor.toFixed(2) : '--'}
-              </span>
             </div>
           </div>
           {simulationError && (
@@ -740,7 +587,7 @@ export function CreateLoanRequestForm() {
             <Button variant="secondary" onClick={() => setStep('form')} className="flex-1">
               Back
             </Button>
-            <Button onClick={handleCreateRequest} loading={isCreating} className="flex-1">
+            <Button onClick={handleCreateRequest} loading={isCreating} className="flex-1 bg-green-600 hover:bg-green-700">
               {isCreating ? 'Creating...' : 'Create Request'}
             </Button>
           </div>

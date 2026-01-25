@@ -13,6 +13,7 @@ import {
   useLoanRequest,
   useFundLoanRequest,
   useTokenPrice,
+  useLTV,
 } from '@/hooks/useContracts';
 import { LoanRequestStatus } from '@/types';
 import {
@@ -115,8 +116,12 @@ export default function LoanDetailPage() {
     ? (Number(request.borrowAmount) / Math.pow(10, Number(borrowDecimals))) * Number(borrowPrice) / 1e8
     : 0;
 
-  // LTV Calculation
-  const currentLTV = collateralUSD > 0 ? (borrowUSD / collateralUSD) * 100 : 0;
+  // Get LTV from contract (duration is in seconds, convert to days)
+  const durationDays = request ? Math.ceil(Number(request.duration) / (24 * 60 * 60)) : 0;
+  const { data: ltvBps } = useLTV(request?.collateralToken, durationDays);
+
+  // LTV from contract is in basis points (10000 = 100%)
+  const currentLTV = ltvBps ? Number(ltvBps) / 100 : 0;
 
   // Balance calculations
   const maxLenderBalance = lenderBalance
