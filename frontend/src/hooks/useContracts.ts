@@ -4,7 +4,7 @@ import { useReadContract, useReadContracts, useWriteContract, useWaitForTransact
 import { useQueryClient } from '@tanstack/react-query';
 import { Address, Abi, formatUnits } from 'viem';
 import { useEffect, useCallback } from 'react';
-import { CONTRACT_ADDRESSES, getTokenByAddress } from '@/config/contracts';
+import { CONTRACT_ADDRESSES, getTokenByAddress, TOKEN_LIST } from '@/config/contracts';
 import LoanMarketPlaceABIJson from '@/contracts/LoanMarketPlaceABI.json';
 import ConfigurationABIJson from '@/contracts/ConfigurationABI.json';
 import LTVConfigABIJson from '@/contracts/LTVConfigABI.json';
@@ -156,14 +156,6 @@ export function useGracePeriod() {
   });
 }
 
-export function usePlatformFeeRate() {
-  return useReadContract({
-    address: CONTRACT_ADDRESSES.configuration,
-    abi: ConfigurationABI,
-    functionName: 'platformFeeRate',
-  });
-}
-
 export function useMinCollateralRatio() {
   return useReadContract({
     address: CONTRACT_ADDRESSES.configuration,
@@ -178,6 +170,66 @@ export function useMaxInterestRate() {
     abi: ConfigurationABI,
     functionName: 'maxInterestRate',
   });
+}
+
+// Get platform fee rate (in basis points, e.g., 100 = 1%)
+export function usePlatformFeeRate() {
+  const result = useReadContract({
+    address: CONTRACT_ADDRESSES.configuration,
+    abi: ConfigurationABI,
+    functionName: 'platformFeeRate',
+  });
+
+  // Convert basis points to percentage for display
+  const feeRateBps = result.data ? Number(result.data) : 0;
+  const feeRatePercent = feeRateBps / 100; // 100 bps = 1%
+
+  return {
+    ...result,
+    feeRateBps,
+    feeRatePercent,
+  };
+}
+
+// Check if a single asset is supported
+export function useIsAssetSupported(assetAddress: Address | undefined) {
+  return useReadContract({
+    address: CONTRACT_ADDRESSES.configuration,
+    abi: ConfigurationABI,
+    functionName: 'isAssetSupported',
+    args: assetAddress ? [assetAddress] : undefined,
+    query: {
+      enabled: !!assetAddress,
+    },
+  });
+}
+
+// Batch check which assets are supported from TOKEN_LIST
+export function useSupportedAssets() {
+  const { data: supportedData, isLoading, isError, refetch } = useReadContracts({
+    contracts: TOKEN_LIST.map((token) => ({
+      address: CONTRACT_ADDRESSES.configuration,
+      abi: ConfigurationABI,
+      functionName: 'isAssetSupported',
+      args: [token.address],
+    })),
+    query: {
+      enabled: true,
+    },
+  });
+
+  // Filter tokens that are supported
+  const supportedTokens = TOKEN_LIST.filter((token, index) => {
+    const result = supportedData?.[index];
+    return result?.status === 'success' && result.result === true;
+  });
+
+  return {
+    supportedTokens,
+    isLoading,
+    isError,
+    refetch,
+  };
 }
 
 // LTV Config reads
@@ -380,6 +432,41 @@ export function useTokenAllowance(
 export function useApproveToken() {
   const { writeContract, writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const publicClient = usePublicClient();
+
+  // Simulate approval before executing to catch errors early
+  const simulateApprove = async (
+    tokenAddress: Address,
+    spenderAddress: Address,
+    amount: bigint,
+    account: Address
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!publicClient) {
+      return { success: false, error: 'Public client not available' };
+    }
+
+    try {
+      await publicClient.simulateContract({
+        address: tokenAddress,
+        abi: ERC20ABI,
+        functionName: 'approve',
+        args: [spenderAddress, amount],
+        account,
+      });
+      return { success: true };
+    } catch (err: unknown) {
+      const error = err as Error & { shortMessage?: string; cause?: { reason?: string } };
+      let errorMessage = 'Approval simulation failed';
+      if (error.shortMessage) {
+        errorMessage = error.shortMessage;
+      } else if (error.cause?.reason) {
+        errorMessage = error.cause.reason;
+      } else if (error.message) {
+        errorMessage = error.message.slice(0, 200);
+      }
+      return { success: false, error: errorMessage };
+    }
+  };
 
   // Fire-and-forget version (for backward compatibility)
   const approve = (tokenAddress: Address, spenderAddress: Address, amount: bigint) => {
@@ -401,7 +488,7 @@ export function useApproveToken() {
     });
   };
 
-  return { approve, approveAsync, hash, isPending, isConfirming, isSuccess, error };
+  return { approve, approveAsync, simulateApprove, hash, isPending, isConfirming, isSuccess, error };
 }
 
 export function useCreateLoanRequest() {

@@ -8,7 +8,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Input';
 import { TOKEN_LIST, CONTRACT_ADDRESSES } from '@/config/contracts';
-import { useApproveToken, useCreateLenderOffer, useTokenBalance, useTokenAllowance, useTokenPrice, useLTV } from '@/hooks/useContracts';
+import { useApproveToken, useCreateLenderOffer, useTokenBalance, useTokenAllowance, useTokenPrice, useLTV, useMaxInterestRate, useSupportedAssets, usePlatformFeeRate } from '@/hooks/useContracts';
 import { PriceFeedDisplay } from '@/components/loan/PriceFeedDisplay';
 import { formatTokenAmount, daysToSeconds, getTokenDecimals } from '@/lib/utils';
 import { ArrowRight, AlertCircle, CheckCircle } from 'lucide-react';
@@ -37,10 +37,21 @@ export function CreateLenderOfferForm() {
   const [lendToken, setLendToken] = useState<Address>(TOKEN_LIST[1].address);
   const [lendAmount, setLendAmount] = useState('');
   const [collateralToken, setCollateralToken] = useState<Address>(TOKEN_LIST[0].address);
-  const interestRate = '12'; // Fixed at 12% APY
+  const [interestRate, setInterestRate] = useState('12');
   const [duration, setDuration] = useState('30');
   const [step, setStep] = useState<'form' | 'approve' | 'confirm'>('form');
   const [simulationError, setSimulationError] = useState<string>('');
+
+  // Get max interest rate from configuration
+  const { data: maxInterestRateData } = useMaxInterestRate();
+  const maxInterestRate = maxInterestRateData ? Number(maxInterestRateData) / 100 : 50; // Default 50% if not loaded
+
+  // Get platform fee rate
+  const { feeRatePercent: platformFeePercent } = usePlatformFeeRate();
+
+  // Get supported assets from Configuration contract
+  const { supportedTokens } = useSupportedAssets();
+  const availableTokens = supportedTokens.length > 0 ? supportedTokens : TOKEN_LIST;
 
   const lendDecimals = getTokenDecimals(lendToken);
   const collateralDecimals = getTokenDecimals(collateralToken);
@@ -102,10 +113,11 @@ export function CreateLenderOfferForm() {
     ? parseFloat(lendAmount) * Number(lendPrice) / 1e8
     : 0;
 
-  // Calculate total repayment with interest (prorated for duration)
-  // Formula: principal + (principal × APY × duration_in_days / 365)
-  const apyDecimal = (parseFloat(interestRate) || 0) / 100;
-  const interestAmount = lendUSD * apyDecimal * (durationDays / 365);
+  // Calculate total repayment with flat interest
+  // Formula: principal + (principal × interest_rate / 100)
+  // Note: Interest rate is flat, not annualized. Same rate regardless of duration.
+  const interestDecimal = (parseFloat(interestRate) || 0) / 100;
+  const interestAmount = lendUSD * interestDecimal;
   const totalRepaymentUSD = lendUSD + interestAmount;
 
   // Calculate required collateral in collateral token using LTV from contract
@@ -286,7 +298,7 @@ export function CreateLenderOfferForm() {
     }
   };
 
-  const tokenOptions = TOKEN_LIST.map((token) => ({
+  const tokenOptions = availableTokens.map((token) => ({
     value: token.address,
     label: token.symbol,
   }));
@@ -510,13 +522,27 @@ export function CreateLenderOfferForm() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Interest Rate (APY)</label>
-              <div className="flex items-center h-[42px] px-4 bg-gray-800/50 border border-gray-600 rounded-lg">
-                <span className="text-lg font-semibold text-primary-400">12%</span>
-                <span className="ml-2 text-sm text-gray-400">Fixed APY</span>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Interest Rate (Total Interest)
+              </label>
+              <div className="space-y-2">
+                <input
+                  type="range"
+                  min="0"
+                  max={maxInterestRate}
+                  step="0.5"
+                  value={interestRate}
+                  onChange={(e) => setInterestRate(e.target.value)}
+                  className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-primary-500"
+                />
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-gray-400">0%</span>
+                  <span className="text-lg font-semibold text-primary-400">{interestRate}%</span>
+                  <span className="text-xs text-gray-400">{maxInterestRate}% max</span>
+                </div>
               </div>
               <p className="text-xs text-gray-400 mt-1">
-                Fixed interest rate for all loans
+                This is the total interest borrower will pay, not annual. The same rate applies regardless of duration.
               </p>
             </div>
             <Select
@@ -545,6 +571,10 @@ export function CreateLenderOfferForm() {
             <div className="flex justify-between text-sm">
               <span className="text-gray-400">Duration</span>
               <span>{duration} days</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-400">Platform Fee</span>
+              <span className="text-gray-300">{platformFeePercent}%</span>
             </div>
             {interestAmount > 0 && (
               <div className="flex justify-between text-sm">

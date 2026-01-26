@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useAccount } from 'wagmi';
-import { Address, parseUnits, formatUnits } from 'viem';
+import { useAccount, usePublicClient } from 'wagmi';
+import { Address, parseUnits, formatUnits, decodeErrorResult } from 'viem';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Input';
@@ -16,6 +16,9 @@ import {
   useTokenPrice,
   useLiquidationThreshold,
   useHealthFactor,
+  useMaxInterestRate,
+  useSupportedAssets,
+  usePlatformFeeRate,
 } from '@/hooks/useContracts';
 import { PriceFeedDisplay } from '@/components/loan/PriceFeedDisplay';
 import { formatTokenAmount, daysToSeconds, getTokenDecimals } from '@/lib/utils';
@@ -39,16 +42,48 @@ const durationOptions = [
 
 export function CreateLoanRequestForm() {
   const { address, isConnected } = useAccount();
+  const publicClient = usePublicClient();
 
   const [collateralToken, setCollateralToken] = useState<Address>(TOKEN_LIST[0].address);
   const [collateralAmount, setCollateralAmount] = useState('');
   const [borrowToken, setBorrowToken] = useState<Address>(TOKEN_LIST[1].address);
   const [borrowAmount, setBorrowAmount] = useState('');
-  const interestRate = '12'; // Fixed at 12% APY
+  const [interestRate, setInterestRate] = useState('12');
   const [duration, setDuration] = useState('30');
   const [step, setStep] = useState<'form' | 'approve' | 'confirm'>('form');
   const [simulationError, setSimulationError] = useState<string>('');
   const [isCalculating, setIsCalculating] = useState(false);
+
+  // Get max interest rate from configuration
+  const { data: maxInterestRateData } = useMaxInterestRate();
+  const maxInterestRate = maxInterestRateData ? Number(maxInterestRateData) / 100 : 50; // Default 50% if not loaded
+
+  // Get platform fee rate
+  const { feeRatePercent: platformFeePercent } = usePlatformFeeRate();
+
+  // Get supported assets from Configuration contract
+  const { supportedTokens, isLoading: isLoadingSupportedTokens } = useSupportedAssets();
+
+  // Use supported tokens or fallback to TOKEN_LIST
+  const availableTokens = supportedTokens.length > 0 ? supportedTokens : TOKEN_LIST;
+
+  // Update token selection when supported tokens are loaded
+  useEffect(() => {
+    if (supportedTokens.length > 0) {
+      // Check if current collateral token is supported
+      const isCollateralSupported = supportedTokens.some(t => t.address.toLowerCase() === collateralToken.toLowerCase());
+      const isBorrowSupported = supportedTokens.some(t => t.address.toLowerCase() === borrowToken.toLowerCase());
+
+      if (!isCollateralSupported && supportedTokens[0]) {
+        setCollateralToken(supportedTokens[0].address);
+      }
+      if (!isBorrowSupported && supportedTokens.length > 1 && supportedTokens[1]) {
+        setBorrowToken(supportedTokens[1].address);
+      } else if (!isBorrowSupported && supportedTokens[0]) {
+        setBorrowToken(supportedTokens[0].address);
+      }
+    }
+  }, [supportedTokens, collateralToken, borrowToken]);
 
   const collateralDecimals = getTokenDecimals(collateralToken);
   const borrowDecimals = getTokenDecimals(borrowToken);
@@ -266,21 +301,97 @@ export function CreateLoanRequestForm() {
       const interestRateBps = BigInt(Math.floor(parseFloat(interestRate) * 100));
       const durationSeconds = daysToSeconds(parseInt(duration));
 
-      // Simulate the transaction first
-      const simulation = await simulateContractWrite({
-        address: CONTRACT_ADDRESSES.loanMarketPlace,
-        abi: LoanMarketPlaceABI,
-        functionName: 'createLoanRequest',
-        args: [collateralToken, parsedCollateralAmount, borrowToken, parsedBorrowAmount, interestRateBps, durationSeconds],
-      });
+      // Log simulation parameters for debugging
+      console.log('=== Loan Request Simulation ===');
+      console.log('Collateral Token:', collateralToken);
+      console.log('Collateral Amount:', parsedCollateralAmount.toString());
+      console.log('Borrow Token:', borrowToken);
+      console.log('Borrow Amount:', parsedBorrowAmount.toString());
+      console.log('Interest Rate (bps):', interestRateBps.toString());
+      console.log('Duration (seconds):', durationSeconds.toString());
+      console.log('Sender:', address);
 
-      if (!simulation.success) {
-        setSimulationError(simulation.errorMessage || 'Simulation failed');
-        toast.error(simulation.errorMessage || 'Transaction will fail. Please check your inputs.');
-        return;
+      // Use publicClient.simulateContract for more detailed error messages
+      if (publicClient) {
+        try {
+          await publicClient.simulateContract({
+            address: CONTRACT_ADDRESSES.loanMarketPlace,
+            abi: LoanMarketPlaceABI,
+            functionName: 'createLoanRequest',
+            args: [collateralToken, parsedCollateralAmount, borrowToken, parsedBorrowAmount, interestRateBps, durationSeconds],
+            account: address,
+          });
+          console.log('Simulation successful!');
+        } catch (simError: unknown) {
+          console.error('=== Simulation Error Details ===');
+          console.error('Full error:', simError);
+
+          // Extract detailed error information
+          const err = simError as {
+            cause?: {
+              data?: `0x${string}`;
+              reason?: string;
+              message?: string;
+            };
+            shortMessage?: string;
+            message?: string;
+            metaMessages?: string[];
+          };
+
+          console.error('Short message:', err.shortMessage);
+          console.error('Message:', err.message);
+          console.error('Cause:', err.cause);
+          console.error('Meta messages:', err.metaMessages);
+
+          // Try to decode the error data if available
+          if (err.cause?.data) {
+            console.error('Raw error data:', err.cause.data);
+            try {
+              const decoded = decodeErrorResult({
+                abi: LoanMarketPlaceABI,
+                data: err.cause.data,
+              });
+              console.error('Decoded error:', decoded);
+              const errorMsg = `Contract Error: ${decoded.errorName}${decoded.args ? ` - Args: ${JSON.stringify(decoded.args)}` : ''}`;
+              setSimulationError(errorMsg);
+              toast.error(errorMsg);
+              return;
+            } catch {
+              console.error('Could not decode error with LoanMarketPlace ABI');
+            }
+          }
+
+          // Format the error message
+          let errorMsg = err.shortMessage || err.message || 'Transaction simulation failed';
+
+          // Check for common error patterns
+          if (errorMsg.includes('reverted')) {
+            // Try to extract the revert reason
+            const reasonMatch = errorMsg.match(/reverted with reason string ['"](.+?)['"]/);
+            if (reasonMatch) {
+              errorMsg = reasonMatch[1];
+            } else if (err.cause?.reason) {
+              errorMsg = err.cause.reason;
+            }
+          }
+
+          // Check metaMessages for more context
+          if (err.metaMessages && err.metaMessages.length > 0) {
+            const relevantMeta = err.metaMessages.find(m =>
+              m.includes('revert') || m.includes('Error') || m.includes('require')
+            );
+            if (relevantMeta) {
+              errorMsg = relevantMeta;
+            }
+          }
+
+          setSimulationError(errorMsg);
+          toast.error(errorMsg);
+          return;
+        }
       }
 
-      // Proceed with actual transaction
+      // If simulation passed (or publicClient not available), proceed with transaction
       await createRequest(
         collateralToken,
         parsedCollateralAmount,
@@ -290,13 +401,15 @@ export function CreateLoanRequestForm() {
         durationSeconds
       );
     } catch (error: unknown) {
+      console.error('=== Create Request Error ===');
+      console.error('Full error:', error);
       const errorMsg = formatSimulationError(error);
       setSimulationError(errorMsg);
       toast.error(errorMsg);
     }
   };
 
-  const tokenOptions = TOKEN_LIST.map((token) => ({
+  const tokenOptions = availableTokens.map((token) => ({
     value: token.address,
     label: token.symbol,
   }));
@@ -386,6 +499,44 @@ export function CreateLoanRequestForm() {
 
       {step === 'form' && (
         <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Loading Supported Tokens */}
+          {isLoadingSupportedTokens && (
+            <div className="glass-card p-4 border border-blue-500/20 bg-blue-500/5">
+              <div className="flex gap-3 items-center">
+                <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
+                <p className="text-sm text-blue-400">Loading supported tokens from contract...</p>
+              </div>
+            </div>
+          )}
+
+          {/* No Supported Tokens Warning */}
+          {!isLoadingSupportedTokens && supportedTokens.length === 0 && (
+            <div className="glass-card p-4 border border-yellow-500/20 bg-yellow-500/5">
+              <div className="flex gap-3">
+                <AlertCircle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm text-yellow-400 font-medium">No Supported Tokens Found</p>
+                  <p className="text-sm text-gray-400 mt-1">
+                    No tokens are currently supported by the contract. Showing all available tokens as fallback.
+                    Contact the admin to enable asset support.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Supported Tokens Info */}
+          {!isLoadingSupportedTokens && supportedTokens.length > 0 && (
+            <div className="glass-card p-3 border border-green-500/20 bg-green-500/5">
+              <div className="flex gap-2 items-center">
+                <CheckCircle className="w-4 h-4 text-green-400" />
+                <p className="text-xs text-green-400">
+                  {supportedTokens.length} supported token{supportedTokens.length > 1 ? 's' : ''}: {supportedTokens.map(t => t.symbol).join(', ')}
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Asset Not Enabled Error */}
           {ltvError && (
             <div className="glass-card p-4 border border-yellow-500/20 bg-yellow-500/5">
@@ -545,13 +696,27 @@ export function CreateLoanRequestForm() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Interest Rate (APY)</label>
-              <div className="flex items-center h-[42px] px-4 bg-gray-800/50 border border-gray-600 rounded-lg">
-                <span className="text-lg font-semibold text-primary-400">12%</span>
-                <span className="ml-2 text-sm text-gray-400">Fixed APY</span>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Interest Rate (Total Interest)
+              </label>
+              <div className="space-y-2">
+                <input
+                  type="range"
+                  min="0"
+                  max={maxInterestRate}
+                  step="0.5"
+                  value={interestRate}
+                  onChange={(e) => setInterestRate(e.target.value)}
+                  className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-primary-500"
+                />
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-gray-400">0%</span>
+                  <span className="text-lg font-semibold text-primary-400">{interestRate}%</span>
+                  <span className="text-xs text-gray-400">{maxInterestRate}% max</span>
+                </div>
               </div>
               <p className="text-xs text-gray-400 mt-1">
-                Fixed interest rate for all loans
+                This is the total interest you&apos;ll pay, not annual. The same rate applies regardless of duration.
               </p>
             </div>
             <Select
@@ -618,6 +783,10 @@ export function CreateLoanRequestForm() {
             <div className="flex justify-between text-sm">
               <span className="text-gray-400">Duration</span>
               <span>{duration} days</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-400">Platform Fee</span>
+              <span className="text-gray-300">{platformFeePercent}%</span>
             </div>
             <div className="flex justify-between text-sm border-t border-gray-700 pt-2 mt-2">
               <span className="text-gray-400">Health Factor</span>

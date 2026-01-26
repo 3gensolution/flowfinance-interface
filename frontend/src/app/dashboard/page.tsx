@@ -6,7 +6,7 @@ import { motion } from 'framer-motion';
 import { formatUnits, parseUnits } from 'viem';
 import { Card, StatCard } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { ActiveLoanCard, LoanRequestCard, LenderOfferCard } from '@/components/loan/LoanCard';
+import { ActiveLoanCard, LoanRequestCard, LenderOfferCard, FiatLenderOfferCard, FiatLoanRequestCard } from '@/components/loan/LoanCard';
 import { ConnectButton } from '@/components/wallet/ConnectButton';
 import { Modal } from '@/components/ui/Modal';
 import { LoanStatus, LoanRequestStatus } from '@/types';
@@ -23,6 +23,14 @@ import {
   useTokenPrice,
   useRefreshMockPrice,
 } from '@/hooks/useContracts';
+import {
+  useUserFiatLenderOffers,
+  useCancelFiatLenderOffer,
+  useUserFiatLoansAsBorrower,
+  useCancelFiatLoanRequest,
+  FiatLenderOfferStatus,
+  FiatLoanStatus,
+} from '@/hooks/useFiatLoan';
 import { CONTRACT_ADDRESSES, getTokenByAddress } from '@/config/contracts';
 import { simulateContractWrite, formatSimulationError } from '@/lib/contractSimulation';
 import LoanMarketPlaceABIJson from '@/contracts/LoanMarketPlaceABI.json';
@@ -42,11 +50,12 @@ import {
   Loader2,
   RefreshCw,
   AlertTriangle,
+  Banknote,
 } from 'lucide-react';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 
-type Tab = 'borrowing' | 'lending' | 'requests' | 'offers';
+type Tab = 'borrowing' | 'lending' | 'requests' | 'offers' | 'fiatOffers' | 'fiatRequests';
 
 export default function DashboardPage() {
   const { address, isConnected } = useAccount();
@@ -69,11 +78,27 @@ export default function DashboardPage() {
     refetch
   } = useUserDashboardData(address);
 
+  // Fetch user's fiat lender offers
+  const {
+    data: fiatLenderOffers,
+    isLoading: isLoadingFiatOffers,
+    refetch: refetchFiatOffers,
+  } = useUserFiatLenderOffers(address);
+
+  // Fetch user's fiat loan requests (as borrower)
+  const {
+    data: fiatLoanRequests,
+    isLoading: isLoadingFiatRequests,
+    refetch: refetchFiatRequests,
+  } = useUserFiatLoansAsBorrower(address);
+
   // Contract write hooks
   const { repayAsync, isPending: isRepayPending } = useRepayLoan();
   const { approveAsync } = useApproveToken();
   const { cancelRequest } = useCancelLoanRequest();
   const { cancelOffer } = useCancelLenderOffer();
+  const { cancelFiatLenderOffer } = useCancelFiatLenderOffer();
+  const { cancelFiatLoanRequest } = useCancelFiatLoanRequest();
 
   // Get selected loan details for repay modal
   const selectedLoan = useMemo(() => {
@@ -131,6 +156,16 @@ export default function DashboardPage() {
     [lenderOffers]
   );
 
+  const pendingFiatOffers = useMemo(() =>
+    fiatLenderOffers.filter(o => o.status === FiatLenderOfferStatus.ACTIVE),
+    [fiatLenderOffers]
+  );
+
+  const pendingFiatRequests = useMemo(() =>
+    fiatLoanRequests.filter(r => r.status === FiatLoanStatus.PENDING_SUPPLIER),
+    [fiatLoanRequests]
+  );
+
   // Calculate stats
   const stats = useMemo(() => {
     let totalBorrowedUSD = 0;
@@ -178,8 +213,10 @@ export default function DashboardPage() {
       activeLentCount: activeLentLoans.length,
       pendingRequestsCount: pendingRequests.length,
       pendingOffersCount: pendingOffers.length,
+      pendingFiatOffersCount: pendingFiatOffers.length,
+      pendingFiatRequestsCount: pendingFiatRequests.length,
     };
-  }, [activeBorrowedLoans, activeLentLoans, pendingRequests, pendingOffers]);
+  }, [activeBorrowedLoans, activeLentLoans, pendingRequests, pendingOffers, pendingFiatOffers, pendingFiatRequests]);
 
   // Handle repay loan
   const handleRepayClick = (loanId: bigint) => {
@@ -263,7 +300,9 @@ export default function DashboardPage() {
       const tokenInfo = getTokenByAddress(selectedLoan.borrowAsset);
       if (!tokenInfo) throw new Error('Token not found');
 
-      const amountToApprove = parseUnits(repayAmount, tokenInfo.decimals);
+      const baseAmount = parseUnits(repayAmount, tokenInfo.decimals);
+      // Add 1% buffer to account for interest accrual between approval and repayment
+      const amountToApprove = baseAmount + (baseAmount / BigInt(100));
 
       // Send approval transaction and get the hash
       const approvalHash = await approveAsync(
@@ -485,6 +524,30 @@ export default function DashboardPage() {
     }
   };
 
+  // Handle cancel fiat offer
+  const handleCancelFiatOffer = async (offerId: bigint) => {
+    const toastId = toast.loading('Cancelling fiat offer...');
+    try {
+      await cancelFiatLenderOffer(offerId);
+      toast.success('Fiat offer cancellation submitted!', { id: toastId });
+      setTimeout(() => refetchFiatOffers(), 2000);
+    } catch (error: unknown) {
+      toast.error(formatSimulationError(error), { id: toastId });
+    }
+  };
+
+  // Handle cancel fiat request
+  const handleCancelFiatRequest = async (loanId: bigint) => {
+    const toastId = toast.loading('Cancelling fiat loan request...');
+    try {
+      await cancelFiatLoanRequest(loanId);
+      toast.success('Fiat loan request cancellation submitted!', { id: toastId });
+      setTimeout(() => refetchFiatRequests(), 2000);
+    } catch (error: unknown) {
+      toast.error(formatSimulationError(error), { id: toastId });
+    }
+  };
+
   if (!isConnected) {
     return (
       <div className="min-h-screen flex items-center justify-center py-12 px-4">
@@ -554,8 +617,8 @@ export default function DashboardPage() {
           />
           <StatCard
             label="Pending"
-            value={`${stats.pendingRequestsCount + stats.pendingOffersCount}`}
-            subValue={`${stats.pendingRequestsCount} requests, ${stats.pendingOffersCount} offers`}
+            value={`${stats.pendingRequestsCount + stats.pendingOffersCount + stats.pendingFiatOffersCount + stats.pendingFiatRequestsCount}`}
+            subValue={`${stats.pendingRequestsCount} crypto, ${stats.pendingFiatRequestsCount} fiat req, ${stats.pendingFiatOffersCount} fiat offers`}
             icon={<Activity className="w-5 h-5" />}
           />
         </motion.div>
@@ -613,6 +676,24 @@ export default function DashboardPage() {
                 onClick={() => setActiveTab('offers')}
               >
                 My Offers ({pendingOffers.length})
+              </Button>
+              <Button
+                variant={activeTab === 'fiatOffers' ? 'primary' : 'secondary'}
+                size="sm"
+                onClick={() => setActiveTab('fiatOffers')}
+                className={activeTab === 'fiatOffers' ? 'bg-green-600 hover:bg-green-700' : ''}
+              >
+                <Banknote className="w-4 h-4 mr-1" />
+                Fiat Offers ({pendingFiatOffers.length})
+              </Button>
+              <Button
+                variant={activeTab === 'fiatRequests' ? 'primary' : 'secondary'}
+                size="sm"
+                onClick={() => setActiveTab('fiatRequests')}
+                className={activeTab === 'fiatRequests' ? 'bg-green-600 hover:bg-green-700' : ''}
+              >
+                <DollarSign className="w-4 h-4 mr-1" />
+                Fiat Requests ({pendingFiatRequests.length})
               </Button>
             </motion.div>
 
@@ -732,6 +813,74 @@ export default function DashboardPage() {
                       </p>
                       <Link href="/lend">
                         <Button icon={<Plus className="w-4 h-4" />}>Create Offer</Button>
+                      </Link>
+                    </Card>
+                  )}
+                </>
+              )}
+
+              {activeTab === 'fiatOffers' && (
+                <>
+                  {isLoadingFiatOffers ? (
+                    <div className="flex justify-center py-12">
+                      <Loader2 className="w-8 h-8 animate-spin text-green-400" />
+                    </div>
+                  ) : pendingFiatOffers.length > 0 ? (
+                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {pendingFiatOffers.map((offer) => (
+                        <FiatLenderOfferCard
+                          key={offer.offerId.toString()}
+                          offer={offer}
+                          isOwner={true}
+                          onCancel={() => handleCancelFiatOffer(offer.offerId)}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <Card className="text-center py-12 border-green-500/20">
+                      <Banknote className="w-12 h-12 text-green-400 mx-auto mb-4" />
+                      <h3 className="text-xl font-semibold mb-2">No Active Fiat Offers</h3>
+                      <p className="text-gray-400 mb-4">
+                        You don&apos;t have any active fiat lender offers.
+                      </p>
+                      <Link href="/lend">
+                        <Button className="bg-green-600 hover:bg-green-700" icon={<Plus className="w-4 h-4" />}>
+                          Create Fiat Offer
+                        </Button>
+                      </Link>
+                    </Card>
+                  )}
+                </>
+              )}
+
+              {activeTab === 'fiatRequests' && (
+                <>
+                  {isLoadingFiatRequests ? (
+                    <div className="flex justify-center py-12">
+                      <Loader2 className="w-8 h-8 animate-spin text-green-400" />
+                    </div>
+                  ) : pendingFiatRequests.length > 0 ? (
+                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {pendingFiatRequests.map((loan) => (
+                        <FiatLoanRequestCard
+                          key={loan.loanId.toString()}
+                          loan={loan}
+                          isOwner={true}
+                          onCancel={() => handleCancelFiatRequest(loan.loanId)}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <Card className="text-center py-12 border-green-500/20">
+                      <DollarSign className="w-12 h-12 text-green-400 mx-auto mb-4" />
+                      <h3 className="text-xl font-semibold mb-2">No Pending Fiat Requests</h3>
+                      <p className="text-gray-400 mb-4">
+                        You don&apos;t have any pending fiat loan requests.
+                      </p>
+                      <Link href="/borrow">
+                        <Button className="bg-green-600 hover:bg-green-700" icon={<Plus className="w-4 h-4" />}>
+                          Create Fiat Loan Request
+                        </Button>
                       </Link>
                     </Card>
                   )}

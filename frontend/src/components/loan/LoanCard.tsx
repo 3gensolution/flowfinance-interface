@@ -6,8 +6,9 @@ import { Button } from '@/components/ui/Button';
 import { Loan, LoanRequest, LenderOffer, LoanStatus, LoanRequestStatus, getHealthStatus } from '@/types';
 import { formatTokenAmount, formatPercentage, formatDuration, formatTimeUntil, getTokenSymbol, getTokenDecimals, getHealthFactorColor } from '@/lib/utils';
 import { useTokenPrice, useLTV } from '@/hooks/useContracts';
-import { FiatLoan, FiatLoanStatus } from '@/hooks/useFiatLoan';
-import { Clock, TrendingUp, Shield, ExternalLink, DollarSign } from 'lucide-react';
+import { FiatLoan, FiatLoanStatus, FiatLenderOffer, FiatLenderOfferStatus } from '@/hooks/useFiatLoan';
+import { formatCurrency } from '@/hooks/useFiatOracle';
+import { Clock, TrendingUp, Shield, ExternalLink, DollarSign, Banknote } from 'lucide-react';
 import Link from 'next/link';
 
 // Helper to format USD values
@@ -499,6 +500,107 @@ export function FiatLoanRequestCard({ loan, onFund, onCancel, isOwner, isSupplie
           </Button>
         )}
         <Link href={`/fiat-loan/${loan.loanId}`} className="flex-1">
+          <Button variant="secondary" className="w-full" icon={<ExternalLink className="w-4 h-4" />}>
+            Details
+          </Button>
+        </Link>
+      </div>
+    </Card>
+  );
+}
+
+// Fiat Lender Offer Card
+interface FiatLenderOfferCardProps {
+  offer: FiatLenderOffer;
+  onAccept?: () => void;
+  onCancel?: () => void;
+  isOwner?: boolean;
+  loading?: boolean;
+}
+
+export function FiatLenderOfferCard({ offer, onAccept, onCancel, isOwner, loading }: FiatLenderOfferCardProps) {
+  // Convert fiat amount to display value
+  const minCollateralUSD = Number(offer.minCollateralValueUSD);
+
+  // Get status badge
+  const getStatusBadge = () => {
+    switch (offer.status) {
+      case FiatLenderOfferStatus.ACTIVE:
+        return <Badge variant="success" size="sm">Active</Badge>;
+      case FiatLenderOfferStatus.ACCEPTED:
+        return <Badge variant="info" size="sm">Accepted</Badge>;
+      case FiatLenderOfferStatus.CANCELLED:
+        return <Badge variant="default" size="sm">Cancelled</Badge>;
+      case FiatLenderOfferStatus.EXPIRED:
+        return <Badge variant="danger" size="sm">Expired</Badge>;
+      default:
+        return null;
+    }
+  };
+
+  // Calculate if offer is expired
+  const isExpired = offer.status === FiatLenderOfferStatus.ACTIVE &&
+    BigInt(Math.floor(Date.now() / 1000)) > offer.expireAt;
+
+  return (
+    <Card hover className="flex flex-col h-full border-green-500/20">
+      <div className="flex items-start justify-between mb-4">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <Banknote className="w-5 h-5 text-green-400" />
+            <span className="text-lg font-bold text-green-400">
+              {formatCurrency(offer.fiatAmountCents, offer.currency)}
+            </span>
+            <Badge variant="info" size="sm">Offer</Badge>
+          </div>
+          <p className="text-sm text-gray-400 mt-1">
+            Min Collateral Value: {formatUSD(minCollateralUSD)}
+          </p>
+        </div>
+        {getStatusBadge()}
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 mb-4">
+        <div className="flex items-center gap-2">
+          <TrendingUp className="w-4 h-4 text-green-400" />
+          <div>
+            <p className="text-xs text-gray-400">Interest Rate</p>
+            <p className="font-medium">{formatPercentage(offer.interestRate)}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Clock className="w-4 h-4 text-primary-400" />
+          <div>
+            <p className="text-xs text-gray-400">Duration</p>
+            <p className="font-medium">{formatDuration(offer.duration)}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="text-sm text-gray-400 mb-4">
+        {offer.status === FiatLenderOfferStatus.ACTIVE ? (
+          isExpired ? (
+            <span className="text-red-400">Expired</span>
+          ) : (
+            <>Expires: {formatTimeUntil(offer.expireAt)}</>
+          )
+        ) : (
+          <>Created: {new Date(Number(offer.createdAt) * 1000).toLocaleDateString()}</>
+        )}
+      </div>
+
+      <div className="mt-auto flex gap-2">
+        {offer.status === FiatLenderOfferStatus.ACTIVE && !isOwner && !isExpired && onAccept && (
+          <Button onClick={onAccept} loading={loading} className="flex-1 bg-green-600 hover:bg-green-700">
+            Accept Offer
+          </Button>
+        )}
+        {offer.status === FiatLenderOfferStatus.ACTIVE && isOwner && onCancel && (
+          <Button variant="danger" onClick={onCancel} loading={loading} className="flex-1">
+            Cancel
+          </Button>
+        )}
+        <Link href={`/fiat-offer/${offer.offerId}`} className="flex-1">
           <Button variant="secondary" className="w-full" icon={<ExternalLink className="w-4 h-4" />}>
             Details
           </Button>

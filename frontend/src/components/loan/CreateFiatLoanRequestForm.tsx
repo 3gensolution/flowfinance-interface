@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAccount } from 'wagmi';
 import { Address, parseUnits, formatUnits } from 'viem';
 import { Card } from '@/components/ui/Card';
@@ -14,11 +14,20 @@ import {
   useLTV,
   useTokenPrice,
   useLiquidationThreshold,
+  useMaxInterestRate,
+  useSupportedAssets,
 } from '@/hooks/useContracts';
 import { useCreateFiatLoanRequest } from '@/hooks/useFiatLoan';
+import {
+  useGetExchangeRate,
+  useGetSupportedCurrencies,
+  useIsExchangeRateStale,
+  useConvertFromUSDCents,
+  getCurrencySymbol
+} from '@/hooks/useFiatOracle';
 import { PriceFeedDisplay } from '@/components/loan/PriceFeedDisplay';
 import { formatTokenAmount, daysToSeconds, getTokenDecimals } from '@/lib/utils';
-import { ArrowRight, AlertCircle, CheckCircle, Info, TrendingUp, Shield, Loader2, DollarSign, Banknote } from 'lucide-react';
+import { ArrowRight, AlertCircle, CheckCircle, Info, TrendingUp, Shield, Loader2, Banknote, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const durationOptions = [
@@ -31,15 +40,24 @@ const durationOptions = [
   { value: '365', label: '365 days' },
 ];
 
-const currencyOptions = [
-  { value: 'USD', label: 'USD - US Dollar' },
-  { value: 'NGN', label: 'NGN - Nigerian Naira' },
-  { value: 'EUR', label: 'EUR - Euro' },
-  { value: 'GBP', label: 'GBP - British Pound' },
-  { value: 'KES', label: 'KES - Kenyan Shilling' },
-  { value: 'GHS', label: 'GHS - Ghanaian Cedi' },
-  { value: 'ZAR', label: 'ZAR - South African Rand' },
-];
+// Currency labels mapping
+const currencyLabels: Record<string, string> = {
+  'USD': 'USD - US Dollar',
+  'NGN': 'NGN - Nigerian Naira',
+  'EUR': 'EUR - Euro',
+  'GBP': 'GBP - British Pound',
+  'KES': 'KES - Kenyan Shilling',
+  'GHS': 'GHS - Ghanaian Cedi',
+  'ZAR': 'ZAR - South African Rand',
+};
+
+// Helper to format number with commas
+const formatWithCommas = (value: string): string => {
+  if (!value) return '';
+  const num = parseFloat(value);
+  if (isNaN(num)) return value;
+  return num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
 
 export function CreateFiatLoanRequestForm() {
   const { address, isConnected } = useAccount();
@@ -48,11 +66,23 @@ export function CreateFiatLoanRequestForm() {
   const [collateralAmount, setCollateralAmount] = useState('');
   const [fiatAmount, setFiatAmount] = useState('');
   const [currency, setCurrency] = useState('USD');
-  const interestRate = '12'; // Fixed at 12% APY
+  const [interestRate, setInterestRate] = useState('12');
   const [duration, setDuration] = useState('30');
   const [step, setStep] = useState<'form' | 'approve' | 'confirm'>('form');
   const [simulationError, setSimulationError] = useState<string>('');
   const [isCalculating, setIsCalculating] = useState(false);
+  const [isSimulating, setIsSimulating] = useState(false);
+
+  // Ref to track if we've already handled approval success (prevents multiple toasts)
+  const approvalHandledRef = useRef(false);
+
+  // Get max interest rate from configuration
+  const { data: maxInterestRateData } = useMaxInterestRate();
+  const maxInterestRate = maxInterestRateData ? Number(maxInterestRateData) / 100 : 50; // Default 50% if not loaded
+
+  // Get supported assets from Configuration contract
+  const { supportedTokens } = useSupportedAssets();
+  const availableTokens = supportedTokens.length > 0 ? supportedTokens : TOKEN_LIST;
 
   const collateralDecimals = getTokenDecimals(collateralToken);
 
@@ -74,8 +104,49 @@ export function CreateFiatLoanRequestForm() {
   const { data: ltvBps, isLoading: isLoadingLTV, error: ltvError } = useLTV(collateralToken, durationDays);
   const { data: liquidationThresholdBps } = useLiquidationThreshold(collateralToken, durationDays);
 
-  const { approve, isPending: isApproving, isSuccess: approveSuccess } = useApproveToken();
-  const { createFiatLoanRequest, isPending: isCreating, isSuccess: createSuccess, error: createError } = useCreateFiatLoanRequest();
+  // Fetch exchange rate for selected currency using contract's getExchangeRate function
+  const { data: exchangeRateData, isLoading: isLoadingExchangeRate } = useGetExchangeRate(currency);
+  // getExchangeRate returns [rate, lastUpdated]
+  const currencyRate = exchangeRateData ? (exchangeRateData as [bigint, bigint])[0] : undefined;
+  // const rateUpdateTime = exchangeRateData ? (exchangeRateData as [bigint, bigint])[1] : undefined;
+
+  // Check if exchange rate is stale using contract function (1 hour = 3600 seconds)
+  const { data: rateStaleFromContract } = useIsExchangeRateStale(currency, 3600);
+  const rateStale = currency === 'USD' ? false : (rateStaleFromContract as boolean ?? true);
+
+  // Get supported currencies from contract
+  const { data: supportedCurrenciesData } = useGetSupportedCurrencies();
+  const contractSupportedCurrencies = supportedCurrenciesData as string[] | undefined;
+
+  // Handler for currency change - refetch exchange rate
+  const handleCurrencyChange = (newCurrency: string) => {
+    setCurrency(newCurrency);
+    // Reset fiat amount while we fetch new rate
+    if (newCurrency !== 'USD') {
+      setFiatAmount('');
+      setIsCalculating(true);
+    }
+  };
+
+  // Handler for collateral token change - triggers recalculation
+  const handleCollateralTokenChange = (newToken: Address) => {
+    setCollateralToken(newToken);
+    setCollateralAmount('');
+    setFiatAmount('');
+    setMaxLoanUSDCents(BigInt(0));
+  };
+
+  // Calculate USD cents for the collateral value (for conversion)
+  const [maxLoanUSDCents, setMaxLoanUSDCents] = useState<bigint>(BigInt(0));
+
+  // Use contract's convertFromUSDCents to get the fiat equivalent
+  const { data: convertedFiatAmount, isLoading: isLoadingConversion } = useConvertFromUSDCents(
+    maxLoanUSDCents > BigInt(0) ? maxLoanUSDCents : undefined,
+    currency
+  );
+
+  const { approve, simulateApprove, isPending: isApproving, isSuccess: approveSuccess } = useApproveToken();
+  const { createFiatLoanRequest, simulateCreateFiatLoanRequest, isPending: isCreating, isSuccess: createSuccess, error: createError } = useCreateFiatLoanRequest();
 
   const parsedCollateralAmount = collateralAmount
     ? parseUnits(collateralAmount, collateralDecimals)
@@ -83,19 +154,20 @@ export function CreateFiatLoanRequestForm() {
 
   const needsApproval = allowance !== undefined && parsedCollateralAmount > (allowance as bigint);
 
-  // Track if we're calculating (waiting for prices and LTV)
-  const isDataLoading = collateralPriceHook.isLoading || isLoadingLTV;
+  // Track if we're calculating (waiting for prices, LTV, and exchange rate)
+  // const isDataLoading = collateralPriceHook.isLoading || isLoadingLTV || isLoadingExchangeRate;
 
-  // Calculate maximum fiat borrow amount based on LTV
+  // Calculate maximum loan in USD cents based on collateral value and LTV
   useEffect(() => {
     if (!collateralAmount || parseFloat(collateralAmount) <= 0) {
+      setMaxLoanUSDCents(BigInt(0));
       setFiatAmount('');
       setIsCalculating(false);
       setSimulationError('');
       return;
     }
 
-    if (isDataLoading) {
+    if (collateralPriceHook.isLoading || isLoadingLTV) {
       setIsCalculating(true);
       return;
     }
@@ -114,15 +186,15 @@ export function CreateFiatLoanRequestForm() {
         const maxLoanUSD = (collateralValueUSD * (ltvBps as bigint)) / BigInt(10000);
 
         // Convert to cents (multiply by 100, divide by 1e8 for Chainlink decimals)
-        const maxFiatCents = (maxLoanUSD * BigInt(100)) / BigInt(1e8);
-        const maxFiatDollars = Number(maxFiatCents) / 100;
+        const usdCents = (maxLoanUSD * BigInt(100)) / BigInt(1e8);
 
-        setFiatAmount(maxFiatDollars.toFixed(2));
+        // Set the USD cents value - this will trigger the contract conversion hook
+        setMaxLoanUSDCents(usdCents);
       } catch (error) {
-        console.error('Error calculating fiat amount:', error);
+        console.error('Error calculating USD cents:', error);
+        setMaxLoanUSDCents(BigInt(0));
         setFiatAmount('0');
-        setSimulationError('Error calculating fiat amount');
-      } finally {
+        setSimulationError('Error calculating loan amount');
         setIsCalculating(false);
       }
     } else {
@@ -131,24 +203,67 @@ export function CreateFiatLoanRequestForm() {
         setSimulationError(errorMsg);
         setFiatAmount('');
       }
+      setMaxLoanUSDCents(BigInt(0));
       setIsCalculating(false);
     }
-  }, [collateralAmount, collateralPrice, ltvBps, collateralDecimals, isDataLoading, ltvError, duration]);
+  }, [collateralAmount, collateralPrice, ltvBps, collateralDecimals, collateralPriceHook.isLoading, isLoadingLTV, ltvError, duration]);
+
+  // Update fiat amount when contract conversion completes
+  useEffect(() => {
+    if (maxLoanUSDCents === BigInt(0)) {
+      return;
+    }
+
+    if (isLoadingConversion || isLoadingExchangeRate) {
+      setIsCalculating(true);
+      return;
+    }
+
+    // For USD, use the USD cents directly (no conversion needed)
+    if (currency === 'USD') {
+      const usdAmount = Number(maxLoanUSDCents) / 100;
+      setFiatAmount(usdAmount.toFixed(2));
+      setIsCalculating(false);
+      return;
+    }
+
+    // For other currencies, use the contract's converted value
+    if (convertedFiatAmount !== undefined) {
+      const fiatCents = convertedFiatAmount as bigint;
+      const fiatValue = Number(fiatCents) / 100;
+      setFiatAmount(fiatValue.toFixed(2));
+      setIsCalculating(false);
+    } else if (!isLoadingConversion && maxLoanUSDCents > BigInt(0)) {
+      // Conversion not available - currency might not be supported
+      setSimulationError('Currency conversion not available. Please check if currency is supported.');
+      setIsCalculating(false);
+    }
+  }, [maxLoanUSDCents, convertedFiatAmount, isLoadingConversion, isLoadingExchangeRate, currency]);
 
   useEffect(() => {
-    if (approveSuccess) {
+    // Only handle approval success once using ref
+    if (approveSuccess && !approvalHandledRef.current) {
+      approvalHandledRef.current = true;
       toast.success('Token approved successfully!');
       refetchAllowance();
+      // Go directly to confirm step - createFiatLoanRequest has built-in simulation
       setStep('confirm');
+    }
+    // Reset ref when approval is no longer successful (new approval cycle)
+    if (!approveSuccess) {
+      approvalHandledRef.current = false;
     }
   }, [approveSuccess, refetchAllowance]);
 
   useEffect(() => {
     if (createSuccess) {
       toast.success('Fiat loan request created successfully!');
+      setSimulationError(''); // Clear any previous errors
       setCollateralAmount('');
       setFiatAmount('');
       setStep('form');
+      // Reset approval ref for next transaction
+      approvalHandledRef.current = false;
     }
   }, [createSuccess]);
 
@@ -158,8 +273,9 @@ export function CreateFiatLoanRequestForm() {
     }
   }, [createError]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSimulationError('');
 
     if (!collateralAmount || !fiatAmount) {
       toast.error('Please fill in all fields');
@@ -181,10 +297,42 @@ export function CreateFiatLoanRequestForm() {
       return;
     }
 
+    // Check if approval is needed FIRST - skip simulation until after approval
     if (needsApproval) {
       setStep('approve');
       return;
     }
+
+    // Only simulate after approval is complete to prevent false-positive allowance errors
+    setIsSimulating(true);
+    try {
+      const fiatAmountCents = BigInt(Math.floor(parseFloat(fiatAmount) * 100));
+      const interestRateBps = BigInt(Math.floor(parseFloat(interestRate) * 100));
+      const durationSeconds = daysToSeconds(parseInt(duration));
+
+      const simulation = await simulateCreateFiatLoanRequest(
+        collateralToken,
+        parsedCollateralAmount,
+        fiatAmountCents,
+        currency,
+        interestRateBps,
+        durationSeconds
+      );
+
+      if (!simulation.success) {
+        setSimulationError(simulation.error || 'Transaction would fail');
+        toast.error(simulation.error || 'Transaction would fail. Please check your inputs.');
+        setIsSimulating(false);
+        return;
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Simulation failed';
+      setSimulationError(errorMsg);
+      toast.error(errorMsg);
+      setIsSimulating(false);
+      return;
+    }
+    setIsSimulating(false);
 
     setStep('confirm');
   };
@@ -192,8 +340,28 @@ export function CreateFiatLoanRequestForm() {
   const handleApprove = async () => {
     try {
       setSimulationError('');
+
+      // Simulate approval first to catch errors before spending gas
+      if (address) {
+        setIsSimulating(true);
+        const simulation = await simulateApprove(
+          collateralToken,
+          CONTRACT_ADDRESSES.fiatLoanBridge,
+          parsedCollateralAmount,
+          address
+        );
+        setIsSimulating(false);
+
+        if (!simulation.success) {
+          setSimulationError(simulation.error || 'Approval would fail');
+          toast.error(simulation.error || 'Approval would fail. Please check your wallet.');
+          return;
+        }
+      }
+
       approve(collateralToken, CONTRACT_ADDRESSES.fiatLoanBridge, parsedCollateralAmount);
     } catch (error: unknown) {
+      setIsSimulating(false);
       const errorMsg = error instanceof Error ? error.message : 'Approval failed';
       setSimulationError(errorMsg);
       toast.error(errorMsg);
@@ -224,7 +392,7 @@ export function CreateFiatLoanRequestForm() {
     }
   };
 
-  const tokenOptions = TOKEN_LIST.map((token) => ({
+  const tokenOptions = availableTokens.map((token) => ({
     value: token.address,
     label: token.symbol,
   }));
@@ -326,7 +494,7 @@ export function CreateFiatLoanRequestForm() {
                 label="Collateral Token"
                 options={tokenOptions}
                 value={collateralToken}
-                onChange={(e) => setCollateralToken(e.target.value as Address)}
+                onChange={(e) => handleCollateralTokenChange(e.target.value as Address)}
               />
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">Collateral Amount</label>
@@ -401,21 +569,31 @@ export function CreateFiatLoanRequestForm() {
               <h3 className="text-lg font-semibold text-green-400">Borrow (Fiat)</h3>
               <Select
                 label="Currency"
-                options={currencyOptions}
+                options={
+                  contractSupportedCurrencies && contractSupportedCurrencies.length > 0
+                    ? contractSupportedCurrencies.map(code => ({
+                        value: code,
+                        label: currencyLabels[code] || code
+                      }))
+                    : [{ value: 'USD', label: 'USD - US Dollar' }]
+                }
                 value={currency}
-                onChange={(e) => setCurrency(e.target.value)}
+                onChange={(e) => handleCurrencyChange(e.target.value)}
               />
+
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">Fiat Amount (Auto-calculated)</label>
                 <div className="flex items-center gap-2">
                   <div className="flex-1 relative">
-                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-green-400" />
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-green-400 font-medium">
+                      {getCurrencySymbol(currency)}
+                    </span>
                     <input
                       type="text"
-                      value={isCalculating ? 'Calculating...' : fiatAmount}
+                      value={isCalculating ? 'Calculating...' : formatWithCommas(fiatAmount)}
                       readOnly
                       disabled
-                      className="input-field w-full pl-9 bg-gray-800/50 cursor-not-allowed"
+                      className="input-field w-full pl-9 bg-gray-800/50 cursor-not-allowed text-lg font-semibold"
                     />
                   </div>
                   <div className="flex items-center gap-2 min-w-[60px]">
@@ -423,7 +601,17 @@ export function CreateFiatLoanRequestForm() {
                     <span className="text-sm text-gray-400">{currency}</span>
                   </div>
                 </div>
+
+                {/* Exchange Rate Display - under input */}
+                {currency !== 'USD' && currencyRate && currencyRate > BigInt(0) && (
+                  <p className="text-xs text-gray-500 mt-2 flex items-center gap-1">
+                    <RefreshCw className="w-3 h-3" />
+                    1 USD = {getCurrencySymbol(currency)}{(Number(currencyRate) / 1e8).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {rateStale && <span className="text-yellow-400 ml-1">⚠</span>}
+                  </p>
+                )}
               </div>
+
               <div className="glass-card p-3 space-y-1 border-green-500/20">
                 <p className="text-xs text-gray-400 flex items-center gap-1">
                   <TrendingUp className="w-3 h-3" />
@@ -439,11 +627,28 @@ export function CreateFiatLoanRequestForm() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Interest Rate (APY)</label>
-              <div className="flex items-center h-[42px] px-4 bg-gray-800/50 border border-green-500/30 rounded-lg">
-                <span className="text-lg font-semibold text-green-400">12%</span>
-                <span className="ml-2 text-sm text-gray-400">Fixed APY</span>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Interest Rate (Total Interest)
+              </label>
+              <div className="space-y-2">
+                <input
+                  type="range"
+                  min="0"
+                  max={maxInterestRate}
+                  step="0.5"
+                  value={interestRate}
+                  onChange={(e) => setInterestRate(e.target.value)}
+                  className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-green-500"
+                />
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-gray-400">0%</span>
+                  <span className="text-lg font-semibold text-green-400">{interestRate}%</span>
+                  <span className="text-xs text-gray-400">{maxInterestRate}% max</span>
+                </div>
               </div>
+              <p className="text-xs text-gray-400 mt-1">
+                This is the total interest you&apos;ll pay, not annual. The same rate applies regardless of duration.
+              </p>
             </div>
             <Select
               label="Loan Duration"
@@ -475,27 +680,62 @@ export function CreateFiatLoanRequestForm() {
           </div>
 
           {/* Loan Summary */}
-          <div className="glass-card p-4 space-y-2 border-green-500/20">
+          <div className="glass-card p-4 space-y-3 border-green-500/20">
             <h4 className="font-semibold text-gray-300">Loan Summary</h4>
             <div className="flex justify-between text-sm">
               <span className="text-gray-400">Collateral</span>
               <div className="text-right">
                 <div>{collateralAmount || '0'} {TOKEN_LIST.find((t) => t.address === collateralToken)?.symbol}</div>
-                {collateralUSD > 0 && <div className="text-xs text-gray-500">≈ ${collateralUSD.toFixed(2)}</div>}
+                {collateralUSD > 0 && <div className="text-xs text-gray-500">≈ ${collateralUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>}
               </div>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-gray-400">You will receive</span>
-              <span className="text-green-400 font-medium">${fiatAmount || '0'} {currency}</span>
+              <div className="text-right">
+                <div className="text-green-400 font-medium">{getCurrencySymbol(currency)}{formatWithCommas(fiatAmount) || '0'} {currency}</div>
+                {currency !== 'USD' && maxLoanUSDCents > BigInt(0) && (
+                  <div className="text-xs text-gray-500">
+                    ≈ ${(Number(maxLoanUSDCents) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
+                  </div>
+                )}
+              </div>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-gray-400">Interest Rate (APY)</span>
+              <span className="text-gray-400">Interest Rate</span>
               <span>{interestRate}%</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-gray-400">Duration</span>
               <span>{duration} days</span>
             </div>
+
+            {/* Interest Calculation */}
+            {fiatAmount && parseFloat(fiatAmount) > 0 && (
+              <>
+                <div className="border-t border-gray-700 my-2"></div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-400">Interest Amount</span>
+                  <div className="text-right">
+                    <div className="text-yellow-400">
+                      {getCurrencySymbol(currency)}{(parseFloat(fiatAmount) * parseFloat(interestRate) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currency}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex justify-between text-sm font-semibold">
+                  <span className="text-gray-300">Total Repayment</span>
+                  <div className="text-right">
+                    <div className="text-white">
+                      {getCurrencySymbol(currency)}{(parseFloat(fiatAmount) * (1 + parseFloat(interestRate) / 100)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currency}
+                    </div>
+                    {currency !== 'USD' && maxLoanUSDCents > BigInt(0) && (
+                      <div className="text-xs text-gray-500 font-normal">
+                        ≈ ${((Number(maxLoanUSDCents) / 100) * (1 + parseFloat(interestRate) / 100)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
 
           {simulationError && (
@@ -511,9 +751,10 @@ export function CreateFiatLoanRequestForm() {
             type="submit"
             className="w-full bg-green-600 hover:bg-green-700"
             icon={<ArrowRight className="w-5 h-5" />}
-            disabled={!isFormValid}
+            disabled={!isFormValid || isSimulating}
+            loading={isSimulating}
           >
-            {isCalculating ? 'Calculating...' : 'Continue'}
+            {isCalculating ? 'Calculating...' : isSimulating ? 'Validating...' : 'Continue'}
           </Button>
         </form>
       )}
@@ -554,29 +795,62 @@ export function CreateFiatLoanRequestForm() {
           <div>
             <h3 className="text-xl font-semibold mb-2">Confirm Fiat Loan Request</h3>
             <p className="text-gray-400">
-              Create your fiat loan request for ${fiatAmount} {currency}
+              Create your fiat loan request for {getCurrencySymbol(currency)}{formatWithCommas(fiatAmount)} {currency}
             </p>
           </div>
-          <div className="glass-card p-4 space-y-2 text-left border-green-500/20">
+          <div className="glass-card p-4 space-y-3 text-left border-green-500/20">
             <div className="flex justify-between text-sm">
               <span className="text-gray-400">Collateral</span>
               <div className="text-right">
                 <div>{collateralAmount} {TOKEN_LIST.find((t) => t.address === collateralToken)?.symbol}</div>
-                {collateralUSD > 0 && <div className="text-xs text-gray-500">≈ ${collateralUSD.toFixed(2)}</div>}
+                {collateralUSD > 0 && <div className="text-xs text-gray-500">≈ ${collateralUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>}
               </div>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-gray-400">Fiat Amount</span>
-              <span className="text-green-400 font-medium">${fiatAmount} {currency}</span>
+              <span className="text-gray-400">You will receive</span>
+              <div className="text-right">
+                <div className="text-green-400 font-medium">{getCurrencySymbol(currency)}{formatWithCommas(fiatAmount)} {currency}</div>
+                {currency !== 'USD' && maxLoanUSDCents > BigInt(0) && (
+                  <div className="text-xs text-gray-500">
+                    ≈ ${(Number(maxLoanUSDCents) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
+                  </div>
+                )}
+              </div>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-gray-400">Interest Rate</span>
-              <span>{interestRate}% APY</span>
+              <span>{interestRate}%</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-gray-400">Duration</span>
               <span>{duration} days</span>
             </div>
+
+            {/* Interest Calculation */}
+            {fiatAmount && parseFloat(fiatAmount) > 0 && (
+              <>
+                <div className="border-t border-gray-700 my-2"></div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-400">Interest Amount</span>
+                  <div className="text-yellow-400">
+                    {getCurrencySymbol(currency)}{(parseFloat(fiatAmount) * parseFloat(interestRate) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currency}
+                  </div>
+                </div>
+                <div className="flex justify-between text-sm font-semibold bg-gray-800/50 p-2 rounded-lg -mx-2">
+                  <span className="text-gray-300">Total Repayment</span>
+                  <div className="text-right">
+                    <div className="text-white">
+                      {getCurrencySymbol(currency)}{(parseFloat(fiatAmount) * (1 + parseFloat(interestRate) / 100)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currency}
+                    </div>
+                    {currency !== 'USD' && maxLoanUSDCents > BigInt(0) && (
+                      <div className="text-xs text-gray-500 font-normal">
+                        ≈ ${((Number(maxLoanUSDCents) / 100) * (1 + parseFloat(interestRate) / 100)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
           {simulationError && (
             <div className="glass-card p-4 border border-red-500/20 bg-red-500/5">

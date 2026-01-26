@@ -21,6 +21,8 @@ import {
   User,
   Loader2,
   ExternalLink,
+  ArrowDownToLine,
+  ArrowUpFromLine,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -283,19 +285,89 @@ export function SupplierSection() {
           </>
         ) : (
           <>
+            {/* Supplier Details for unverified suppliers */}
+            <div className="space-y-3 mb-4">
+              {/* Registration Info */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 bg-white/5 rounded-lg">
+                  <p className="text-xs text-gray-400">Registered</p>
+                  <p className="text-sm font-semibold">
+                    {supplier?.registeredAt
+                      ? new Date(Number(supplier.registeredAt) * 1000).toLocaleDateString()
+                      : 'N/A'}
+                  </p>
+                </div>
+                <div className="p-3 bg-white/5 rounded-lg">
+                  <p className="text-xs text-gray-400">Reputation Score</p>
+                  <p className="text-sm font-semibold">
+                    {supplier?.reputationScore?.toString() || '50'}/100
+                  </p>
+                </div>
+              </div>
+
+              {/* Status Info */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 bg-white/5 rounded-lg">
+                  <p className="text-xs text-gray-400">Status</p>
+                  <p className="text-sm font-semibold flex items-center gap-1.5">
+                    <span className={`w-2 h-2 rounded-full ${supplier?.isActive ? 'bg-green-400' : 'bg-gray-400'}`}></span>
+                    {supplier?.isActive ? 'Active' : 'Inactive'}
+                  </p>
+                </div>
+                <div className="p-3 bg-white/5 rounded-lg">
+                  <p className="text-xs text-gray-400">KYC Status</p>
+                  <p className="text-sm font-semibold text-yellow-400">
+                    Pending
+                  </p>
+                </div>
+              </div>
+
+              {/* Business Registration (if business) */}
+              {supplier?.supplierType === 1 && supplier?.businessRegistrationNumber && (
+                <div className="p-3 bg-white/5 rounded-lg">
+                  <p className="text-xs text-gray-400">Business Reg. Number</p>
+                  <p className="text-sm font-semibold">{supplier.businessRegistrationNumber}</p>
+                </div>
+              )}
+
+              {/* Staking Info */}
+              <div className="p-3 bg-white/5 rounded-lg">
+                <p className="text-xs text-gray-400">Staked Amount</p>
+                <p className="text-sm font-semibold">
+                  {supplier?.stakedAmount ? formatEther(supplier.stakedAmount) : '0'} ETH
+                </p>
+              </div>
+            </div>
+
             {/* CTA for unverified suppliers */}
             <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg mb-4">
               <p className="text-sm text-gray-400">
                 Complete KYC verification to start providing fiat liquidity and earning interest.
               </p>
             </div>
-            <Button
-              onClick={() => setKycModalOpen(true)}
-              icon={<ExternalLink className="w-4 h-4" />}
-              className="w-full"
-            >
-              Complete KYC Verification
-            </Button>
+
+            {/* Deposit and Withdraw buttons */}
+            <div className="flex gap-3 mb-4">
+              <Button
+                onClick={() => setKycModalOpen(true)}
+                icon={<ArrowDownToLine className="w-4 h-4" />}
+                className="flex-1"
+              >
+                Deposit
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => setKycModalOpen(true)}
+                icon={<ArrowUpFromLine className="w-4 h-4" />}
+                className="flex-1"
+              >
+                Withdraw
+              </Button>
+            </div>
+
+            <p className="text-xs text-gray-500 text-center">
+              KYC verification is required before you can deposit or withdraw fiat liquidity.
+            </p>
           </>
         )}
       </Card>
@@ -316,8 +388,9 @@ export function SupplierSection() {
               <div>
                 <p className="text-yellow-400 font-medium mb-1">Verification Needed</p>
                 <p className="text-sm text-gray-400">
-                  To provide fiat liquidity, you must complete KYC verification.
-                  You will be redirected to our verification partner&apos;s website.
+                  To deposit fiat or provide liquidity, you must complete KYC verification.
+                  You will be redirected to a trusted third-party verification partner
+                  to securely verify your identity.
                 </p>
               </div>
             </div>
@@ -350,9 +423,9 @@ export function SupplierSection() {
               className="mt-0.5 w-4 h-4 rounded border-gray-600 bg-gray-800 text-primary-500 focus:ring-primary-500"
             />
             <span className="text-sm text-gray-300">
-              I understand that I will be redirected to an external website to complete
-              identity verification, and I consent to sharing my personal information
-              for KYC purposes.
+              I understand that I will be redirected to a trusted third-party website to complete
+              identity verification. I consent to sharing my personal information
+              for KYC purposes and acknowledge this is required before I can provide fiat liquidity.
             </span>
           </label>
 

@@ -6,7 +6,8 @@ import { useAccount } from 'wagmi';
 import { useSearchParams } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { LoanRequestCard, LenderOfferCard, FiatLoanRequestCard } from '@/components/loan/LoanCard';
+import { LoanRequestCard, LenderOfferCard, FiatLoanRequestCard, FiatLenderOfferCard } from '@/components/loan/LoanCard';
+import { AcceptFiatLenderOfferModal } from '@/components/loan/AcceptFiatLenderOfferModal';
 import {
   useNextLoanRequestId,
   useNextLenderOfferId,
@@ -19,6 +20,9 @@ import {
   useFiatLoanStats,
   FiatLoanStatus,
   useAcceptFiatLoanRequest,
+  useActiveFiatLenderOffersWithDetails,
+  FiatLenderOfferStatus,
+  FiatLenderOffer,
 } from '@/hooks/useFiatLoan';
 import { useSupplierDetails } from '@/hooks/useSupplier';
 import { LoanRequestStatus } from '@/types';
@@ -27,13 +31,17 @@ import Link from 'next/link';
 import { getTokenDecimals } from '@/lib/utils';
 
 type Tab = 'requests' | 'offers';
+type FiatTab = 'requests' | 'offers';
 type MarketType = 'crypto' | 'fiat';
 
 function MarketplaceContent() {
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<Tab>('requests');
+  const [fiatTab, setFiatTab] = useState<FiatTab>('requests');
   const [marketType, setMarketType] = useState<MarketType>('crypto');
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedFiatOffer, setSelectedFiatOffer] = useState<FiatLenderOffer | null>(null);
+  const [isAcceptModalOpen, setIsAcceptModalOpen] = useState(false);
   const { address } = useAccount();
 
   // Supplier status for fiat loans
@@ -86,6 +94,13 @@ function MarketplaceContent() {
 
   const { data: fiatStats, isLoading: isLoadingFiatStats } = useFiatLoanStats();
 
+  // Fiat lender offers data
+  const {
+    data: fiatLenderOffers,
+    isLoading: isLoadingFiatOffers,
+    refetch: refetchFiatOffers
+  } = useActiveFiatLenderOffersWithDetails();
+
   // Accept fiat loan request hook
   const { acceptFiatLoanRequest, isPending: isAcceptingFiat } = useAcceptFiatLoanRequest();
 
@@ -106,6 +121,24 @@ function MarketplaceContent() {
       loan.status === FiatLoanStatus.PENDING_SUPPLIER
     ).length;
   }, [pendingFiatLoans, address]);
+
+  // Filter fiat lender offers for display (exclude user's own)
+  const displayFiatLenderOffers = useMemo(() => {
+    if (!fiatLenderOffers) return [];
+    return fiatLenderOffers.filter((offer) => {
+      if (address && offer.lender.toLowerCase() === address.toLowerCase()) return false;
+      return offer.status === FiatLenderOfferStatus.ACTIVE;
+    });
+  }, [fiatLenderOffers, address]);
+
+  // User's own pending fiat offers
+  const userPendingFiatOffers = useMemo(() => {
+    if (!fiatLenderOffers || !address) return 0;
+    return fiatLenderOffers.filter((offer) =>
+      offer.lender.toLowerCase() === address.toLowerCase() &&
+      offer.status === FiatLenderOfferStatus.ACTIVE
+    ).length;
+  }, [fiatLenderOffers, address]);
 
   // Filter for PENDING status and exclude user's own requests
   const loanRequests = useMemo(() => {
@@ -208,10 +241,11 @@ function MarketplaceContent() {
     refetchOffers();
     refetchPendingFiat();
     refetchActiveFiat();
+    refetchFiatOffers();
   };
 
   const isLoading = isLoadingRequests || isLoadingOffers;
-  const isFiatLoading = isLoadingPendingFiat || isLoadingActiveFiat || isLoadingFiatStats;
+  const isFiatLoading = isLoadingPendingFiat || isLoadingActiveFiat || isLoadingFiatStats || isLoadingFiatOffers;
 
   return (
     <div className="min-h-screen py-12 px-4 sm:px-6 lg:px-8">
@@ -519,7 +553,7 @@ function MarketplaceContent() {
               </Card>
             </motion.div>
 
-            {/* Fiat Action Bar */}
+            {/* Fiat Tabs */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -528,11 +562,20 @@ function MarketplaceContent() {
             >
               <div className="flex gap-2">
                 <Button
-                  variant="primary"
-                  className="bg-green-600 hover:bg-green-700"
+                  variant={fiatTab === 'requests' ? 'primary' : 'secondary'}
+                  onClick={() => setFiatTab('requests')}
+                  className={fiatTab === 'requests' ? 'bg-green-600 hover:bg-green-700' : ''}
                   icon={<DollarSign className="w-4 h-4" />}
                 >
-                  Fiat Loan Requests
+                  Loan Requests
+                </Button>
+                <Button
+                  variant={fiatTab === 'offers' ? 'primary' : 'secondary'}
+                  onClick={() => setFiatTab('offers')}
+                  className={fiatTab === 'offers' ? 'bg-green-600 hover:bg-green-700' : ''}
+                  icon={<TrendingUp className="w-4 h-4" />}
+                >
+                  Lender Offers
                 </Button>
               </div>
 
@@ -548,8 +591,8 @@ function MarketplaceContent() {
               </div>
             </motion.div>
 
-            {/* User's Own Pending Fiat Loans Info */}
-            {userPendingFiatLoans > 0 && (
+            {/* User's Own Pending Fiat Items Info */}
+            {fiatTab === 'requests' && userPendingFiatLoans > 0 && (
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -566,6 +609,29 @@ function MarketplaceContent() {
                     </p>
                     <Link href="/dashboard" className="text-green-400 text-sm hover:underline mt-2 inline-block">
                       View your requests in Dashboard →
+                    </Link>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            {fiatTab === 'offers' && userPendingFiatOffers > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mb-6"
+              >
+                <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4 flex items-start gap-3">
+                  <Clock className="w-5 h-5 text-green-400 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-green-400 font-medium">
+                      You have {userPendingFiatOffers} active fiat lender offer{userPendingFiatOffers > 1 ? 's' : ''} awaiting acceptance
+                    </p>
+                    <p className="text-gray-400 text-sm mt-1">
+                      Your own offers are not shown here as you cannot accept them yourself. They are visible to borrowers who can accept them.
+                    </p>
+                    <Link href="/dashboard" className="text-green-400 text-sm hover:underline mt-2 inline-block">
+                      View your offers in Dashboard →
                     </Link>
                   </div>
                 </div>
@@ -596,49 +662,92 @@ function MarketplaceContent() {
               </motion.div>
             )}
 
-            {/* Fiat Loan Requests Grid */}
+            {/* Fiat Content Grid */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.3 }}
             >
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {isFiatLoading ? (
-                  <div className="col-span-full flex justify-center py-12">
-                    <Loader2 className="w-8 h-8 animate-spin text-green-400" />
-                  </div>
-                ) : displayPendingFiatLoans.length > 0 ? (
-                  displayPendingFiatLoans.map((loan) => (
-                    <FiatLoanRequestCard
-                      key={loan.loanId.toString()}
-                      loan={loan}
-                      isOwner={false}
-                      isSupplier={isVerifiedSupplier}
-                      onFund={isVerifiedSupplier ? async () => {
-                        try {
-                          await acceptFiatLoanRequest(loan.loanId);
-                        } catch (error) {
-                          console.error('Failed to fund fiat loan:', error);
-                        }
-                      } : undefined}
-                      loading={isAcceptingFiat}
-                    />
-                  ))
-                ) : (
-                  <div className="col-span-full">
-                    <Card className="text-center py-12 border-green-500/20">
-                      <Banknote className="w-12 h-12 text-green-400 mx-auto mb-4" />
-                      <h3 className="text-xl font-semibold mb-2">No Pending Fiat Loan Requests</h3>
-                      <p className="text-gray-400 mb-4">
-                        There are no pending fiat loan requests at the moment.
-                      </p>
-                      <Link href="/borrow">
-                        <Button className="bg-green-600 hover:bg-green-700">Create a Fiat Loan Request</Button>
-                      </Link>
-                    </Card>
-                  </div>
-                )}
-              </div>
+              {fiatTab === 'requests' && (
+                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {isFiatLoading ? (
+                    <div className="col-span-full flex justify-center py-12">
+                      <Loader2 className="w-8 h-8 animate-spin text-green-400" />
+                    </div>
+                  ) : displayPendingFiatLoans.length > 0 ? (
+                    displayPendingFiatLoans.map((loan) => (
+                      <FiatLoanRequestCard
+                        key={loan.loanId.toString()}
+                        loan={loan}
+                        isOwner={false}
+                        isSupplier={isVerifiedSupplier}
+                        onFund={isVerifiedSupplier ? async () => {
+                          try {
+                            await acceptFiatLoanRequest(loan.loanId);
+                          } catch (error) {
+                            console.error('Failed to fund fiat loan:', error);
+                          }
+                        } : undefined}
+                        loading={isAcceptingFiat}
+                      />
+                    ))
+                  ) : (
+                    <div className="col-span-full">
+                      <Card className="text-center py-12 border-green-500/20">
+                        <Banknote className="w-12 h-12 text-green-400 mx-auto mb-4" />
+                        <h3 className="text-xl font-semibold mb-2">No Pending Fiat Loan Requests</h3>
+                        <p className="text-gray-400 mb-4">
+                          There are no pending fiat loan requests at the moment.
+                        </p>
+                        <Link href="/borrow">
+                          <Button className="bg-green-600 hover:bg-green-700">Create a Fiat Loan Request</Button>
+                        </Link>
+                      </Card>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {fiatTab === 'offers' && (
+                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {isFiatLoading ? (
+                    <div className="col-span-full flex justify-center py-12">
+                      <Loader2 className="w-8 h-8 animate-spin text-green-400" />
+                    </div>
+                  ) : displayFiatLenderOffers.length > 0 ? (
+                    displayFiatLenderOffers.map((offer) => (
+                      <FiatLenderOfferCard
+                        key={offer.offerId.toString()}
+                        offer={offer}
+                        isOwner={false}
+                        onAccept={() => {
+                          setSelectedFiatOffer(offer);
+                          setIsAcceptModalOpen(true);
+                        }}
+                      />
+                    ))
+                  ) : (
+                    <div className="col-span-full">
+                      <Card className="text-center py-12 border-green-500/20">
+                        <TrendingUp className="w-12 h-12 text-green-400 mx-auto mb-4" />
+                        <h3 className="text-xl font-semibold mb-2">No Active Fiat Lender Offers</h3>
+                        <p className="text-gray-400 mb-4">
+                          There are no active fiat lender offers at the moment.
+                        </p>
+                        {isVerifiedSupplier ? (
+                          <Link href="/lend">
+                            <Button className="bg-green-600 hover:bg-green-700">Create a Fiat Lender Offer</Button>
+                          </Link>
+                        ) : (
+                          <p className="text-sm text-gray-500">
+                            Only verified fiat suppliers can create fiat lender offers.
+                          </p>
+                        )}
+                      </Card>
+                    </div>
+                  )}
+                </div>
+              )}
             </motion.div>
 
             {/* Fiat CTA */}
@@ -649,18 +758,54 @@ function MarketplaceContent() {
               className="mt-12 text-center"
             >
               <Card className="inline-block border-green-500/20">
-                <p className="text-gray-400 mb-4">
-                  Need fiat liquidity backed by your crypto?
-                </p>
-                <div className="flex gap-4 justify-center">
-                  <Link href="/borrow">
-                    <Button className="bg-green-600 hover:bg-green-700">Create Fiat Loan Request</Button>
-                  </Link>
-                </div>
+                {fiatTab === 'requests' ? (
+                  <>
+                    <p className="text-gray-400 mb-4">
+                      Need fiat liquidity backed by your crypto?
+                    </p>
+                    <div className="flex gap-4 justify-center">
+                      <Link href="/borrow">
+                        <Button className="bg-green-600 hover:bg-green-700">Create Fiat Loan Request</Button>
+                      </Link>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-gray-400 mb-4">
+                      {isVerifiedSupplier
+                        ? 'Create offers to lend fiat to borrowers'
+                        : 'Only verified fiat suppliers can create lender offers'}
+                    </p>
+                    <div className="flex gap-4 justify-center">
+                      {isVerifiedSupplier ? (
+                        <Link href="/lend">
+                          <Button className="bg-green-600 hover:bg-green-700">Create Fiat Lender Offer</Button>
+                        </Link>
+                      ) : (
+                        <Link href="/dashboard">
+                          <Button className="bg-green-600 hover:bg-green-700">Become a Fiat Supplier</Button>
+                        </Link>
+                      )}
+                    </div>
+                  </>
+                )}
               </Card>
             </motion.div>
           </>
         )}
+
+        {/* Accept Fiat Lender Offer Modal */}
+        <AcceptFiatLenderOfferModal
+          offer={selectedFiatOffer}
+          isOpen={isAcceptModalOpen}
+          onClose={() => {
+            setIsAcceptModalOpen(false);
+            setSelectedFiatOffer(null);
+          }}
+          onSuccess={() => {
+            handleRefresh();
+          }}
+        />
       </div>
     </div>
   );

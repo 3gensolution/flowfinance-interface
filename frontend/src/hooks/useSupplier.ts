@@ -41,35 +41,81 @@ export function useSupplierDetails(address: Address | undefined) {
     args: address ? [address] : undefined,
     query: {
       enabled: !!address && CONTRACT_ADDRESSES.supplierRegistry !== '0x0000000000000000000000000000000000000000',
+      // Retry on error to handle temporary network issues, but not contract reverts
+      retry: (failureCount, error) => {
+        // Don't retry if it's a "Supplier not registered" error
+        const errorMessage = (error as Error)?.message || '';
+        if (errorMessage.includes('Supplier not registered')) {
+          return false;
+        }
+        return failureCount < 2;
+      },
     },
   });
 
-  // Parse the tuple result into a typed object
-  const supplierData = result.data as readonly unknown[] | undefined;
-  const supplier: SupplierDetails | undefined = supplierData ? {
-    supplierAddress: supplierData[0] as Address,
-    supplierType: Number(supplierData[1]),
-    name: supplierData[2] as string,
-    businessRegistrationNumber: supplierData[3] as string,
-    kycDocumentHash: supplierData[4] as string,
-    isVerified: supplierData[5] as boolean,
-    isActive: supplierData[6] as boolean,
-    registeredAt: supplierData[7] as bigint,
-    totalLoansProvided: supplierData[8] as bigint,
-    totalVolumeProvided: supplierData[9] as bigint,
-    reputationScore: supplierData[10] as bigint,
-    stakedAmount: supplierData[11] as bigint,
-    averageRating: supplierData[12] as bigint,
-    numberOfRatings: supplierData[13] as bigint,
-  } : undefined;
+  // Check if the error is "Supplier not registered" - this means user is not registered
+  const isNotRegisteredError = result.error?.message?.includes('Supplier not registered') ||
+    result.error?.message?.includes('revert');
 
-  // Check if user is actually registered (has non-zero registeredAt)
+  // Parse the struct result - wagmi returns structs as objects with named properties
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rawData = result.data as any;
+
+  // Handle both object format (wagmi) and array format (legacy)
+  let supplier: SupplierDetails | undefined = undefined;
+
+  if (rawData) {
+    // Check if it's an object with named properties (wagmi struct format)
+    if (typeof rawData === 'object' && 'supplierAddress' in rawData) {
+      supplier = {
+        supplierAddress: rawData.supplierAddress as Address,
+        supplierType: Number(rawData.supplierType),
+        name: rawData.name as string,
+        businessRegistrationNumber: rawData.businessRegistrationNumber as string,
+        kycDocumentHash: rawData.kycDocumentHash as string,
+        isVerified: rawData.isVerified as boolean,
+        isActive: rawData.isActive as boolean,
+        registeredAt: BigInt(rawData.registeredAt || 0),
+        totalLoansProvided: BigInt(rawData.totalLoansProvided || 0),
+        totalVolumeProvided: BigInt(rawData.totalVolumeProvided || 0),
+        reputationScore: BigInt(rawData.reputationScore || 0),
+        stakedAmount: BigInt(rawData.stakedAmount || 0),
+        averageRating: BigInt(rawData.averageRating || 0),
+        numberOfRatings: BigInt(rawData.numberOfRatings || 0),
+      };
+    }
+    // Array format fallback
+    else if (Array.isArray(rawData) && rawData.length >= 14) {
+      supplier = {
+        supplierAddress: rawData[0] as Address,
+        supplierType: Number(rawData[1]),
+        name: rawData[2] as string,
+        businessRegistrationNumber: rawData[3] as string,
+        kycDocumentHash: rawData[4] as string,
+        isVerified: rawData[5] as boolean,
+        isActive: rawData[6] as boolean,
+        registeredAt: BigInt(rawData[7] || 0),
+        totalLoansProvided: BigInt(rawData[8] || 0),
+        totalVolumeProvided: BigInt(rawData[9] || 0),
+        reputationScore: BigInt(rawData[10] || 0),
+        stakedAmount: BigInt(rawData[11] || 0),
+        averageRating: BigInt(rawData[12] || 0),
+        numberOfRatings: BigInt(rawData[13] || 0),
+      };
+    }
+  }
+
+  // Check if user is actually registered:
+  // - If we have supplier data with non-zero registeredAt, they're registered
+  // - If we got a "Supplier not registered" error, they're not registered
+  // - If loading or other error, we don't know yet
   const isRegistered = supplier ? supplier.registeredAt > BigInt(0) : false;
 
   return {
     ...result,
     supplier,
     isRegistered,
+    isNotRegisteredError,
     isVerified: supplier?.isVerified ?? false,
     isActive: supplier?.isActive ?? false,
   };

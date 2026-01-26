@@ -1,11 +1,12 @@
 'use client';
 
-import { useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import { useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt, useAccount, usePublicClient } from 'wagmi';
 import { useCallback, useEffect } from 'react';
 import { Address, Abi } from 'viem';
 import { CONTRACT_ADDRESSES } from '@/config/contracts';
 import FiatLoanBridgeABIJson from '@/contracts/FiatLoanBridgeABI.json';
 import { useInvalidateContractQueries } from './useContracts';
+import { convertToUSDCents } from './useFiatOracle';
 
 const FiatLoanBridgeABI = FiatLoanBridgeABIJson as Abi;
 
@@ -16,6 +17,14 @@ export enum FiatLoanStatus {
   REPAID = 2,
   LIQUIDATED = 3,
   CANCELLED = 4,
+}
+
+// Fiat lender offer status enum matching contract
+export enum FiatLenderOfferStatus {
+  ACTIVE = 0,
+  ACCEPTED = 1,
+  CANCELLED = 2,
+  EXPIRED = 3,
 }
 
 // Fiat loan type
@@ -37,6 +46,22 @@ export interface FiatLoan {
   claimableAmountCents: bigint;
   fundsWithdrawn: boolean;
   repaymentDepositId: `0x${string}`;
+  exchangeRateAtCreation: bigint; // Exchange rate (units per 1 USD, scaled by 1e8) at loan creation
+}
+
+// Fiat lender offer type
+export interface FiatLenderOffer {
+  offerId: bigint;
+  lender: Address;
+  fiatAmountCents: bigint;
+  currency: string;
+  minCollateralValueUSD: bigint;
+  duration: bigint;
+  interestRate: bigint;
+  createdAt: bigint;
+  expireAt: bigint;
+  status: FiatLenderOfferStatus;
+  exchangeRateAtCreation: bigint; // Exchange rate (units per 1 USD, scaled by 1e8) at offer creation
 }
 
 // Get next fiat loan ID
@@ -45,6 +70,15 @@ export function useNextFiatLoanId() {
     address: CONTRACT_ADDRESSES.fiatLoanBridge,
     abi: FiatLoanBridgeABI,
     functionName: 'nextFiatLoanId',
+  });
+}
+
+// Get next fiat lender offer ID
+export function useNextFiatLenderOfferId() {
+  return useReadContract({
+    address: CONTRACT_ADDRESSES.fiatLoanBridge,
+    abi: FiatLoanBridgeABI,
+    functionName: 'nextFiatLenderOfferId',
   });
 }
 
@@ -89,6 +123,41 @@ export function useSupplierFiatLoans(supplier: Address | undefined) {
     query: {
       enabled: !!supplier,
     },
+  });
+}
+
+// Get single fiat lender offer details
+export function useFiatLenderOffer(offerId: bigint | undefined) {
+  return useReadContract({
+    address: CONTRACT_ADDRESSES.fiatLoanBridge,
+    abi: FiatLoanBridgeABI,
+    functionName: 'fiatLenderOffers',
+    args: offerId !== undefined ? [offerId] : undefined,
+    query: {
+      enabled: offerId !== undefined,
+    },
+  });
+}
+
+// Get lender's fiat lender offer IDs
+export function useLenderFiatOffers(lender: Address | undefined) {
+  return useReadContract({
+    address: CONTRACT_ADDRESSES.fiatLoanBridge,
+    abi: FiatLoanBridgeABI,
+    functionName: 'getLenderFiatOffers',
+    args: lender ? [lender] : undefined,
+    query: {
+      enabled: !!lender,
+    },
+  });
+}
+
+// Get active fiat lender offers
+export function useActiveFiatLenderOffers() {
+  return useReadContract({
+    address: CONTRACT_ADDRESSES.fiatLoanBridge,
+    abi: FiatLoanBridgeABI,
+    functionName: 'getActiveFiatLenderOffers',
   });
 }
 
@@ -173,6 +242,7 @@ export function useBatchFiatLoans(loanIds: bigint[]) {
           claimableAmountCents: arr[14],
           fundsWithdrawn: arr[15],
           repaymentDepositId: arr[16],
+          exchangeRateAtCreation: arr[17],
         };
       } else {
         loanData = data as Record<string, unknown>;
@@ -201,11 +271,77 @@ export function useBatchFiatLoans(loanIds: bigint[]) {
         claimableAmountCents: loanData.claimableAmountCents as bigint,
         fundsWithdrawn: loanData.fundsWithdrawn as boolean,
         repaymentDepositId: loanData.repaymentDepositId as `0x${string}`,
+        exchangeRateAtCreation: (loanData.exchangeRateAtCreation as bigint) || BigInt(0),
       } as FiatLoan;
     })
     .filter((l): l is FiatLoan => l !== null);
 
   return { data: loans, isLoading, isError, refetch };
+}
+
+// Batch fetch fiat lender offers by IDs
+export function useBatchFiatLenderOffers(offerIds: bigint[]) {
+  const { data: offersData, isLoading, isError, refetch } = useReadContracts({
+    contracts: offerIds.map((id) => ({
+      address: CONTRACT_ADDRESSES.fiatLoanBridge,
+      abi: FiatLoanBridgeABI,
+      functionName: 'fiatLenderOffers',
+      args: [id],
+    })),
+    query: {
+      enabled: offerIds.length > 0,
+    },
+  });
+
+  const offers = (offersData || [])
+    .map((result, index) => {
+      if (result.status !== 'success' || !result.result) return null;
+
+      const data = result.result;
+      const isArray = Array.isArray(data);
+
+      let offerData;
+      if (isArray) {
+        const arr = data as readonly unknown[];
+        offerData = {
+          offerId: arr[0],
+          lender: arr[1],
+          fiatAmountCents: arr[2],
+          currency: arr[3],
+          minCollateralValueUSD: arr[4],
+          duration: arr[5],
+          interestRate: arr[6],
+          createdAt: arr[7],
+          expireAt: arr[8],
+          status: arr[9],
+          exchangeRateAtCreation: arr[10],
+        };
+      } else {
+        offerData = data as Record<string, unknown>;
+      }
+
+      // Filter out empty offers
+      if (!offerData.lender || offerData.lender === '0x0000000000000000000000000000000000000000') {
+        return null;
+      }
+
+      return {
+        offerId: offerIds[index],
+        lender: offerData.lender as Address,
+        fiatAmountCents: offerData.fiatAmountCents as bigint,
+        currency: offerData.currency as string,
+        minCollateralValueUSD: offerData.minCollateralValueUSD as bigint,
+        duration: offerData.duration as bigint,
+        interestRate: offerData.interestRate as bigint,
+        createdAt: offerData.createdAt as bigint,
+        expireAt: offerData.expireAt as bigint,
+        status: Number(offerData.status) as FiatLenderOfferStatus,
+        exchangeRateAtCreation: (offerData.exchangeRateAtCreation as bigint) || BigInt(0),
+      } as FiatLenderOffer;
+    })
+    .filter((o): o is FiatLenderOffer => o !== null);
+
+  return { data: offers, isLoading, isError, refetch };
 }
 
 // Fetch all pending fiat loans with details
@@ -284,6 +420,44 @@ export function useUserFiatLoansAsSupplier(userAddress: Address | undefined) {
   };
 }
 
+// Fetch all active fiat lender offers with details
+export function useActiveFiatLenderOffersWithDetails() {
+  const { data: activeIds, isLoading: isLoadingIds, refetch: refetchIds } = useActiveFiatLenderOffers();
+  const offerIds = (activeIds as bigint[]) || [];
+
+  const { data: offers, isLoading: isLoadingOffers, refetch: refetchOffers } = useBatchFiatLenderOffers(offerIds);
+
+  const refetch = useCallback(() => {
+    refetchIds();
+    refetchOffers();
+  }, [refetchIds, refetchOffers]);
+
+  return {
+    data: offers || [],
+    isLoading: isLoadingIds || isLoadingOffers,
+    refetch,
+  };
+}
+
+// Fetch user's fiat lender offers
+export function useUserFiatLenderOffers(userAddress: Address | undefined) {
+  const { data: offerIds, isLoading: isLoadingIds, refetch: refetchIds } = useLenderFiatOffers(userAddress);
+  const ids = (offerIds as bigint[]) || [];
+
+  const { data: offers, isLoading: isLoadingOffers, refetch: refetchOffers } = useBatchFiatLenderOffers(ids);
+
+  const refetch = useCallback(() => {
+    refetchIds();
+    refetchOffers();
+  }, [refetchIds, refetchOffers]);
+
+  return {
+    data: offers || [],
+    isLoading: isLoadingIds || isLoadingOffers,
+    refetch,
+  };
+}
+
 // Write hooks
 
 // Create a fiat loan request
@@ -291,12 +465,60 @@ export function useCreateFiatLoanRequest() {
   const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
   const { invalidateAll } = useInvalidateContractQueries();
+  const { address } = useAccount();
+  const publicClient = usePublicClient();
 
   useEffect(() => {
     if (isSuccess) {
       invalidateAll();
     }
   }, [isSuccess, invalidateAll]);
+
+  // Simulate the transaction before executing
+  const simulateCreateFiatLoanRequest = async (
+    collateralAsset: Address,
+    collateralAmount: bigint,
+    fiatAmountCents: bigint,
+    currency: string,
+    interestRate: bigint,
+    duration: bigint
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!publicClient || !address) {
+      return { success: false, error: 'Wallet not connected' };
+    }
+
+    try {
+      await publicClient.simulateContract({
+        address: CONTRACT_ADDRESSES.fiatLoanBridge,
+        abi: FiatLoanBridgeABI,
+        functionName: 'createFiatLoanRequest',
+        args: [collateralAsset, collateralAmount, fiatAmountCents, currency, interestRate, duration],
+        account: address,
+      });
+      return { success: true };
+    } catch (err: unknown) {
+      const error = err as Error & { shortMessage?: string; cause?: { reason?: string } };
+      // Extract meaningful error message
+      let errorMessage = 'Transaction would fail';
+      if (error.shortMessage) {
+        errorMessage = error.shortMessage;
+      } else if (error.cause?.reason) {
+        errorMessage = error.cause.reason;
+      } else if (error.message) {
+        // Parse common contract errors
+        if (error.message.includes('isAssetSupported')) {
+          errorMessage = 'Collateral asset is not supported for fiat loans';
+        } else if (error.message.includes('insufficient')) {
+          errorMessage = 'Insufficient balance or allowance';
+        } else if (error.message.includes('Currency not supported')) {
+          errorMessage = 'Selected currency is not supported';
+        } else {
+          errorMessage = error.message.slice(0, 200);
+        }
+      }
+      return { success: false, error: errorMessage };
+    }
+  };
 
   const createFiatLoanRequest = async (
     collateralAsset: Address,
@@ -306,6 +528,21 @@ export function useCreateFiatLoanRequest() {
     interestRate: bigint,
     duration: bigint
   ) => {
+    // First simulate to check if transaction would succeed
+    const simulation = await simulateCreateFiatLoanRequest(
+      collateralAsset,
+      collateralAmount,
+      fiatAmountCents,
+      currency,
+      interestRate,
+      duration
+    );
+
+    if (!simulation.success) {
+      throw new Error(simulation.error || 'Transaction simulation failed');
+    }
+
+    // If simulation passes, execute the actual transaction
     return await writeContractAsync({
       address: CONTRACT_ADDRESSES.fiatLoanBridge,
       abi: FiatLoanBridgeABI,
@@ -314,7 +551,7 @@ export function useCreateFiatLoanRequest() {
     });
   };
 
-  return { createFiatLoanRequest, hash, isPending, isConfirming, isSuccess, error };
+  return { createFiatLoanRequest, simulateCreateFiatLoanRequest, hash, isPending, isConfirming, isSuccess, error };
 }
 
 // Cancel a fiat loan request
@@ -365,16 +602,117 @@ export function useAcceptFiatLoanRequest() {
   return { acceptFiatLoanRequest, hash, isPending, isConfirming, isSuccess, error };
 }
 
-// Calculate fiat loan stats
+// Create a fiat lender offer (for suppliers)
+export function useCreateFiatLenderOffer() {
+  const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const { invalidateAll } = useInvalidateContractQueries();
+
+  useEffect(() => {
+    if (isSuccess) {
+      invalidateAll();
+    }
+  }, [isSuccess, invalidateAll]);
+
+  const createFiatLenderOffer = async (
+    fiatAmountCents: bigint,
+    currency: string,
+    minCollateralValueUSD: bigint,
+    duration: bigint,
+    interestRate: bigint
+  ) => {
+    return await writeContractAsync({
+      address: CONTRACT_ADDRESSES.fiatLoanBridge,
+      abi: FiatLoanBridgeABI,
+      functionName: 'createFiatLenderOffer',
+      args: [fiatAmountCents, currency, minCollateralValueUSD, duration, interestRate],
+    });
+  };
+
+  return { createFiatLenderOffer, hash, isPending, isConfirming, isSuccess, error };
+}
+
+// Accept a fiat lender offer (for borrowers)
+export function useAcceptFiatLenderOffer() {
+  const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const { invalidateAll } = useInvalidateContractQueries();
+
+  useEffect(() => {
+    if (isSuccess) {
+      invalidateAll();
+    }
+  }, [isSuccess, invalidateAll]);
+
+  const acceptFiatLenderOffer = async (
+    offerId: bigint,
+    collateralAsset: Address,
+    collateralAmount: bigint
+  ) => {
+    return await writeContractAsync({
+      address: CONTRACT_ADDRESSES.fiatLoanBridge,
+      abi: FiatLoanBridgeABI,
+      functionName: 'acceptFiatLenderOffer',
+      args: [offerId, collateralAsset, collateralAmount],
+    });
+  };
+
+  return { acceptFiatLenderOffer, hash, isPending, isConfirming, isSuccess, error };
+}
+
+// Cancel a fiat lender offer
+export function useCancelFiatLenderOffer() {
+  const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const { invalidateAll } = useInvalidateContractQueries();
+
+  useEffect(() => {
+    if (isSuccess) {
+      invalidateAll();
+    }
+  }, [isSuccess, invalidateAll]);
+
+  const cancelFiatLenderOffer = async (offerId: bigint) => {
+    return await writeContractAsync({
+      address: CONTRACT_ADDRESSES.fiatLoanBridge,
+      abi: FiatLoanBridgeABI,
+      functionName: 'cancelFiatLenderOffer',
+      args: [offerId],
+    });
+  };
+
+  return { cancelFiatLenderOffer, hash, isPending, isConfirming, isSuccess, error };
+}
+
+// Calculate fiat loan stats with USD conversion using stored exchange rate at creation
 export function useFiatLoanStats() {
   const { data: pendingLoans, isLoading: isLoadingPending } = usePendingFiatLoansWithDetails();
   const { data: activeLoans, isLoading: isLoadingActive } = useActiveFiatLoansWithDetails();
 
+  // Helper to convert amount to USD cents using the stored exchange rate at creation
+  const toUSDCentsWithStoredRate = (amountCents: bigint, currency: string, exchangeRateAtCreation: bigint): bigint => {
+    // USD is 1:1 (rate is 1e8 for USD)
+    if (currency === 'USD') return amountCents;
+
+    // Use stored rate from creation time
+    if (!exchangeRateAtCreation || exchangeRateAtCreation === BigInt(0)) {
+      // Fallback: return as-is if no rate stored (legacy loans before this feature)
+      return amountCents;
+    }
+    return convertToUSDCents(amountCents, exchangeRateAtCreation);
+  };
+
   const stats = {
     pendingCount: pendingLoans.length,
     activeCount: activeLoans.length,
-    totalPendingVolume: pendingLoans.reduce((sum, loan) => sum + Number(loan.fiatAmountCents) / 100, 0),
-    totalActiveVolume: activeLoans.reduce((sum, loan) => sum + Number(loan.fiatAmountCents) / 100, 0),
+    totalPendingVolume: pendingLoans.reduce((sum, loan) => {
+      const usdCents = toUSDCentsWithStoredRate(loan.fiatAmountCents, loan.currency, loan.exchangeRateAtCreation);
+      return sum + Number(usdCents) / 100;
+    }, 0),
+    totalActiveVolume: activeLoans.reduce((sum, loan) => {
+      const usdCents = toUSDCentsWithStoredRate(loan.fiatAmountCents, loan.currency, loan.exchangeRateAtCreation);
+      return sum + Number(usdCents) / 100;
+    }, 0),
     avgInterestRate: (() => {
       const allLoans = [...pendingLoans, ...activeLoans];
       if (allLoans.length === 0) return 0;
@@ -386,5 +724,42 @@ export function useFiatLoanStats() {
   return {
     data: stats,
     isLoading: isLoadingPending || isLoadingActive,
+  };
+}
+
+// Calculate fiat lender offer stats with USD conversion using stored exchange rate at creation
+export function useFiatLenderOfferStats() {
+  const { data: activeOffers, isLoading } = useActiveFiatLenderOffersWithDetails();
+
+  // Helper to convert amount to USD cents using the stored exchange rate at creation
+  const toUSDCentsWithStoredRate = (amountCents: bigint, currency: string, exchangeRateAtCreation: bigint): bigint => {
+    // USD is 1:1 (rate is 1e8 for USD)
+    if (currency === 'USD') return amountCents;
+
+    // Use stored rate from creation time
+    if (!exchangeRateAtCreation || exchangeRateAtCreation === BigInt(0)) {
+      // Fallback: return as-is if no rate stored (legacy offers before this feature)
+      return amountCents;
+    }
+    return convertToUSDCents(amountCents, exchangeRateAtCreation);
+  };
+
+  const stats = {
+    activeCount: activeOffers.length,
+    totalVolume: activeOffers.reduce((sum, offer) => {
+      const usdCents = toUSDCentsWithStoredRate(offer.fiatAmountCents, offer.currency, offer.exchangeRateAtCreation);
+      return sum + Number(usdCents) / 100;
+    }, 0),
+    avgInterestRate: (() => {
+      if (activeOffers.length === 0) return 0;
+      const totalRate = activeOffers.reduce((sum, offer) => sum + Number(offer.interestRate), 0);
+      return totalRate / activeOffers.length / 100;
+    })(),
+    currencies: Array.from(new Set(activeOffers.map(o => o.currency))),
+  };
+
+  return {
+    data: stats,
+    isLoading,
   };
 }

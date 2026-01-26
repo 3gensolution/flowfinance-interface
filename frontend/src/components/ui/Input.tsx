@@ -46,11 +46,11 @@ Input.displayName = 'Input';
 interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
   label?: string;
   error?: string;
-  options: { value: string; label: string }[];
+  options?: { value: string; label: string }[];
 }
 
 const Select = forwardRef<HTMLSelectElement, SelectProps>(
-  ({ className, label, error, options, ...props }, ref) => {
+  ({ className, label, error, options, children, ...props }, ref) => {
     return (
       <div className="space-y-2">
         {label && (
@@ -67,11 +67,15 @@ const Select = forwardRef<HTMLSelectElement, SelectProps>(
           )}
           {...props}
         >
-          {options.map((option) => (
-            <option key={option.value} value={option.value} className="bg-gray-900">
-              {option.label}
-            </option>
-          ))}
+          {options ? (
+            options.map((option) => (
+              <option key={option.value} value={option.value} className="bg-gray-900">
+                {option.label}
+              </option>
+            ))
+          ) : (
+            children
+          )}
         </select>
         {error && <p className="text-sm text-red-400">{error}</p>}
       </div>
