@@ -11,6 +11,8 @@ import {
   useRegisterSupplier,
   SupplierType,
 } from '@/hooks/useSupplier';
+import { useGenerateLinkApi } from '@/hooks/useGenerateLink';
+import { GenerateLinkResponse } from '@/services/mutation/generate-link';
 import {
   UserPlus,
   Shield,
@@ -21,8 +23,7 @@ import {
   User,
   Loader2,
   ExternalLink,
-  ArrowDownToLine,
-  ArrowUpFromLine,
+  Wallet,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -30,19 +31,45 @@ export function SupplierSection() {
   const { address } = useAccount();
   const publicClient = usePublicClient();
   const { supplier, isRegistered, isVerified, isLoading: isLoadingSupplier } = useSupplierDetails(address);
-  const { registerSupplier, isPending: isRegistering } = useRegisterSupplier();
+  const { registerSupplier, isPending: isRegistering, isSimulating } = useRegisterSupplier();
 
   // Modal states
   const [registerModalOpen, setRegisterModalOpen] = useState(false);
-  const [kycModalOpen, setKycModalOpen] = useState(false);
 
   // Form state for registration
   const [supplierType, setSupplierType] = useState<SupplierType>(SupplierType.INDIVIDUAL);
   const [supplierName, setSupplierName] = useState('');
   const [businessRegNumber, setBusinessRegNumber] = useState('');
 
-  // KYC state
-  const [kycAgreed, setKycAgreed] = useState(false);
+  // Generate link API hook
+  const {
+    mutate: generateLinkMutation,
+    data: linkData,
+    isPending: isGeneratingLink
+  } = useGenerateLinkApi();
+
+  // Extract link data from response
+  const linkResponse = linkData?.data as GenerateLinkResponse | undefined;
+  const generatedLink = linkResponse?.data?.url;
+  const linkExpiresAt = linkResponse?.data?.expiresAt;
+
+  // Format expiration time in human-readable format
+  const formatExpirationTime = (expiresAt: string | undefined) => {
+    if (!expiresAt) return null;
+    const expirationDate = new Date(expiresAt);
+    const now = new Date();
+    const diffMs = expirationDate.getTime() - now.getTime();
+
+    if (diffMs <= 0) return 'Expired';
+
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+
+    if (diffMins < 60) {
+      return `Expires in ${diffMins} minute${diffMins !== 1 ? 's' : ''}`;
+    }
+    return `Expires in ${diffHours} hour${diffHours !== 1 ? 's' : ''}`;
+  };
 
   // Handle registration
   const handleRegister = async () => {
@@ -51,8 +78,14 @@ export function SupplierSection() {
       return;
     }
 
-    const toastId = toast.loading('Registering as supplier...');
+    if (!address) {
+      toast.error('Please connect your wallet first');
+      return;
+    }
+
+    const toastId = toast.loading('Simulating transaction...');
     try {
+      toast.loading('Registering as supplier...', { id: toastId });
       const hash = await registerSupplier(
         supplierType,
         supplierName,
@@ -66,15 +99,36 @@ export function SupplierSection() {
       resetForm();
     } catch (error) {
       console.error('Registration error:', error);
-      toast.error('Failed to register. Please try again.', { id: toastId });
+      const errorMessage = (error as Error)?.message || 'Failed to register';
+      toast.error(errorMessage, { id: toastId });
     }
   };
 
-  // Handle KYC redirect
-  const handleKycProceed = () => {
-    toast.success('Redirecting to website for KYC verification...');
-    setKycModalOpen(false);
-    setKycAgreed(false);
+  // Handle generate link for deposit/withdraw
+  const handleGenerateLink = () => {
+    if (!address) {
+      toast.error('Please connect your wallet first');
+      return;
+    }
+    generateLinkMutation(
+      { walletAddress: address },
+      {
+        onSuccess: () => {
+          toast.success('Link generated successfully!');
+        },
+        onError: (error) => {
+          console.error('Failed to generate link:', error);
+          toast.error('Failed to generate link. Please try again.');
+        },
+      }
+    );
+  };
+
+  // Handle continue to external link
+  const handleContinueToLink = () => {
+    if (generatedLink) {
+      window.open(generatedLink, '_blank', 'noopener,noreferrer');
+    }
   };
 
   const resetForm = () => {
@@ -219,10 +273,10 @@ export function SupplierSection() {
               <Button
                 onClick={handleRegister}
                 loading={isRegistering}
-                disabled={isRegistering || !supplierName.trim()}
+                disabled={isRegistering || !supplierName.trim() || !address}
                 className="flex-1"
               >
-                {isRegistering ? 'Registering...' : 'Register'}
+                {isSimulating ? 'Simulating...' : isRegistering ? 'Registering...' : 'Register'}
               </Button>
             </div>
           </div>
@@ -262,196 +316,76 @@ export function SupplierSection() {
           </span>
         </div>
 
-        {isVerified ? (
-          <>
-            {/* Stats for verified suppliers */}
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              <div className="p-3 bg-white/5 rounded-lg">
-                <p className="text-xs text-gray-400">Loans Provided</p>
-                <p className="text-sm font-semibold">
-                  {supplier?.totalLoansProvided?.toString() || '0'}
-                </p>
-              </div>
-              <div className="p-3 bg-white/5 rounded-lg">
-                <p className="text-xs text-gray-400">Total Volume</p>
-                <p className="text-sm font-semibold">
-                  {supplier?.totalVolumeProvided ? formatEther(supplier.totalVolumeProvided) : '0'}
-                </p>
-              </div>
-            </div>
-            <p className="text-xs text-gray-500">
-              You can now provide fiat liquidity in the marketplace.
+        {/* Stats */}
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <div className="p-3 bg-white/5 rounded-lg">
+            <p className="text-xs text-gray-400">Loans Provided</p>
+            <p className="text-sm font-semibold">
+              {supplier?.totalLoansProvided?.toString() || '0'}
             </p>
-          </>
-        ) : (
-          <>
-            {/* Supplier Details for unverified suppliers */}
-            <div className="space-y-3 mb-4">
-              {/* Registration Info */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="p-3 bg-white/5 rounded-lg">
-                  <p className="text-xs text-gray-400">Registered</p>
-                  <p className="text-sm font-semibold">
-                    {supplier?.registeredAt
-                      ? new Date(Number(supplier.registeredAt) * 1000).toLocaleDateString()
-                      : 'N/A'}
-                  </p>
-                </div>
-                <div className="p-3 bg-white/5 rounded-lg">
-                  <p className="text-xs text-gray-400">Reputation Score</p>
-                  <p className="text-sm font-semibold">
-                    {supplier?.reputationScore?.toString() || '50'}/100
-                  </p>
-                </div>
-              </div>
+          </div>
+          <div className="p-3 bg-white/5 rounded-lg">
+            <p className="text-xs text-gray-400">Total Volume</p>
+            <p className="text-sm font-semibold">
+              {supplier?.totalVolumeProvided ? formatEther(supplier.totalVolumeProvided) : '0'}
+            </p>
+          </div>
+        </div>
 
-              {/* Status Info */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="p-3 bg-white/5 rounded-lg">
-                  <p className="text-xs text-gray-400">Status</p>
-                  <p className="text-sm font-semibold flex items-center gap-1.5">
-                    <span className={`w-2 h-2 rounded-full ${supplier?.isActive ? 'bg-green-400' : 'bg-gray-400'}`}></span>
-                    {supplier?.isActive ? 'Active' : 'Inactive'}
-                  </p>
-                </div>
-                <div className="p-3 bg-white/5 rounded-lg">
-                  <p className="text-xs text-gray-400">KYC Status</p>
-                  <p className="text-sm font-semibold text-yellow-400">
-                    Pending
-                  </p>
-                </div>
-              </div>
+        {/* Status message based on verification */}
+        <div className={`p-3 rounded-lg mb-4 ${
+          isVerified
+            ? 'bg-green-500/10 border border-green-500/20'
+            : 'bg-yellow-500/10 border border-yellow-500/20'
+        }`}>
+          <p className={`text-sm ${isVerified ? 'text-green-400' : 'text-yellow-400'}`}>
+            {generatedLink ? (
+              isVerified
+                ? 'Click Continue to deposit or withdraw your fiat funds.'
+                : 'Click Continue to complete your KYC verification.'
+            ) : (
+              isVerified
+                ? 'Click below to deposit or withdraw your fiat funds.'
+                : 'Complete KYC verification to start providing fiat liquidity.'
+            )}
+          </p>
+        </div>
 
-              {/* Business Registration (if business) */}
-              {supplier?.supplierType === 1 && supplier?.businessRegistrationNumber && (
-                <div className="p-3 bg-white/5 rounded-lg">
-                  <p className="text-xs text-gray-400">Business Reg. Number</p>
-                  <p className="text-sm font-semibold">{supplier.businessRegistrationNumber}</p>
-                </div>
-              )}
-
-              {/* Staking Info */}
-              <div className="p-3 bg-white/5 rounded-lg">
-                <p className="text-xs text-gray-400">Staked Amount</p>
-                <p className="text-sm font-semibold">
-                  {supplier?.stakedAmount ? formatEther(supplier.stakedAmount) : '0'} ETH
-                </p>
-              </div>
-            </div>
-
-            {/* CTA for unverified suppliers */}
-            <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg mb-4">
-              <p className="text-sm text-gray-400">
-                Complete KYC verification to start providing fiat liquidity and earning interest.
+        {/* Manage Funds Button */}
+        {generatedLink ? (
+          <div className="space-y-2">
+            <Button
+              onClick={handleContinueToLink}
+              icon={<ExternalLink className="w-4 h-4" />}
+              className="w-full bg-green-600 hover:bg-green-700"
+            >
+              Continue
+            </Button>
+            {linkExpiresAt && (
+              <p className="text-xs text-gray-400 text-center">
+                {formatExpirationTime(linkExpiresAt)}
               </p>
-            </div>
+            )}
+          </div>
+        ) : (
+          <Button
+            onClick={handleGenerateLink}
+            loading={isGeneratingLink}
+            icon={<Wallet className="w-4 h-4" />}
+            className="w-full"
+          >
+            {isVerified ? 'Deposit / Withdraw' : 'Complete Verification'}
+          </Button>
+        )}
 
-            {/* Deposit and Withdraw buttons */}
-            <div className="flex gap-3 mb-4">
-              <Button
-                onClick={() => setKycModalOpen(true)}
-                icon={<ArrowDownToLine className="w-4 h-4" />}
-                className="flex-1"
-              >
-                Deposit
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={() => setKycModalOpen(true)}
-                icon={<ArrowUpFromLine className="w-4 h-4" />}
-                className="flex-1"
-              >
-                Withdraw
-              </Button>
-            </div>
-
-            <p className="text-xs text-gray-500 text-center">
-              KYC verification is required before you can deposit or withdraw fiat liquidity.
-            </p>
-          </>
+        {/* Additional info for unverified suppliers */}
+        {!isVerified && !generatedLink && (
+          <p className="text-xs text-gray-500 text-center mt-3">
+            KYC verification is required before you can deposit or withdraw fiat.
+          </p>
         )}
       </Card>
 
-      {/* KYC Verification Modal */}
-      <Modal
-        isOpen={kycModalOpen}
-        onClose={() => {
-          setKycModalOpen(false);
-          setKycAgreed(false);
-        }}
-        title="KYC Verification Required"
-      >
-        <div className="space-y-4">
-          <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-            <div className="flex items-start gap-3">
-              <Shield className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="text-yellow-400 font-medium mb-1">Verification Needed</p>
-                <p className="text-sm text-gray-400">
-                  To deposit fiat or provide liquidity, you must complete KYC verification.
-                  You will be redirected to a trusted third-party verification partner
-                  to securely verify your identity.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <h4 className="text-sm font-medium text-gray-300">What you&apos;ll need:</h4>
-            <ul className="space-y-2 text-sm text-gray-400">
-              <li className="flex items-center gap-2">
-                <CheckCircle className="w-4 h-4 text-gray-500" />
-                Government-issued photo ID
-              </li>
-              <li className="flex items-center gap-2">
-                <CheckCircle className="w-4 h-4 text-gray-500" />
-                Proof of address (utility bill or bank statement)
-              </li>
-              <li className="flex items-center gap-2">
-                <CheckCircle className="w-4 h-4 text-gray-500" />
-                A selfie for identity verification
-              </li>
-            </ul>
-          </div>
-
-          {/* Agreement Checkbox */}
-          <label className="flex items-start gap-3 cursor-pointer p-3 bg-white/5 rounded-lg hover:bg-white/[0.07] transition-colors">
-            <input
-              type="checkbox"
-              checked={kycAgreed}
-              onChange={(e) => setKycAgreed(e.target.checked)}
-              className="mt-0.5 w-4 h-4 rounded border-gray-600 bg-gray-800 text-primary-500 focus:ring-primary-500"
-            />
-            <span className="text-sm text-gray-300">
-              I understand that I will be redirected to a trusted third-party website to complete
-              identity verification. I consent to sharing my personal information
-              for KYC purposes and acknowledge this is required before I can provide fiat liquidity.
-            </span>
-          </label>
-
-          {/* Actions */}
-          <div className="flex gap-3 pt-2">
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setKycModalOpen(false);
-                setKycAgreed(false);
-              }}
-              className="flex-1"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleKycProceed}
-              disabled={!kycAgreed}
-              icon={<ExternalLink className="w-4 h-4" />}
-              className="flex-1"
-            >
-              Proceed to KYC
-            </Button>
-          </div>
-        </div>
-      </Modal>
     </>
   );
 }

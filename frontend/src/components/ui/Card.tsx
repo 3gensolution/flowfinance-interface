@@ -41,9 +41,9 @@ export function StatCard({ label, value, subValue, icon }: StatCardProps) {
     <Card className="stat-card">
       <div className="flex items-center justify-between mb-2">
         <span className="text-gray-400 text-sm">{label}</span>
-        {icon && <div className="text-primary-400">{icon}</div>}
+        {icon && <div className="text-accent-500">{icon}</div>}
       </div>
-      <div className="text-2xl font-bold gradient-text">{value}</div>
+      <div className="text-2xl font-bold text-white">{value}</div>
       {subValue && <div className="text-sm text-gray-500 mt-1">{subValue}</div>}
     </Card>
   );

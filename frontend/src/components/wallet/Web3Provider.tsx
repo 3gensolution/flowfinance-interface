@@ -2,12 +2,11 @@
 
 import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit';
 import { WagmiProvider } from 'wagmi';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { config } from '@/config/wagmi';
 import { ContractEventListener } from './ContractEventListener';
 import '@rainbow-me/rainbowkit/styles.css';
-
-const queryClient = new QueryClient();
+import { queryClient } from '@/lib/react-query-client';
 
 export function Web3Provider({ children }: { children: React.ReactNode }) {
   return (

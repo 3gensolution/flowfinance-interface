@@ -191,3 +191,33 @@ export function formatCompactUSD(value: number | bigint): string {
 
   return `${sign}$${absNum.toFixed(0)}+`;
 }
+
+/**
+ * Convert fiat amount (in cents) to USD value using the exchange rate stored at creation time.
+ * If currency is USD, returns the amount directly.
+ * Otherwise, converts using the formula: USD = amount * 1e8 / exchangeRate
+ *
+ * @param amountCents - The fiat amount in cents
+ * @param currency - The currency code (e.g., 'USD', 'NGN', 'EUR')
+ * @param exchangeRateAtCreation - The exchange rate at creation time (units per 1 USD, scaled by 1e8)
+ * @returns The USD value in dollars (not cents)
+ */
+export function convertFiatToUSD(
+  amountCents: bigint,
+  currency: string,
+  exchangeRateAtCreation: bigint
+): number {
+  // If USD, just return the amount in dollars
+  if (currency === 'USD') {
+    return Number(amountCents) / 100;
+  }
+
+  // If no exchange rate stored (legacy loans), return 0 or the original amount
+  if (!exchangeRateAtCreation || exchangeRateAtCreation === BigInt(0)) {
+    return Number(amountCents) / 100;
+  }
+
+  // Convert to USD: amount * 1e8 / exchangeRate
+  const usdCents = (amountCents * BigInt(100000000)) / exchangeRateAtCreation;
+  return Number(usdCents) / 100;
+}

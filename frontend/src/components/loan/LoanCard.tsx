@@ -4,7 +4,7 @@ import { Card } from '@/components/ui/Card';
 import { Badge, LoanStatusBadge, RequestStatusBadge, HealthBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Loan, LoanRequest, LenderOffer, LoanStatus, LoanRequestStatus, getHealthStatus } from '@/types';
-import { formatTokenAmount, formatPercentage, formatDuration, formatTimeUntil, getTokenSymbol, getTokenDecimals, getHealthFactorColor } from '@/lib/utils';
+import { formatTokenAmount, formatPercentage, formatDuration, formatTimeUntil, getTokenSymbol, getTokenDecimals, getHealthFactorColor, convertFiatToUSD } from '@/lib/utils';
 import { useTokenPrice, useLTV } from '@/hooks/useContracts';
 import { FiatLoan, FiatLoanStatus, FiatLenderOffer, FiatLenderOfferStatus } from '@/hooks/useFiatLoan';
 import { formatCurrency } from '@/hooks/useFiatOracle';
@@ -396,7 +396,8 @@ export function FiatLoanRequestCard({ loan, onFund, onCancel, isOwner, isSupplie
   const { price: collateralPrice } = useTokenPrice(loan.collateralAsset);
 
   // Calculate USD values
-  const fiatAmount = Number(loan.fiatAmountCents) / 100;
+  // const fiatAmount = Number(loan.fiatAmountCents) / 100;
+  const fiatAmountUSD = convertFiatToUSD(loan.fiatAmountCents, loan.currency, loan.exchangeRateAtCreation);
   const collateralUSD = collateralPrice
     ? (Number(loan.collateralAmount) / Math.pow(10, Number(collateralDecimals))) * Number(collateralPrice) / 1e8
     : 0;
@@ -436,9 +437,14 @@ export function FiatLoanRequestCard({ loan, onFund, onCancel, isOwner, isSupplie
           <div className="flex items-center gap-2 mb-1">
             <DollarSign className="w-5 h-5 text-green-400" />
             <span className="text-lg font-bold text-green-400">
-              ${fiatAmount.toLocaleString()} {loan.currency}
+              {formatCurrency(loan.fiatAmountCents, loan.currency)}
             </span>
           </div>
+          {loan.currency !== 'USD' && fiatAmountUSD > 0 && (
+            <p className="text-sm text-gray-400">
+              ≈ {formatUSD(fiatAmountUSD)}
+            </p>
+          )}
           <p className="text-sm text-gray-400 mt-1">
             Collateral: {formatTokenAmount(loan.collateralAmount, collateralDecimals)} {collateralSymbol}
             {collateralUSD > 0 && (
@@ -521,6 +527,7 @@ interface FiatLenderOfferCardProps {
 export function FiatLenderOfferCard({ offer, onAccept, onCancel, isOwner, loading }: FiatLenderOfferCardProps) {
   // Convert fiat amount to display value
   const minCollateralUSD = Number(offer.minCollateralValueUSD);
+  const fiatAmountUSD = convertFiatToUSD(offer.fiatAmountCents, offer.currency, offer.exchangeRateAtCreation);
 
   // Get status badge
   const getStatusBadge = () => {
@@ -553,6 +560,11 @@ export function FiatLenderOfferCard({ offer, onAccept, onCancel, isOwner, loadin
             </span>
             <Badge variant="info" size="sm">Offer</Badge>
           </div>
+          {offer.currency !== 'USD' && fiatAmountUSD > 0 && (
+            <p className="text-sm text-gray-400">
+              ≈ {formatUSD(fiatAmountUSD)}
+            </p>
+          )}
           <p className="text-sm text-gray-400 mt-1">
             Min Collateral Value: {formatUSD(minCollateralUSD)}
           </p>

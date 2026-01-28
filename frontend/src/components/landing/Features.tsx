@@ -28,19 +28,19 @@ const features = [
     icon: Clock,
     title: 'Flexible Terms',
     description: 'Choose loan durations from 1 day to 365 days. Set your own interest rates and find the perfect match.',
-    color: 'text-yellow-400',
+    color: 'text-accent-500',
   },
   {
     icon: BarChart3,
     title: 'Dynamic LTV',
     description: 'Risk-adjusted loan-to-value ratios based on asset volatility. Blue chips get better rates.',
-    color: 'text-accent-400',
+    color: 'text-secondary-500',
   },
   {
     icon: ArrowLeftRight,
     title: 'P2P Matching',
     description: 'Borrowers meet lenders directly. Create requests or browse offers to find the best deal.',
-    color: 'text-orange-400',
+    color: 'text-accent-400',
   },
   {
     icon: Lock,
@@ -57,7 +57,7 @@ export function Features() {
         {/* Section Header */}
         <ScrollReveal direction="up" className="text-center mb-16">
           <h2 className="text-3xl sm:text-4xl font-bold mb-4">
-            Why <span className="gradient-text">FlowFinance</span>?
+            Why <span className="gradient-text">AwinFi</span>?
           </h2>
           <p className="text-gray-400 max-w-2xl mx-auto">
             A trustless lending protocol designed for the modern DeFi user.

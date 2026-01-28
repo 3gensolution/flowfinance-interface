@@ -1,8 +1,8 @@
 'use client';
 
-import { useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import { useReadContract, useWriteContract, useWaitForTransactionReceipt, usePublicClient, useAccount } from 'wagmi';
 import { Address, Abi } from 'viem';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { CONTRACT_ADDRESSES } from '@/config/contracts';
 import { useInvalidateContractQueries } from './useContracts';
 import SupplierRegistryABIJson from '@/contracts/SupplierRegistryABI.json';
@@ -150,6 +150,10 @@ export function useRegisterSupplier() {
   const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
   const { invalidateAll } = useInvalidateContractQueries();
+  const publicClient = usePublicClient();
+  const { address } = useAccount();
+  const [simulationError, setSimulationError] = useState<string | null>(null);
+  const [isSimulating, setIsSimulating] = useState(false);
 
   useEffect(() => {
     if (isSuccess) invalidateAll();
@@ -160,6 +164,52 @@ export function useRegisterSupplier() {
     name: string,
     businessRegistrationNumber: string
   ) => {
+    setSimulationError(null);
+
+    // Check if contract address is valid
+    if (CONTRACT_ADDRESSES.supplierRegistry === '0x0000000000000000000000000000000000000000') {
+      const error = 'Supplier Registry contract address is not configured';
+      setSimulationError(error);
+      throw new Error(error);
+    }
+
+    // Check if user is connected
+    if (!address) {
+      const error = 'Wallet not connected';
+      setSimulationError(error);
+      throw new Error(error);
+    }
+
+    // Simulate the transaction first
+    setIsSimulating(true);
+    try {
+      if (publicClient) {
+        await publicClient.simulateContract({
+          address: CONTRACT_ADDRESSES.supplierRegistry,
+          abi: SupplierRegistryABI,
+          functionName: 'registerSupplier',
+          args: [supplierType, name, businessRegistrationNumber],
+          account: address,
+        });
+      }
+    } catch (simError) {
+      setIsSimulating(false);
+      const errorMessage = (simError as Error)?.message || 'Transaction simulation failed';
+      // Extract meaningful error message
+      let userFriendlyError = 'Transaction would fail';
+      if (errorMessage.includes('Already registered')) {
+        userFriendlyError = 'You are already registered as a supplier';
+      } else if (errorMessage.includes('Name required')) {
+        userFriendlyError = 'Name is required';
+      } else if (errorMessage.includes('Business registration number required')) {
+        userFriendlyError = 'Business registration number is required for business accounts';
+      }
+      setSimulationError(userFriendlyError);
+      throw new Error(userFriendlyError);
+    }
+    setIsSimulating(false);
+
+    // If simulation passed, execute the transaction
     return await writeContractAsync({
       address: CONTRACT_ADDRESSES.supplierRegistry,
       abi: SupplierRegistryABI,
@@ -168,7 +218,16 @@ export function useRegisterSupplier() {
     });
   };
 
-  return { registerSupplier, hash, isPending, isConfirming, isSuccess, error };
+  return {
+    registerSupplier,
+    hash,
+    isPending: isPending || isSimulating,
+    isConfirming,
+    isSuccess,
+    error: error || (simulationError ? new Error(simulationError) : null),
+    simulationError,
+    isSimulating
+  };
 }
 
 // Add stake

@@ -11,13 +11,13 @@ import { LenisProvider } from '@/components/providers/LenisProvider';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'FlowFinance - Decentralized Crypto Lending',
+  title: 'AwinFi - Decentralized Crypto Lending',
   description: 'Borrow against your crypto assets or earn yield by providing liquidity. Decentralized lending on Base.',
-  keywords: ['DeFi', 'lending', 'crypto', 'Base', 'blockchain', 'loans'],
+  keywords: ['DeFi', 'lending', 'crypto', 'Base', 'blockchain', 'loans', 'AwinFi'],
   icons: {
-    icon: '/mini-logo.png',
-    shortcut: '/mini-logo.png',
-    apple: '/mini-logo.png',
+    icon: '/awinfi.png',
+    shortcut: '/awinfi.png',
+    apple: '/awinfi.png',
   },
 };
 

@@ -27,21 +27,12 @@ export function Header() {
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2">
-            {/* Mini logo for mobile */}
             <Image
-              src="/mini-logo.png"
-              alt="FlowFinance"
-              width={40}
+              src="/awinfi.png"
+              alt="AwinFi"
+              width={120}
               height={40}
-              className="rounded-xl sm:hidden"
-            />
-            {/* Full logo for desktop */}
-            <Image
-              src="/flow-dark-logo.png"
-              alt="FlowFinance"
-              width={160}
-              height={40}
-              className="hidden sm:block h-12 w-[160px] rounded-lg"
+              className="h-10 w-[140px]"
             />
           </Link>
 
@@ -54,7 +45,7 @@ export function Header() {
                 className={cn(
                   'px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200',
                   pathname === link.href
-                    ? 'bg-white/10 text-white'
+                    ? 'bg-accent-500/10 text-accent-500 border border-accent-500/20'
                     : 'text-gray-400 hover:text-white hover:bg-white/5'
                 )}
               >
@@ -94,7 +85,7 @@ export function Header() {
                 className={cn(
                   'block px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200',
                   pathname === link.href
-                    ? 'bg-white/10 text-white'
+                    ? 'bg-accent-500/10 text-accent-500 border border-accent-500/20'
                     : 'text-gray-400 hover:text-white hover:bg-white/5'
                 )}
               >

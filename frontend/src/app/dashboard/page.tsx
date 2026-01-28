@@ -218,13 +218,22 @@ export default function DashboardPage() {
     };
   }, [activeBorrowedLoans, activeLentLoans, pendingRequests, pendingOffers, pendingFiatOffers, pendingFiatRequests]);
 
+  // Track which loan the approval was for
+  const [approvedForLoanId, setApprovedForLoanId] = useState<bigint | null>(null);
+
   // Handle repay loan
-  const handleRepayClick = (loanId: bigint) => {
+  const handleRepayClick = async (loanId: bigint) => {
     setSelectedLoanId(loanId);
     setRepayAmount('');
     setRepayStep('input');
     setSimulationError('');
+    // Reset approval tracking if switching to a different loan
+    if (approvedForLoanId !== loanId) {
+      setApprovedForLoanId(null);
+    }
     setRepayModalOpen(true);
+    // Refetch allowance to ensure we have fresh data for this loan
+    setTimeout(() => refetchAllowance(), 100);
   };
 
   // Check if approval is needed and determine the repay amount
@@ -242,7 +251,11 @@ export default function DashboardPage() {
   const repayAmountBigInt = getRepayAmountBigInt();
   const currentAllowance = (allowance as bigint) || BigInt(0);
   const userBalance = (userTokenBalance as bigint) || BigInt(0);
-  const needsApproval = repayAmountBigInt > BigInt(0) && currentAllowance < repayAmountBigInt;
+  // Need approval if: amount > 0 AND (allowance is insufficient OR this approval wasn't for this specific loan)
+  const needsApproval = repayAmountBigInt > BigInt(0) && (
+    currentAllowance < repayAmountBigInt ||
+    (approvedForLoanId !== null && approvedForLoanId !== selectedLoanId)
+  );
 
   // Check if user has any balance
   const hasBalance = userBalance > BigInt(0);
@@ -342,6 +355,9 @@ export default function DashboardPage() {
       }
 
       toast.success('Token approved! You can now repay.', { id: toastId });
+
+      // Track which loan this approval was for
+      setApprovedForLoanId(selectedLoanId);
 
       // Move to repay step only after confirmed
       setRepayStep('repay');
@@ -462,6 +478,7 @@ export default function DashboardPage() {
       setSelectedLoanId(null);
       setRepayStep('input');
       setSimulationError('');
+      setApprovedForLoanId(null);
       refetch();
     } catch (error: unknown) {
       const errorMsg = formatSimulationError(error);
@@ -935,6 +952,7 @@ export default function DashboardPage() {
         onClose={() => {
           setRepayModalOpen(false);
           setRepayStep('input');
+          setSimulationError('');
         }}
         title="Repay Loan"
       >

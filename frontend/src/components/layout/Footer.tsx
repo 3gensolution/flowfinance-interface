@@ -1,20 +1,24 @@
 'use client';
 
 import Link from 'next/link';
-import { Landmark, Twitter, Github, MessageCircle } from 'lucide-react';
+import Image from 'next/image';
+import { Twitter, Github, MessageCircle } from 'lucide-react';
 
 export function Footer() {
   return (
     <footer className="border-t border-white/10 bg-black/20 backdrop-blur-xl">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <div className="max-w-[1920p] mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           {/* Brand */}
           <div className="space-y-4">
             <div className="flex items-center gap-2">
-              <div className="w-10 h-10 bg-gradient-to-r from-primary-500 to-accent-500 rounded-xl flex items-center justify-center">
-                <Landmark className="w-6 h-6 text-white" />
-              </div>
-              <span className="text-xl font-bold gradient-text">FlowFinance</span>
+              <Image
+                src="/awinfi.png"
+                alt="AwinFi"
+                width={100}
+                height={32}
+                className="h-8 w-auto"
+              />
             </div>
             <p className="text-gray-400 text-sm">
               Decentralized lending protocol on Base. Borrow against your crypto or earn yield by providing liquidity.
@@ -93,7 +97,7 @@ export function Footer() {
 
         <div className="mt-12 pt-8 border-t border-white/10 flex flex-col md:flex-row justify-between items-center gap-4">
           <p className="text-gray-500 text-sm">
-            &copy; {new Date().getFullYear()} FlowFinance. All rights reserved.
+            &copy; {new Date().getFullYear()} AwinFi. All rights reserved.
           </p>
           <div className="flex gap-6">
             <a href="#" className="text-gray-500 hover:text-white text-sm transition-colors">

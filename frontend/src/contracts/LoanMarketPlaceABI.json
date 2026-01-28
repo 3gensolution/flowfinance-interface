@@ -27,6 +27,11 @@
         "internalType": "uint256"
       },
       {
+        "name": "collateralAsset",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
         "name": "collateralAmount",
         "type": "uint256",
         "internalType": "uint256"
@@ -2024,6 +2029,16 @@
   },
   {
     "type": "error",
+    "name": "CollateralAssetRequired",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "CollateralNotSupported",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "CrossChainPartialLiquidationNotSupported",
     "inputs": []
   },
@@ -2116,6 +2131,11 @@
   {
     "type": "error",
     "name": "InvalidRequest",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "LTVExceedsMaximum",
     "inputs": []
   },
   {

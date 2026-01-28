@@ -6,7 +6,7 @@ import { Loader2 } from 'lucide-react';
 import { forwardRef } from 'react';
 
 interface ButtonProps extends Omit<HTMLMotionProps<'button'>, 'ref' | 'children'> {
-  variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
+  variant?: 'primary' | 'secondary' | 'accent' | 'danger' | 'ghost';
   size?: 'sm' | 'md' | 'lg';
   loading?: boolean;
   icon?: React.ReactNode;
@@ -18,8 +18,9 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     const baseClasses = 'inline-flex items-center justify-center font-semibold transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed';
 
     const variantClasses = {
-      primary: 'bg-gradient-to-r from-primary-500 to-accent-500 hover:from-primary-400 hover:to-accent-400 shadow-lg shadow-primary-500/25 hover:shadow-primary-500/40 text-white',
+      primary: 'bg-primary-500 hover:bg-primary-400 shadow-lg shadow-primary-500/25 hover:shadow-primary-500/40 text-white',
       secondary: 'glass-card hover:bg-white/10 text-white',
+      accent: 'bg-accent-500 hover:bg-accent-400 shadow-lg shadow-accent-500/25 hover:shadow-accent-500/40 text-white',
       danger: 'bg-red-500 hover:bg-red-600 text-white',
       ghost: 'hover:bg-white/10 text-gray-300 hover:text-white',
     };

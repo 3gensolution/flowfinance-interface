@@ -12,12 +12,12 @@ export function CTA() {
         <ScrollReveal direction="up" duration={1}>
           <div className="relative glass-card p-8 sm:p-12 text-center overflow-hidden">
             {/* Background Glow */}
-            <div className="absolute inset-0 bg-gradient-to-r from-primary-500/10 via-accent-500/10 to-primary-500/10" />
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-64 bg-primary-500/20 rounded-full blur-3xl" />
+            <div className="absolute inset-0 bg-primary-500/5" />
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-64 bg-primary-500/10 rounded-full blur-3xl" />
 
             <div className="relative">
               <div className="inline-flex items-center gap-2 px-4 py-2 glass-card rounded-full mb-6">
-                <Sparkles className="w-4 h-4 text-yellow-400" />
+                <Sparkles className="w-4 h-4 text-accent-500" />
                 <span className="text-sm text-gray-300">Start earning today</span>
               </div>
 

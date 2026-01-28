@@ -29,8 +29,8 @@ export function Hero() {
       {/* 3D Galaxy Background - Contained within Hero section only */}
       <SpiralGalaxy />
 
-      {/* Bottom gradient fade to transition to next section */}
-      <div className="absolute bottom-0 left-0 right-0 h-40 bg-gradient-to-t from-background via-background/80 to-transparent pointer-events-none z-10" />
+      {/* Bottom fade to transition to next section */}
+      <div className="absolute bottom-0 left-0 right-0 h-40 bg-navy-950/90 pointer-events-none z-10" />
 
       <motion.div
         className="relative max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-20 z-20"
@@ -44,7 +44,7 @@ export function Hero() {
             transition={{ duration: 0.5 }}
             className="inline-flex items-center gap-2 px-4 py-2 glass-card rounded-full mb-8"
           >
-            <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+            <span className="w-2 h-2 bg-accent-500 rounded-full animate-pulse" />
             <span className="text-sm text-gray-300">Live on Base Network</span>
           </motion.div>
 
