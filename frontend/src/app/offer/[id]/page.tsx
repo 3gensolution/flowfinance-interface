@@ -29,6 +29,8 @@ import {
   getTokenSymbol,
   getTokenDecimals,
 } from '@/lib/utils';
+import { TOKEN_LIST } from '@/config/contracts';
+import { Address } from 'viem';
 import {
   ArrowLeft,
   Shield,
@@ -64,6 +66,9 @@ export default function OfferDetailPage() {
   const [acceptStep, setAcceptStep] = useState<'approve' | 'accept'>('approve');
   const [simulationError, setSimulationError] = useState<string>('');
 
+  // State for flexible collateral (when offer accepts any collateral)
+  const [selectedCollateralToken, setSelectedCollateralToken] = useState<Address | ''>('');
+
   // Fetch lender offer data
   const { data: offerData, isLoading: offerLoading, refetch } = useLenderOffer(offerId);
 
@@ -83,51 +88,97 @@ export default function OfferDetailPage() {
     status: offerTuple[10] as LoanRequestStatus,
   } : null;
 
+  // Check if this is a flexible collateral offer (zero address means borrower chooses)
+  const isFlexibleCollateral = offer?.requiredCollateralAsset === '0x0000000000000000000000000000000000000000';
+
   // Token info
   const lendSymbol = offer ? getTokenSymbol(offer.lendAsset) : '';
-  const collateralSymbol = offer ? getTokenSymbol(offer.requiredCollateralAsset) : '';
   const lendDecimals = offer ? Number(getTokenDecimals(offer.lendAsset)) : 18;
-  const collateralDecimals = offer ? Number(getTokenDecimals(offer.requiredCollateralAsset)) : 18;
+
+  // For flexible collateral, use selected token; otherwise use the required token
+  const activeCollateralToken = isFlexibleCollateral
+    ? (selectedCollateralToken as Address || undefined)
+    : offer?.requiredCollateralAsset;
+  const collateralSymbol = isFlexibleCollateral
+    ? (selectedCollateralToken ? getTokenSymbol(selectedCollateralToken as Address) : 'Select Token')
+    : (offer ? getTokenSymbol(offer.requiredCollateralAsset) : '');
+  const collateralDecimals = isFlexibleCollateral
+    ? (selectedCollateralToken ? Number(getTokenDecimals(selectedCollateralToken as Address)) : 18)
+    : (offer ? Number(getTokenDecimals(offer.requiredCollateralAsset)) : 18);
 
   // Check if user is the lender (owner of the offer)
   const isLender = offer && address?.toLowerCase() === offer.lender.toLowerCase();
 
   // Get borrower's collateral balance and allowance
-  const { data: borrowerCollateralBalance } = useTokenBalance(offer?.requiredCollateralAsset, address);
+  const { data: borrowerCollateralBalance } = useTokenBalance(activeCollateralToken, address);
   const { data: borrowerCollateralAllowance, refetch: refetchAllowance } = useTokenAllowance(
-    offer?.requiredCollateralAsset,
+    activeCollateralToken,
     address,
     CONTRACT_ADDRESSES.loanMarketPlace
   );
 
   // Price data for USD values
   const lendPriceHook = useTokenPrice(offer?.lendAsset);
-  const collateralPriceHook = useTokenPrice(offer?.requiredCollateralAsset);
+  const collateralPriceHook = useTokenPrice(activeCollateralToken);
   const lendPrice = lendPriceHook.price;
   const collateralPrice = collateralPriceHook.price;
 
-  // Check price staleness
-  const isPriceStale = lendPriceHook.isStale || collateralPriceHook.isStale;
+  // Check price staleness (skip collateral price check if no token selected for flexible)
+  const isPriceStale = lendPriceHook.isStale || (!isFlexibleCollateral && collateralPriceHook.isStale) ||
+    (isFlexibleCollateral && selectedCollateralToken && collateralPriceHook.isStale);
 
   // Calculate USD values
   const lendUSD = offer && lendPrice
     ? (Number(offer.lendAmount) / Math.pow(10, Number(lendDecimals))) * Number(lendPrice) / 1e8
     : 0;
-  const minCollateralUSD = offer && collateralPrice
-    ? (Number(offer.minCollateralAmount) / Math.pow(10, Number(collateralDecimals))) * Number(collateralPrice) / 1e8
-    : 0;
 
-  // The collateral amount is fixed as the minimum required (read-only)
-  const requiredCollateralFormatted = offer
-    ? formatTokenAmount(offer.minCollateralAmount, collateralDecimals)
-    : '0';
-
-  // Get LTV from contract (duration is in seconds, convert to days)
+  // Get LTV from contract (duration is in seconds, convert to days) - moved up for use in calculations
   const durationDays = offer ? Math.ceil(Number(offer.duration) / (24 * 60 * 60)) : 0;
-  const { data: ltvBps } = useLTV(offer?.requiredCollateralAsset, durationDays);
+  const { data: ltvBps } = useLTV(activeCollateralToken, durationDays);
 
   // LTV from contract is in basis points (10000 = 100%)
   const currentLTV = ltvBps ? Number(ltvBps) / 100 : 0;
+
+  // Calculate required collateral from LTV and prices
+  // Formula: requiredCollateral = (borrowAmount * borrowPrice / collateralPrice) / (LTV / 10000)
+  // Add 5% safety margin to ensure transaction succeeds
+  const calculatedCollateralAmount = (() => {
+    const ltvValue = ltvBps ? Number(ltvBps) : 0;
+    if (!offer || !lendPrice || !collateralPrice || ltvValue === 0) {
+      return BigInt(0);
+    }
+    // borrowAmountUSD = lendAmount * lendPrice / 10^lendDecimals (price has 8 decimals, keep it)
+    // requiredCollateralUSD = borrowAmountUSD * 10000 / ltvBps
+    // requiredCollateral = requiredCollateralUSD * 10^collateralDecimals / collateralPrice
+    const lendAmountBN = BigInt(offer.lendAmount);
+    const lendPriceBN = BigInt(lendPrice);
+    const collateralPriceBN = BigInt(collateralPrice);
+    const ltvBpsBN = BigInt(ltvValue);
+
+    // Calculate: (lendAmount * lendPrice * 10000 * 10^collateralDecimals) / (ltvBps * collateralPrice * 10^lendDecimals)
+    const numerator = lendAmountBN * lendPriceBN * BigInt(10000) * BigInt(10 ** collateralDecimals);
+    const denominator = ltvBpsBN * collateralPriceBN * BigInt(10 ** lendDecimals);
+
+    if (denominator === BigInt(0)) return BigInt(0);
+
+    // Add 5% safety margin
+    const baseAmount = numerator / denominator;
+    return (baseAmount * BigInt(105)) / BigInt(100);
+  })();
+
+  // For flexible collateral, use calculated amount; otherwise use minimum from offer
+  const collateralAmountBigInt = isFlexibleCollateral
+    ? calculatedCollateralAmount
+    : (offer?.minCollateralAmount || BigInt(0));
+
+  const minCollateralUSD = collateralPrice && collateralAmountBigInt
+    ? (Number(collateralAmountBigInt) / Math.pow(10, Number(collateralDecimals))) * Number(collateralPrice) / 1e8
+    : 0;
+
+  // The collateral amount - formatted for display
+  const requiredCollateralFormatted = collateralAmountBigInt > BigInt(0)
+    ? formatTokenAmount(collateralAmountBigInt, collateralDecimals)
+    : '0';
 
   // Balance calculations
   const maxCollateralBalance = borrowerCollateralBalance
@@ -135,20 +186,33 @@ export default function OfferDetailPage() {
     : '0';
   const maxCollateralBalanceNumber = parseFloat(maxCollateralBalance);
 
-  // Check balance status
+  // Check balance status - for flexible collateral, check against user's input
   const hasZeroBalance = maxCollateralBalanceNumber === 0;
-  const hasInsufficientBalance = offer && borrowerCollateralBalance
-    ? (borrowerCollateralBalance as bigint) < offer.minCollateralAmount
-    : false;
+  const hasInsufficientBalance = isFlexibleCollateral
+    ? (borrowerCollateralBalance && collateralAmountBigInt
+      ? (borrowerCollateralBalance as bigint) < collateralAmountBigInt
+      : false)
+    : (offer && borrowerCollateralBalance
+      ? (borrowerCollateralBalance as bigint) < offer.minCollateralAmount
+      : false);
 
-  // Check if already approved
-  const hasApproval = borrowerCollateralAllowance && offer
-    ? (borrowerCollateralAllowance as bigint) >= offer.minCollateralAmount
-    : false;
+  // Check if already approved - for flexible collateral, check against user's input
+  const hasApproval = isFlexibleCollateral
+    ? (borrowerCollateralAllowance && collateralAmountBigInt
+      ? (borrowerCollateralAllowance as bigint) >= collateralAmountBigInt
+      : false)
+    : (borrowerCollateralAllowance && offer
+      ? (borrowerCollateralAllowance as bigint) >= offer.minCollateralAmount
+      : false);
+
+  // For flexible collateral, check if user has selected token and collateral is calculated
+  const hasValidFlexibleInput = isFlexibleCollateral
+    ? Boolean(selectedCollateralToken && collateralAmountBigInt > BigInt(0))
+    : true;
 
   // Write hooks
-  const { approve, isPending: approveIsPending, isSuccess: approveSuccess } = useApproveToken();
-  const { acceptOffer, isPending: acceptIsPending, isSuccess: acceptSuccess } = useAcceptLenderOffer();
+  const { approveAsync, isPending: approveIsPending, isConfirming: isApprovalConfirming, isSuccess: approveSuccess } = useApproveToken();
+  const { acceptOfferAsync, isPending: acceptIsPending, isConfirming: isAcceptConfirming, isSuccess: acceptSuccess } = useAcceptLenderOffer();
 
   // Handle approval success
   useEffect(() => {
@@ -180,12 +244,21 @@ export default function OfferDetailPage() {
 
   const handleApprove = async () => {
     if (!offer) return;
+    if (isFlexibleCollateral && !selectedCollateralToken) return;
+    if (collateralAmountBigInt === BigInt(0)) {
+      toast.error('Unable to calculate required collateral. Please ensure prices are loaded.');
+      return;
+    }
     setSimulationError('');
+
+    const tokenToApprove = isFlexibleCollateral
+      ? (selectedCollateralToken as Address)
+      : offer.requiredCollateralAsset;
 
     try {
       // Simulate approval first
       const simulation = await simulateContractWrite({
-        address: offer.requiredCollateralAsset,
+        address: tokenToApprove,
         abi: [
           {
             inputs: [
@@ -199,7 +272,7 @@ export default function OfferDetailPage() {
           }
         ],
         functionName: 'approve',
-        args: [CONTRACT_ADDRESSES.loanMarketPlace, offer.minCollateralAmount],
+        args: [CONTRACT_ADDRESSES.loanMarketPlace, collateralAmountBigInt],
       });
 
       if (!simulation.success) {
@@ -208,7 +281,8 @@ export default function OfferDetailPage() {
         return;
       }
 
-      approve(offer.requiredCollateralAsset, CONTRACT_ADDRESSES.loanMarketPlace, offer.minCollateralAmount);
+      await approveAsync(tokenToApprove, CONTRACT_ADDRESSES.loanMarketPlace, collateralAmountBigInt);
+      // Transaction submitted - useEffect will handle success
     } catch (error: unknown) {
       const errorMsg = formatSimulationError(error);
       setSimulationError(errorMsg);
@@ -218,8 +292,31 @@ export default function OfferDetailPage() {
 
   const handleAccept = async () => {
     if (!offer || !offerId) return;
+    if (isFlexibleCollateral && !selectedCollateralToken) return;
+    if (collateralAmountBigInt === BigInt(0)) {
+      toast.error('Unable to calculate required collateral. Please ensure prices are loaded.');
+      return;
+    }
     setIsAccepting(true);
     setSimulationError('');
+
+    // Get the collateral asset - for flexible it's the selected token, otherwise it's from offer
+    const collateralAssetToUse = isFlexibleCollateral
+      ? (selectedCollateralToken as Address)
+      : offer.requiredCollateralAsset;
+
+    // Debug logging
+    console.log('Accept Offer Debug:', {
+      offerId: offerId.toString(),
+      collateralAsset: collateralAssetToUse,
+      collateralAmount: collateralAmountBigInt.toString(),
+      collateralAmountFormatted: formatUnits(collateralAmountBigInt, collateralDecimals),
+      isFlexibleCollateral,
+      offerMinCollateral: offer.minCollateralAmount.toString(),
+      offerMinCollateralFormatted: formatUnits(offer.minCollateralAmount, collateralDecimals),
+      allowance: borrowerCollateralAllowance?.toString(),
+      balance: borrowerCollateralBalance?.toString(),
+    });
 
     try {
       // Simulate first
@@ -227,7 +324,7 @@ export default function OfferDetailPage() {
         address: CONTRACT_ADDRESSES.loanMarketPlace,
         abi: LoanMarketPlaceABI,
         functionName: 'acceptLenderOffer',
-        args: [offerId, offer.minCollateralAmount],
+        args: [offerId, collateralAssetToUse, collateralAmountBigInt],
       });
 
       if (!simulation.success) {
@@ -237,7 +334,8 @@ export default function OfferDetailPage() {
         return;
       }
 
-      acceptOffer(offerId, offer.minCollateralAmount);
+      await acceptOfferAsync(offerId, collateralAssetToUse, collateralAmountBigInt);
+      // Transaction submitted - useEffect will handle success
     } catch (error: unknown) {
       const errorMsg = formatSimulationError(error);
       setSimulationError(errorMsg);
@@ -254,12 +352,17 @@ export default function OfferDetailPage() {
   // Check if accept button should be disabled
   const isAcceptDisabled =
     !offer ||
-    hasZeroBalance ||
+    (isFlexibleCollateral && !hasValidFlexibleInput) ||
+    (isFlexibleCollateral && !selectedCollateralToken) ||
+    (!isFlexibleCollateral && hasZeroBalance) ||
+    (isFlexibleCollateral && selectedCollateralToken && hasZeroBalance) ||
     hasInsufficientBalance ||
     isPriceStale ||
     isAccepting ||
     acceptIsPending ||
-    approveIsPending;
+    isAcceptConfirming ||
+    approveIsPending ||
+    isApprovalConfirming;
 
   if (offerLoading) {
     return (
@@ -369,24 +472,44 @@ export default function OfferDetailPage() {
                   <div className="space-y-4">
                     <div>
                       <p className="text-sm text-gray-400 mb-1">Required Collateral</p>
-                      <p className="text-lg font-semibold">
-                        {formatTokenAmount(offer.minCollateralAmount, collateralDecimals)} {collateralSymbol}
-                      </p>
-                      {minCollateralUSD > 0 && (
-                        <p className="text-sm text-gray-500">~${minCollateralUSD.toFixed(2)} USD</p>
+                      {isFlexibleCollateral ? (
+                        <p className="text-lg font-semibold text-accent-400">
+                          Borrower chooses
+                        </p>
+                      ) : (
+                        <>
+                          <p className="text-lg font-semibold">
+                            {formatTokenAmount(offer.minCollateralAmount, collateralDecimals)} {collateralSymbol}
+                          </p>
+                          {minCollateralUSD > 0 && (
+                            <p className="text-sm text-gray-500">~${minCollateralUSD.toFixed(2)} USD</p>
+                          )}
+                        </>
                       )}
                     </div>
                     <div>
                       <p className="text-sm text-gray-400 mb-1">Collateral Token</p>
-                      <p className="text-lg font-semibold">
-                        {collateralSymbol}
-                      </p>
+                      {isFlexibleCollateral ? (
+                        <p className="text-lg font-semibold text-accent-400">
+                          Any supported token
+                        </p>
+                      ) : (
+                        <p className="text-lg font-semibold">
+                          {collateralSymbol}
+                        </p>
+                      )}
                     </div>
                     <div>
                       <p className="text-sm text-gray-400 mb-1">LTV Ratio</p>
-                      <p className={`text-lg font-semibold ${currentLTV > 80 ? 'text-red-400' : currentLTV > 70 ? 'text-yellow-400' : 'text-green-400'}`}>
-                        {currentLTV.toFixed(1)}%
-                      </p>
+                      {isFlexibleCollateral ? (
+                        <p className="text-sm text-gray-500">
+                          Depends on collateral chosen
+                        </p>
+                      ) : (
+                        <p className={`text-lg font-semibold ${currentLTV > 80 ? 'text-red-400' : currentLTV > 70 ? 'text-yellow-400' : 'text-green-400'}`}>
+                          {currentLTV.toFixed(1)}%
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -456,9 +579,13 @@ export default function OfferDetailPage() {
                     </div>
                     <div className="flex justify-between items-center py-2 border-b border-white/10">
                       <span className="text-gray-400">Collateral Required</span>
-                      <span className="font-medium">
-                        {formatTokenAmount(offer.minCollateralAmount, collateralDecimals)} {collateralSymbol}
-                      </span>
+                      {isFlexibleCollateral ? (
+                        <span className="font-medium text-accent-400">You choose</span>
+                      ) : (
+                        <span className="font-medium">
+                          {formatTokenAmount(offer.minCollateralAmount, collateralDecimals)} {collateralSymbol}
+                        </span>
+                      )}
                     </div>
                     <div className="flex justify-between items-center py-2">
                       <span className="text-gray-400">Loan Duration</span>
@@ -468,8 +595,69 @@ export default function OfferDetailPage() {
                     </div>
                   </div>
 
-                  {/* Balance Status */}
-                  {isConnected && (
+                  {/* Flexible Collateral Selection */}
+                  {isFlexibleCollateral && isConnected && (
+                    <div className="mt-4 pt-4 border-t border-white/10 space-y-4">
+                      <div className="bg-accent-500/10 border border-accent-500/30 rounded-lg p-3">
+                        <p className="text-sm text-accent-400 font-medium">Flexible Collateral</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          This offer accepts any supported collateral. Select your token and the required amount will be calculated.
+                        </p>
+                      </div>
+
+                      {/* Token Selection */}
+                      <div>
+                        <label className="block text-sm text-gray-400 mb-2">Select Collateral Token</label>
+                        <select
+                          value={selectedCollateralToken}
+                          onChange={(e) => {
+                            setSelectedCollateralToken(e.target.value as Address);
+                          }}
+                          className="w-full input-field bg-gray-800 border border-gray-700 rounded-lg px-4 py-3"
+                        >
+                          <option value="">Select a token</option>
+                          {TOKEN_LIST.filter(t => t.symbol !== 'USDC' && t.symbol !== 'USDT' && t.symbol !== 'DAI').map((token) => (
+                            <option key={token.address} value={token.address}>
+                              {token.symbol}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Calculated Amount Display */}
+                      {selectedCollateralToken && (
+                        <div>
+                          <label className="block text-sm text-gray-400 mb-2">Required Collateral (calculated)</label>
+                          <div className="p-4 bg-gray-800/50 border border-gray-700 rounded-lg">
+                            {collateralAmountBigInt > BigInt(0) ? (
+                              <div className="flex justify-between items-center">
+                                <span className="text-xl font-bold text-white">
+                                  {requiredCollateralFormatted} {collateralSymbol}
+                                </span>
+                                {minCollateralUSD > 0 && (
+                                  <span className="text-sm text-gray-400">~${minCollateralUSD.toFixed(2)} USD</span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-gray-400">Loading prices...</span>
+                            )}
+                            <p className="text-xs text-gray-500 mt-2">
+                              Based on {currentLTV.toFixed(1)}% LTV + 5% safety margin
+                            </p>
+                          </div>
+                          <div className="flex justify-between text-xs text-gray-400 mt-2">
+                            <span>Your Balance: {maxCollateralBalance} {collateralSymbol}</span>
+                            {hasInsufficientBalance && (
+                              <span className="text-red-400">Insufficient balance</span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Balance Status - for fixed collateral offers */}
+                  {!isFlexibleCollateral && isConnected && (
                     <div className="mt-4 pt-4 border-t border-white/10">
                       <div className="flex justify-between items-center text-sm">
                         <span className="text-gray-400">Your {collateralSymbol} Balance</span>
@@ -666,12 +854,25 @@ export default function OfferDetailPage() {
                   <h3 className="font-semibold">Security</h3>
                 </div>
                 <div className="space-y-2 text-sm text-gray-400">
-                  <p>
-                    The collateral amount is fixed by the lender&apos;s offer terms. Your collateral is secured by smart contract.
-                  </p>
-                  <p className="text-accent-400 font-medium">
-                    Required: {formatTokenAmount(offer.minCollateralAmount, collateralDecimals)} {collateralSymbol}
-                  </p>
+                  {isFlexibleCollateral ? (
+                    <>
+                      <p>
+                        This offer accepts any supported collateral token. Select your token and the required amount will be calculated based on current market prices and LTV ratios.
+                      </p>
+                      <p className="text-accent-400 font-medium">
+                        Collateral: Calculated from LTV
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p>
+                        The collateral amount is fixed by the lender&apos;s offer terms. Your collateral is secured by smart contract.
+                      </p>
+                      <p className="text-accent-400 font-medium">
+                        Required: {formatTokenAmount(offer.minCollateralAmount, collateralDecimals)} {collateralSymbol}
+                      </p>
+                    </>
+                  )}
                 </div>
               </Card>
             </motion.div>
@@ -712,37 +913,94 @@ export default function OfferDetailPage() {
             </div>
           </div>
 
-          {/* Collateral Display (Read-only) */}
-          <div>
-            <div className="relative">
-              <Input
-                label={`Required Collateral (${collateralSymbol})`}
-                type="text"
-                value={requiredCollateralFormatted}
-                readOnly
-                disabled
-                suffix={collateralSymbol}
-                className="bg-gray-800/50 cursor-not-allowed"
-              />
-              <div className="absolute right-16 top-9">
-                <Info className="w-4 h-4 text-gray-400" />
+          {/* Collateral Display/Selection */}
+          {isFlexibleCollateral ? (
+            <div className="space-y-4">
+              {/* Token Selection */}
+              <div>
+                <label className="block text-sm text-gray-400 mb-2">Select Collateral Token</label>
+                <select
+                  value={selectedCollateralToken}
+                  onChange={(e) => {
+                    setSelectedCollateralToken(e.target.value as Address);
+                  }}
+                  className="w-full input-field bg-gray-800 border border-gray-700 rounded-lg px-4 py-3"
+                >
+                  <option value="">Select a token</option>
+                  {TOKEN_LIST.filter(t => t.symbol !== 'USDC' && t.symbol !== 'USDT' && t.symbol !== 'DAI').map((token) => (
+                    <option key={token.address} value={token.address}>
+                      {token.symbol}
+                    </option>
+                  ))}
+                </select>
               </div>
-            </div>
-            <div className="mt-2 flex justify-between text-sm">
-              <span className="text-gray-400">
-                Your Balance: {borrowerCollateralBalance ? formatTokenAmount(borrowerCollateralBalance as bigint, collateralDecimals) : '0'} {collateralSymbol}
-              </span>
-              <span className={`${currentLTV > 80 ? 'text-red-400' : currentLTV > 70 ? 'text-yellow-400' : 'text-green-400'}`}>
-                LTV: {currentLTV.toFixed(1)}%
-              </span>
-            </div>
-            <p className="text-xs text-gray-500 mt-1">
-              Collateral amount is determined by the lender&apos;s offer terms
-            </p>
-          </div>
 
-          {/* Zero Balance Warning */}
-          {hasZeroBalance && (
+              {/* Calculated Amount Display */}
+              {selectedCollateralToken && (
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">Required Collateral (calculated)</label>
+                  <div className="p-4 bg-gray-800/50 border border-gray-700 rounded-lg">
+                    {collateralAmountBigInt > BigInt(0) ? (
+                      <div className="flex justify-between items-center">
+                        <span className="text-xl font-bold text-white">
+                          {requiredCollateralFormatted} {collateralSymbol}
+                        </span>
+                        {minCollateralUSD > 0 && (
+                          <span className="text-sm text-gray-400">~${minCollateralUSD.toFixed(2)} USD</span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-gray-400">Loading prices...</span>
+                    )}
+                    <p className="text-xs text-gray-500 mt-2">
+                      Based on {currentLTV.toFixed(1)}% LTV + 5% safety margin
+                    </p>
+                  </div>
+                  <div className="mt-2 flex justify-between text-sm">
+                    <span className="text-gray-400">
+                      Balance: {maxCollateralBalance} {collateralSymbol}
+                    </span>
+                    {currentLTV > 0 && (
+                      <span className={`${currentLTV > 80 ? 'text-red-400' : currentLTV > 70 ? 'text-yellow-400' : 'text-green-400'}`}>
+                        LTV: {currentLTV.toFixed(1)}%
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div>
+              <div className="relative">
+                <Input
+                  label={`Required Collateral (${collateralSymbol})`}
+                  type="text"
+                  value={requiredCollateralFormatted}
+                  readOnly
+                  disabled
+                  suffix={collateralSymbol}
+                  className="bg-gray-800/50 cursor-not-allowed"
+                />
+                <div className="absolute right-16 top-9">
+                  <Info className="w-4 h-4 text-gray-400" />
+                </div>
+              </div>
+              <div className="mt-2 flex justify-between text-sm">
+                <span className="text-gray-400">
+                  Your Balance: {borrowerCollateralBalance ? formatTokenAmount(borrowerCollateralBalance as bigint, collateralDecimals) : '0'} {collateralSymbol}
+                </span>
+                <span className={`${currentLTV > 80 ? 'text-red-400' : currentLTV > 70 ? 'text-yellow-400' : 'text-green-400'}`}>
+                  LTV: {currentLTV.toFixed(1)}%
+                </span>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Collateral amount is determined by the lender&apos;s offer terms
+              </p>
+            </div>
+          )}
+
+          {/* Zero Balance Warning - only show for fixed collateral or when flexible token is selected */}
+          {((!isFlexibleCollateral && hasZeroBalance) || (isFlexibleCollateral && selectedCollateralToken && hasZeroBalance)) && (
             <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
               <div className="flex gap-2 items-start">
                 <AlertCircle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
@@ -770,7 +1028,7 @@ export default function OfferDetailPage() {
                 <div className="text-sm">
                   <p className="text-red-400 font-medium">Insufficient Balance</p>
                   <p className="text-gray-400 mt-1">
-                    You need {requiredCollateralFormatted} {collateralSymbol} but only have {formatTokenAmount(borrowerCollateralBalance as bigint, collateralDecimals)}.
+                    You need {requiredCollateralFormatted} {collateralSymbol} but only have {maxCollateralBalance}.
                   </p>
                   <Link
                     href="/faucet"
@@ -811,8 +1069,9 @@ export default function OfferDetailPage() {
             </div>
           )}
 
-          {/* Steps - Only show when balance is sufficient */}
-          {!hasZeroBalance && !hasInsufficientBalance && !isPriceStale && (
+          {/* Steps - Only show when balance is sufficient and (for flexible) token is selected */}
+          {((!isFlexibleCollateral && !hasZeroBalance && !hasInsufficientBalance && !isPriceStale) ||
+            (isFlexibleCollateral && hasValidFlexibleInput && !hasZeroBalance && !hasInsufficientBalance && !isPriceStale)) && (
             <div className="space-y-4">
               {/* Step Indicator */}
               <div className="flex items-center gap-4">

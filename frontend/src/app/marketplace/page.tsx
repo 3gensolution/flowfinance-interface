@@ -62,23 +62,23 @@ function MarketplaceContent() {
   const { data: nextRequestId, refetch: refetchRequestCount } = useNextLoanRequestId();
   const { data: nextOfferId, refetch: refetchOfferCount } = useNextLenderOfferId();
 
-  // Calculate actual number of requests/offers (IDs start at 1, not 0)
-  const requestCount = nextRequestId ? Number(nextRequestId) - 1 : 0;
-  const offerCount = nextOfferId ? Number(nextOfferId) - 1 : 0;
+  // Calculate actual number of requests/offers (IDs start at 0)
+  const requestCount = nextRequestId ? Number(nextRequestId) : 0;
+  const offerCount = nextOfferId ? Number(nextOfferId) : 0;
 
-  // Fetch loan requests using efficient multicall (start from ID 1, fetch up to 20)
+  // Fetch loan requests using efficient multicall (start from ID 0, fetch up to 20)
   const {
     data: allRequests,
     isLoading: isLoadingRequests,
     refetch: refetchRequests
-  } = useBatchLoanRequests(1, Math.min(requestCount, 20));
+  } = useBatchLoanRequests(0, Math.min(requestCount, 20));
 
-  // Fetch lender offers using efficient multicall (start from ID 1, fetch up to 20)
+  // Fetch lender offers using efficient multicall (start from ID 0, fetch up to 20)
   const {
     data: allOffers,
     isLoading: isLoadingOffers,
     refetch: refetchOffers
-  } = useBatchLenderOffers(1, Math.min(offerCount, 20));
+  } = useBatchLenderOffers(0, Math.min(offerCount, 20));
 
   // Fiat loan data
   const {

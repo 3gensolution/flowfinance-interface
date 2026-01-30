@@ -13,8 +13,8 @@
     "@react-three/fiber": "^8.18.0",
     "@tanstack/react-query": "^5.68.0",
     "@tanstack/react-query-devtools": "^5.68.0",
-    "axios": "^1.8.3",
     "@types/three": "^0.182.0",
+    "axios": "^1.8.3",
     "clsx": "^2.1.0",
     "framer-motion": "^11.0.24",
     "gsap": "^3.14.2",
@@ -27,7 +27,8 @@
     "tailwind-merge": "^2.2.2",
     "three": "^0.182.0",
     "viem": "^2.9.20",
-    "wagmi": "^2.8.7"
+    "wagmi": "^2.8.7",
+    "zustand": "^5.0.10"
   },
   "devDependencies": {
     "@types/node": "^20.12.7",

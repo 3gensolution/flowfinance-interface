@@ -38,7 +38,7 @@ export function PriceFeedDisplay({
     }
 
     try {
-      await refreshPrice(priceFeedAddress as Address, price);
+      await refreshPrice(priceFeedAddress as Address, price, tokenAddress);
       toast.success(`${tokenInfo?.symbol || 'Token'} price refreshed!`);
       refetch();
     } catch (error) {

@@ -145,7 +145,7 @@ export function CreateFiatLoanRequestForm() {
     currency
   );
 
-  const { approve, simulateApprove, isPending: isApproving, isSuccess: approveSuccess } = useApproveToken();
+  const { approveAsync, simulateApprove, isPending: isApproving, isConfirming: isApprovalConfirming, isSuccess: approveSuccess } = useApproveToken();
   const { createFiatLoanRequest, simulateCreateFiatLoanRequest, isPending: isCreating, isSuccess: createSuccess, error: createError } = useCreateFiatLoanRequest();
 
   const parsedCollateralAmount = collateralAmount
@@ -359,7 +359,8 @@ export function CreateFiatLoanRequestForm() {
         }
       }
 
-      approve(collateralToken, CONTRACT_ADDRESSES.fiatLoanBridge, parsedCollateralAmount);
+      await approveAsync(collateralToken, CONTRACT_ADDRESSES.fiatLoanBridge, parsedCollateralAmount);
+      // Transaction submitted - useEffect will handle success
     } catch (error: unknown) {
       setIsSimulating(false);
       const errorMsg = error instanceof Error ? error.message : 'Approval failed';
@@ -777,11 +778,11 @@ export function CreateFiatLoanRequestForm() {
             </div>
           )}
           <div className="flex gap-4">
-            <Button variant="secondary" onClick={() => setStep('form')} className="flex-1">
+            <Button variant="secondary" onClick={() => setStep('form')} className="flex-1" disabled={isApproving || isApprovalConfirming}>
               Back
             </Button>
-            <Button onClick={handleApprove} loading={isApproving} className="flex-1 bg-green-600 hover:bg-green-700">
-              {isApproving ? 'Approving...' : 'Approve'}
+            <Button onClick={handleApprove} loading={isApproving || isApprovalConfirming} className="flex-1 bg-green-600 hover:bg-green-700">
+              {isApproving ? 'Approving...' : isApprovalConfirming ? 'Confirming...' : 'Approve'}
             </Button>
           </div>
         </div>

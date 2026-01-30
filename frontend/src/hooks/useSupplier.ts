@@ -2,9 +2,8 @@
 
 import { useReadContract, useWriteContract, useWaitForTransactionReceipt, usePublicClient, useAccount } from 'wagmi';
 import { Address, Abi } from 'viem';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { CONTRACT_ADDRESSES } from '@/config/contracts';
-import { useInvalidateContractQueries } from './useContracts';
 import SupplierRegistryABIJson from '@/contracts/SupplierRegistryABI.json';
 
 const SupplierRegistryABI = SupplierRegistryABIJson as Abi;
@@ -149,15 +148,10 @@ export function useActiveSuppliers() {
 export function useRegisterSupplier() {
   const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
-  const { invalidateAll } = useInvalidateContractQueries();
   const publicClient = usePublicClient();
   const { address } = useAccount();
   const [simulationError, setSimulationError] = useState<string | null>(null);
   const [isSimulating, setIsSimulating] = useState(false);
-
-  useEffect(() => {
-    if (isSuccess) invalidateAll();
-  }, [isSuccess, invalidateAll]);
 
   const registerSupplier = async (
     supplierType: SupplierType,
@@ -234,11 +228,6 @@ export function useRegisterSupplier() {
 export function useAddStake() {
   const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
-  const { invalidateAll } = useInvalidateContractQueries();
-
-  useEffect(() => {
-    if (isSuccess) invalidateAll();
-  }, [isSuccess, invalidateAll]);
 
   const addStake = async (amount: bigint) => {
     return await writeContractAsync({
@@ -256,11 +245,6 @@ export function useAddStake() {
 export function useWithdrawStake() {
   const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
-  const { invalidateAll } = useInvalidateContractQueries();
-
-  useEffect(() => {
-    if (isSuccess) invalidateAll();
-  }, [isSuccess, invalidateAll]);
 
   const withdrawStake = async (amount: bigint) => {
     return await writeContractAsync({

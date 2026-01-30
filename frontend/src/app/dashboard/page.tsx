@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useAccount, usePublicClient } from 'wagmi';
 import { motion } from 'framer-motion';
 import { formatUnits, parseUnits } from 'viem';
@@ -22,6 +22,7 @@ import {
   useCancelLenderOffer,
   useTokenPrice,
   useRefreshMockPrice,
+  useEscrowCollateralInfo,
 } from '@/hooks/useContracts';
 import {
   useUserFiatLenderOffers,
@@ -67,6 +68,7 @@ export default function DashboardPage() {
   const [isRepaying, setIsRepaying] = useState(false);
   const [isApprovingToken, setIsApprovingToken] = useState(false);
   const [repayStep, setRepayStep] = useState<'input' | 'approve' | 'repay'>('input');
+  const hasInitializedRepayAmount = useRef(false);
 
   // Fetch user dashboard data from contracts
   const {
@@ -128,6 +130,10 @@ export default function DashboardPage() {
   const isPriceStale = borrowAssetPrice.isStale;
   const priceFeedAddress = borrowAssetPrice.priceFeedAddress as Address | undefined;
   const currentPrice = borrowAssetPrice.price;
+
+  // Get escrow collateral info for debugging
+  const { data: escrowInfo } = useEscrowCollateralInfo(selectedLoanId || undefined);
+  const escrowCollateralAmount = escrowInfo ? (escrowInfo as readonly [Address, bigint, Address])[1] : BigInt(0);
 
   // Hook to refresh mock price feed
   const { refreshPrice, isPending: isRefreshingPrice } = useRefreshMockPrice();
@@ -224,7 +230,6 @@ export default function DashboardPage() {
   // Handle repay loan
   const handleRepayClick = async (loanId: bigint) => {
     setSelectedLoanId(loanId);
-    setRepayAmount('');
     setRepayStep('input');
     setSimulationError('');
     // Reset approval tracking if switching to a different loan
@@ -249,13 +254,7 @@ export default function DashboardPage() {
   };
 
   const repayAmountBigInt = getRepayAmountBigInt();
-  const currentAllowance = (allowance as bigint) || BigInt(0);
   const userBalance = (userTokenBalance as bigint) || BigInt(0);
-  // Need approval if: amount > 0 AND (allowance is insufficient OR this approval wasn't for this specific loan)
-  const needsApproval = repayAmountBigInt > BigInt(0) && (
-    currentAllowance < repayAmountBigInt ||
-    (approvedForLoanId !== null && approvedForLoanId !== selectedLoanId)
-  );
 
   // Check if user has any balance
   const hasBalance = userBalance > BigInt(0);
@@ -266,9 +265,6 @@ export default function DashboardPage() {
     ? totalRepaymentAmount - amountAlreadyRepaid
     : BigInt(0);
 
-  // Calculate the maximum the user can repay (minimum of their balance and remaining owed)
-  const maxRepayableAmount = userBalance < remainingToRepay ? userBalance : remainingToRepay;
-
   // Get token info for display
   const selectedTokenInfo = selectedLoan ? getTokenByAddress(selectedLoan.borrowAsset) : null;
   const formattedUserBalance = selectedTokenInfo && userBalance > BigInt(0)
@@ -277,12 +273,22 @@ export default function DashboardPage() {
   const formattedRemainingToRepay = selectedTokenInfo && remainingToRepay > BigInt(0)
     ? formatUnits(remainingToRepay, selectedTokenInfo.decimals)
     : '0';
-  const formattedMaxRepayable = selectedTokenInfo && maxRepayableAmount > BigInt(0)
-    ? formatUnits(maxRepayableAmount, selectedTokenInfo.decimals)
-    : '0';
+
+  // Auto-set repay amount to remaining when modal FIRST opens (only once)
+  useEffect(() => {
+    if (repayModalOpen && selectedLoan && remainingToRepay > BigInt(0) && selectedTokenInfo && !hasInitializedRepayAmount.current) {
+      const formattedAmount = formatUnits(remainingToRepay, selectedTokenInfo.decimals);
+      setRepayAmount(formattedAmount);
+      hasInitializedRepayAmount.current = true;
+    }
+    // Reset the flag when modal closes
+    if (!repayModalOpen) {
+      hasInitializedRepayAmount.current = false;
+    }
+  }, [repayModalOpen, selectedLoan, remainingToRepay, selectedTokenInfo]);
 
   // Handle proceeding from input step
-  const handleProceedToApproveOrRepay = () => {
+  const handleProceedToApproveOrRepay = async () => {
     // Don't proceed if no balance
     if (!hasBalance) {
       toast.error(`You don't have any ${selectedTokenInfo?.symbol || 'tokens'} to repay with.`);
@@ -295,7 +301,12 @@ export default function DashboardPage() {
       return;
     }
 
-    if (needsApproval) {
+    // Refetch allowance to get the latest value
+    const { data: latestAllowance } = await refetchAllowance();
+    const currentAllowanceValue = (latestAllowance as bigint) || BigInt(0);
+
+    // Check if current allowance is sufficient for the repay amount
+    if (currentAllowanceValue < repayAmountBigInt) {
       setRepayStep('approve');
     } else {
       setRepayStep('repay');
@@ -374,14 +385,14 @@ export default function DashboardPage() {
 
   // Handle refreshing the price feed
   const handleRefreshPrice = async () => {
-    if (!priceFeedAddress || !currentPrice) {
+    if (!priceFeedAddress || !currentPrice || !selectedLoan?.borrowAsset) {
       toast.error('Price feed not available');
       return;
     }
 
     const toastId = toast.loading('Refreshing price feed...');
     try {
-      const hash = await refreshPrice(priceFeedAddress, currentPrice);
+      const hash = await refreshPrice(priceFeedAddress, currentPrice, selectedLoan.borrowAsset);
       if (publicClient) {
         await publicClient.waitForTransactionReceipt({ hash });
       }
@@ -405,6 +416,20 @@ export default function DashboardPage() {
 
     const amountToRepay = parseUnits(repayAmount, tokenInfo.decimals);
     const latestAllowance = (allowance as bigint) || BigInt(0);
+
+    // Debug logging
+    console.log('Repay Debug:', {
+      loanId: selectedLoan.loanId.toString(),
+      borrowAsset: selectedLoan.borrowAsset,
+      amountToRepay: amountToRepay.toString(),
+      amountToRepayFormatted: repayAmount,
+      totalRepaymentAmount: totalRepaymentAmount.toString(),
+      remainingToRepay: remainingToRepay.toString(),
+      allowance: latestAllowance.toString(),
+      userBalance: userBalance.toString(),
+      isPriceStale,
+      isPartialRepayment,
+    });
 
     if (latestAllowance < amountToRepay) {
       toast.error('Insufficient allowance. Please approve first.');
@@ -486,34 +511,6 @@ export default function DashboardPage() {
       toast.error(errorMsg, { id: toastId });
     } finally {
       setIsRepaying(false);
-    }
-  };
-
-  // Handle setting max repayment amount (respects user balance and remaining amount)
-  const handleSetMaxRepayment = () => {
-    if (selectedLoan && selectedTokenInfo) {
-      // If user has no balance, show error
-      if (userBalance === BigInt(0)) {
-        toast.error(`You don't have any ${selectedTokenInfo.symbol} to repay with.`);
-        return;
-      }
-
-      // Set to the maximum repayable amount (min of balance and remaining owed)
-      const amountToSet = maxRepayableAmount;
-      setRepayAmount(formatUnits(amountToSet, selectedTokenInfo.decimals));
-
-      // Inform user about the amount being set
-      if (userBalance < remainingToRepay) {
-        toast(`Amount set to your balance: ${formattedUserBalance} ${selectedTokenInfo.symbol} (partial repayment)`, {
-          icon: 'ℹ️',
-          duration: 3000,
-        });
-      } else if (userBalance >= remainingToRepay) {
-        toast(`Amount set to remaining: ${formattedRemainingToRepay} ${selectedTokenInfo.symbol} (full repayment)`, {
-          icon: '✓',
-          duration: 3000,
-        });
-      }
     }
   };
 
@@ -1013,6 +1010,42 @@ export default function DashboardPage() {
               )}
             </div>
 
+            {/* Debug: Escrow Collateral Info */}
+            <div className="p-3 bg-gray-900/50 rounded-lg border border-gray-700 text-xs">
+              <p className="text-gray-500 font-medium mb-2">Debug: Escrow Info</p>
+              <div className="space-y-1 font-mono">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Loan collateralAmount:</span>
+                  <span className="text-gray-300">
+                    {formatUnits(selectedLoan.collateralAmount, getTokenByAddress(selectedLoan.collateralAsset)?.decimals || 18)} {getTokenByAddress(selectedLoan.collateralAsset)?.symbol}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Loan collateralReleased:</span>
+                  <span className="text-gray-300">
+                    {formatUnits(selectedLoan.collateralReleased, getTokenByAddress(selectedLoan.collateralAsset)?.decimals || 18)} {getTokenByAddress(selectedLoan.collateralAsset)?.symbol}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Loan available (calc):</span>
+                  <span className="text-gray-300">
+                    {formatUnits(selectedLoan.collateralAmount - selectedLoan.collateralReleased, getTokenByAddress(selectedLoan.collateralAsset)?.decimals || 18)} {getTokenByAddress(selectedLoan.collateralAsset)?.symbol}
+                  </span>
+                </div>
+                <div className="flex justify-between border-t border-gray-700 pt-1 mt-1">
+                  <span className="text-gray-500">Escrow actual balance:</span>
+                  <span className={escrowCollateralAmount >= (selectedLoan.collateralAmount - selectedLoan.collateralReleased) ? 'text-green-400' : 'text-red-400'}>
+                    {formatUnits(escrowCollateralAmount, getTokenByAddress(selectedLoan.collateralAsset)?.decimals || 18)} {getTokenByAddress(selectedLoan.collateralAsset)?.symbol}
+                  </span>
+                </div>
+                {escrowCollateralAmount < (selectedLoan.collateralAmount - selectedLoan.collateralReleased) && (
+                  <p className="text-red-400 mt-2">
+                    ⚠️ MISMATCH: Escrow has less collateral than expected. This will cause repay to fail.
+                  </p>
+                )}
+              </div>
+            </div>
+
             {/* Step Indicator */}
             {repayStep !== 'input' && (
               <div className="flex items-center justify-center gap-2 py-2">
@@ -1033,6 +1066,17 @@ export default function DashboardPage() {
             {/* Step: Input Amount */}
             {repayStep === 'input' && (
               <>
+                {/* Calculated Amount from Contract */}
+                <div className="p-4 bg-primary-500/10 border border-primary-500/30 rounded-lg">
+                  <p className="text-gray-400 text-sm mb-1">Total Amount Due (from contract)</p>
+                  <p className="text-2xl font-bold text-primary-400">
+                    {formattedRemainingToRepay} {selectedTokenInfo?.symbol}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Principal + accrued interest. You can pay partially or in full.
+                  </p>
+                </div>
+
                 {/* No balance warning with faucet link */}
                 {!hasBalance && (
                   <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
@@ -1049,6 +1093,7 @@ export default function DashboardPage() {
                   </div>
                 )}
 
+                {/* Input field for repayment amount */}
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">
                     Repayment Amount
@@ -1057,33 +1102,7 @@ export default function DashboardPage() {
                     <input
                       type="number"
                       value={repayAmount}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        // Allow empty input
-                        if (value === '') {
-                          setRepayAmount('');
-                          return;
-                        }
-                        // Parse and validate
-                        try {
-                          const inputAmount = parseUnits(value, selectedTokenInfo?.decimals || 18);
-                          // Cap at the maximum repayable (min of balance and remaining)
-                          if (inputAmount > maxRepayableAmount && maxRepayableAmount > BigInt(0)) {
-                            setRepayAmount(formattedMaxRepayable);
-                            const reason = userBalance < remainingToRepay
-                              ? `your balance (${formattedUserBalance})`
-                              : `remaining amount (${formattedRemainingToRepay})`;
-                            toast(`Amount capped to ${reason} ${selectedTokenInfo?.symbol}`, {
-                              icon: 'ℹ️',
-                              duration: 2000,
-                            });
-                          } else {
-                            setRepayAmount(value);
-                          }
-                        } catch {
-                          setRepayAmount(value);
-                        }
-                      }}
+                      onChange={(e) => setRepayAmount(e.target.value)}
                       placeholder="Enter amount"
                       className="input-field flex-1"
                       disabled={!hasBalance}
@@ -1091,19 +1110,17 @@ export default function DashboardPage() {
                     <Button
                       variant="secondary"
                       size="sm"
-                      onClick={handleSetMaxRepayment}
-                      disabled={!hasBalance}
+                      onClick={() => setRepayAmount(formattedRemainingToRepay)}
+                      disabled={!hasBalance || remainingToRepay === BigInt(0)}
                     >
                       Max
                     </Button>
                   </div>
                   <p className="text-xs text-gray-500 mt-1">
-                    {hasBalance
-                      ? userBalance >= remainingToRepay
-                        ? 'Enter the amount you want to repay. Full repayment will return all collateral.'
-                        : `Max you can repay: ${formattedMaxRepayable} ${selectedTokenInfo?.symbol} (limited by your balance)`
-                      : 'You need tokens to make a repayment.'
-                    }
+                    Your balance: {formattedUserBalance} {selectedTokenInfo?.symbol}
+                    {hasBalance && userBalance < remainingToRepay && (
+                      <span className="text-yellow-400 ml-2">(partial repayment possible)</span>
+                    )}
                   </p>
                 </div>
 

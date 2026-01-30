@@ -141,7 +141,7 @@ export default function LoanDetailPage() {
     : false;
 
   // Write hooks
-  const { approve, isPending: approveIsPending, isSuccess: approveSuccess } = useApproveToken();
+  const { approveAsync, isPending: approveIsPending, isConfirming: isApprovalConfirming, isSuccess: approveSuccess } = useApproveToken();
   const { fundRequest, isPending: fundIsPending, isSuccess: fundSuccess } = useFundLoanRequest();
 
   // Handle approval success
@@ -202,7 +202,8 @@ export default function LoanDetailPage() {
         return;
       }
 
-      approve(request.borrowAsset, CONTRACT_ADDRESSES.loanMarketPlace, request.borrowAmount);
+      await approveAsync(request.borrowAsset, CONTRACT_ADDRESSES.loanMarketPlace, request.borrowAmount);
+      // Transaction submitted - useEffect will handle success
     } catch (error: unknown) {
       const errorMsg = formatSimulationError(error);
       setSimulationError(errorMsg);
@@ -253,7 +254,8 @@ export default function LoanDetailPage() {
     isPriceStale ||
     isFunding ||
     fundIsPending ||
-    approveIsPending;
+    approveIsPending ||
+    isApprovalConfirming;
 
   if (requestLoading) {
     return (
@@ -814,11 +816,11 @@ export default function LoanDetailPage() {
               {!hasApproval ? (
                 <Button
                   onClick={handleApprove}
-                  loading={approveIsPending}
+                  loading={approveIsPending || isApprovalConfirming}
                   className="w-full"
                   disabled={isFundDisabled}
                 >
-                  Approve {borrowSymbol}
+                  {approveIsPending ? 'Approving...' : isApprovalConfirming ? 'Confirming...' : `Approve ${borrowSymbol}`}
                 </Button>
               ) : (
                 <Button

@@ -111,7 +111,7 @@ export function CreateLoanRequestForm() {
   const { data: ltvBps, isLoading: isLoadingLTV, error: ltvError } = useLTV(collateralToken, durationDays);
   const { data: liquidationThresholdBps } = useLiquidationThreshold(collateralToken, durationDays);
 
-  const { approve, isPending: isApproving, isSuccess: approveSuccess } = useApproveToken();
+  const { approveAsync, isPending: isApproving, isConfirming: isApprovalConfirming, isSuccess: approveSuccess } = useApproveToken();
   const { createRequest, isPending: isCreating, isSuccess: createSuccess, error: createError } = useCreateLoanRequest();
 
   const parsedCollateralAmount = collateralAmount
@@ -284,8 +284,9 @@ export function CreateLoanRequestForm() {
         return;
       }
 
-      // Proceed with actual approval
-      approve(collateralToken, CONTRACT_ADDRESSES.loanMarketPlace, parsedCollateralAmount);
+      // Proceed with actual approval - await to catch wallet rejection
+      await approveAsync(collateralToken, CONTRACT_ADDRESSES.loanMarketPlace, parsedCollateralAmount);
+      // Transaction submitted - useEffect will handle success
     } catch (error: unknown) {
       const errorMsg = formatSimulationError(error);
       setSimulationError(errorMsg);
@@ -845,11 +846,11 @@ export function CreateLoanRequestForm() {
             </div>
           )}
           <div className="flex gap-4">
-            <Button variant="secondary" onClick={() => setStep('form')} className="flex-1">
+            <Button variant="secondary" onClick={() => setStep('form')} className="flex-1" disabled={isApproving || isApprovalConfirming}>
               Back
             </Button>
-            <Button onClick={handleApprove} loading={isApproving} className="flex-1">
-              {isApproving ? 'Approving...' : 'Approve'}
+            <Button onClick={handleApprove} loading={isApproving || isApprovalConfirming} className="flex-1">
+              {isApproving ? 'Approving...' : isApprovalConfirming ? 'Confirming...' : 'Approve'}
             </Button>
           </div>
         </div>

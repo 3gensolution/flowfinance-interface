@@ -138,25 +138,28 @@ interface LenderOfferCardProps {
 
 export function LenderOfferCard({ offer, onAccept, onCancel, isOwner, loading }: LenderOfferCardProps) {
   const lendSymbol = getTokenSymbol(offer.lendAsset);
-  const collateralSymbol = getTokenSymbol(offer.requiredCollateralAsset);
   const lendDecimals = getTokenDecimals(offer.lendAsset);
-  const collateralDecimals = getTokenDecimals(offer.requiredCollateralAsset);
+
+  // Check if collateral is "any" (zero address means borrower chooses)
+  const isAnyCollateral = offer.requiredCollateralAsset === '0x0000000000000000000000000000000000000000';
+  const collateralSymbol = isAnyCollateral ? 'Any' : getTokenSymbol(offer.requiredCollateralAsset);
+  const collateralDecimals = isAnyCollateral ? 18 : getTokenDecimals(offer.requiredCollateralAsset);
 
   // Get USD prices
   const { price: lendPrice } = useTokenPrice(offer.lendAsset);
-  const { price: collateralPrice } = useTokenPrice(offer.requiredCollateralAsset);
+  const { price: collateralPrice } = useTokenPrice(isAnyCollateral ? undefined : offer.requiredCollateralAsset);
 
   // Calculate USD values
   const lendUSD = lendPrice
     ? (Number(offer.lendAmount) / Math.pow(10, Number(lendDecimals))) * Number(lendPrice) / 1e8
     : 0;
-  const collateralUSD = collateralPrice
+  const collateralUSD = !isAnyCollateral && collateralPrice
     ? (Number(offer.minCollateralAmount) / Math.pow(10, Number(collateralDecimals))) * Number(collateralPrice) / 1e8
     : 0;
 
-  // Get LTV from contract (duration is in seconds, convert to days)
+  // Get LTV from contract (duration is in seconds, convert to days) - skip for "any" collateral
   const durationDays = Math.ceil(Number(offer.duration) / (24 * 60 * 60));
-  const { data: ltvBps } = useLTV(offer.requiredCollateralAsset, durationDays);
+  const { data: ltvBps } = useLTV(isAnyCollateral ? undefined : offer.requiredCollateralAsset, durationDays);
 
   // LTV from contract is in basis points (10000 = 100%)
   const ltv = ltvBps ? Number(ltvBps) / 100 : 0;
@@ -177,9 +180,15 @@ export function LenderOfferCard({ offer, onAccept, onCancel, isOwner, loading }:
             </p>
           )}
           <p className="text-sm text-gray-400 mt-1">
-            Min Collateral: {formatTokenAmount(offer.minCollateralAmount, collateralDecimals)} {collateralSymbol}
-            {collateralUSD > 0 && (
-              <span className="text-gray-500"> ({formatUSD(collateralUSD)})</span>
+            {isAnyCollateral ? (
+              <span className="text-accent-400">Collateral: Borrower chooses</span>
+            ) : (
+              <>
+                Min Collateral: {formatTokenAmount(offer.minCollateralAmount, collateralDecimals)} {collateralSymbol}
+                {collateralUSD > 0 && (
+                  <span className="text-gray-500"> ({formatUSD(collateralUSD)})</span>
+                )}
+              </>
             )}
           </p>
         </div>
@@ -203,13 +212,21 @@ export function LenderOfferCard({ offer, onAccept, onCancel, isOwner, loading }:
         </div>
       </div>
 
-      {/* LTV Display */}
-      {ltv > 0 && (
+      {/* LTV Display - only show if specific collateral is required */}
+      {!isAnyCollateral && ltv > 0 && (
         <div className="flex items-center justify-between mb-3 px-2 py-1.5 bg-white/5 rounded-lg">
           <span className="text-xs text-gray-400">LTV Ratio</span>
           <span className={`text-sm font-medium ${ltv > 80 ? 'text-red-400' : ltv > 70 ? 'text-yellow-400' : 'text-green-400'}`}>
             {ltv.toFixed(1)}%
           </span>
+        </div>
+      )}
+
+      {/* Show info for "any collateral" offers */}
+      {isAnyCollateral && (
+        <div className="flex items-center justify-between mb-3 px-2 py-1.5 bg-accent-500/10 rounded-lg border border-accent-500/20">
+          <span className="text-xs text-gray-400">Collateral Type</span>
+          <span className="text-sm font-medium text-accent-400">Flexible</span>
         </div>
       )}
 

@@ -44,11 +44,17 @@ const CUSTOM_ERROR_SIGNATURES: Record<string, string> = {
  * Known error names and their human-readable messages
  */
 const CUSTOM_ERROR_NAMES: Record<string, string> = {
+    // ERC20 errors
     'ERC20InsufficientBalance': 'Insufficient token balance. You need more tokens to complete this transaction.',
     'ERC20InsufficientAllowance': 'Insufficient allowance. Please approve the token first.',
+    'SafeERC20FailedOperation': 'Token transfer failed. Please check your balance and try again.',
+
+    // Ownable/Access errors
     'OwnableUnauthorizedAccount': 'You are not authorized to perform this action.',
     'OwnableInvalidOwner': 'Invalid owner address.',
     'AccessControlUnauthorizedAccount': 'You do not have the required role to perform this action.',
+
+    // Generic errors
     'InvalidAmount': 'Invalid amount specified.',
     'InvalidDuration': 'Invalid loan duration.',
     'InvalidInterestRate': 'Interest rate outside allowed range.',
@@ -58,6 +64,50 @@ const CUSTOM_ERROR_NAMES: Record<string, string> = {
     'PriceDataStale': 'Price data is stale. Please wait for price feeds to be refreshed.',
     'PriceFeedNotSet': 'Price feed not configured for this token.',
     'InvalidPrice': 'Invalid price returned from oracle.',
+
+    // LoanMarketPlace specific errors
+    'AlreadyApproved': 'This has already been approved.',
+    'AmountExceedsDebt': 'Repayment amount exceeds the remaining debt. Please enter a smaller amount.',
+    'AmountMustBeGreaterThanZero': 'Amount must be greater than zero.',
+    'BorrowAssetNotSupported': 'This borrow asset is not supported by the platform.',
+    'CannotAcceptOwnOffer': 'You cannot accept your own lending offer.',
+    'CannotFundOwnRequest': 'You cannot fund your own loan request.',
+    'CollateralAssetRequired': 'Collateral asset is required.',
+    'CollateralNotSupported': 'This collateral token is not supported.',
+    'EnforcedPause': 'The contract is currently paused for maintenance.',
+    'ExtensionAlreadyRequested': 'A loan extension has already been requested.',
+    'GracePeriodNotExpired': 'The grace period has not expired yet.',
+    'InsufficientCollateral': 'Insufficient collateral provided. Please increase your collateral amount.',
+    'InvalidConfigAddress': 'Invalid configuration address.',
+    'InvalidEscrowAddress': 'Invalid escrow address.',
+    'InvalidLiquidator': 'Invalid liquidator address.',
+    'InvalidLoanID': 'Invalid loan ID.',
+    'InvalidPercentage': 'Invalid percentage value.',
+    'InvalidRequest': 'Invalid request.',
+    'LTVExceedsMaximum': 'The loan-to-value ratio exceeds the maximum allowed for this collateral.',
+    'LoanCannotBeLiquidated': 'This loan cannot be liquidated at this time.',
+    'LoanIsStillHealthy': 'The loan is still healthy and cannot be liquidated.',
+    'LoanMustBeActiveForMinimumDuration': 'Loan must be active for a minimum duration before this action.',
+    'LoanNotActive': 'This loan is not active.',
+    'NoCollateral': 'No collateral has been provided.',
+    'NoExtensionRequested': 'No extension has been requested for this loan.',
+    'NotACrossChainLoan': 'This is not a cross-chain loan.',
+    'NotTheBorrower': 'Only the borrower can perform this action.',
+    'NotTheLender': 'Only the lender can perform this action.',
+    'OfferExpired': 'This offer has expired.',
+    'OfferNotAvailable': 'This offer is no longer available.',
+    'OfferNotExpiredYet': 'This offer has not expired yet.',
+    'OfferNotPending': 'This offer is not in pending status.',
+    'OnlyBorrowerCanRepay': 'Only the borrower can repay this loan.',
+    'OnlyLenderCanCancel': 'Only the lender can cancel this offer.',
+    'Overpayment': 'Payment amount exceeds the loan balance.',
+    'RepaymentBelowMinimum': 'Repayment amount is below the minimum required.',
+    'RequestExpired': 'This loan request has expired.',
+    'RequestIsNotPending': 'This request is not in pending status.',
+    'RequestNotExpiredYet': 'This request has not expired yet.',
+    'RequestNotFunded': 'This request has not been funded.',
+    'RequestNotPending': 'This request is not pending.',
+    'ReentrancyGuardReentrantCall': 'Transaction blocked due to reentrancy protection.',
 };
 
 /**
@@ -70,6 +120,41 @@ export const formatSimulationError = (error: unknown): string => {
     }
 
     const err = error as SimulationError;
+
+    // Log full error for debugging (remove in production)
+    console.error('Contract error details:', {
+        name: (error as { name?: string }).name,
+        message: err.message,
+        shortMessage: err.shortMessage,
+        cause: err.cause,
+        data: err.data,
+        metaMessages: err.metaMessages,
+    });
+
+    // Check for error name directly on the error object (wagmi/viem errors)
+    const errorName = (error as { name?: string }).name;
+    if (errorName && CUSTOM_ERROR_NAMES[errorName]) {
+        return CUSTOM_ERROR_NAMES[errorName];
+    }
+
+    // Check for ContractFunctionRevertedError which contains the decoded error
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const anyError = error as any;
+    if (anyError.cause?.name && CUSTOM_ERROR_NAMES[anyError.cause.name]) {
+        return CUSTOM_ERROR_NAMES[anyError.cause.name];
+    }
+
+    // Walk through nested causes to find the actual error
+    let currentCause = anyError.cause;
+    while (currentCause) {
+        if (currentCause.name && CUSTOM_ERROR_NAMES[currentCause.name]) {
+            return CUSTOM_ERROR_NAMES[currentCause.name];
+        }
+        if (currentCause.data?.errorName && CUSTOM_ERROR_NAMES[currentCause.data.errorName]) {
+            return CUSTOM_ERROR_NAMES[currentCause.data.errorName];
+        }
+        currentCause = currentCause.cause;
+    }
 
     // Helper function to check all text sources for a signature
     const findSignatureInError = (): string | null => {
@@ -127,13 +212,22 @@ export const formatSimulationError = (error: unknown): string => {
 
     // PRIORITY 5: Check the raw message for common Solidity require/revert strings
     if (err.message) {
-        // Look for require/revert reason strings
+        // Look for require/revert reason strings (multiple formats)
         const revertReasonMatch = err.message.match(/reverted with reason string ['"](.+?)['"]/i);
         if (revertReasonMatch) {
-            return revertReasonMatch[1];
+            return mapRevertReason(revertReasonMatch[1]);
+        }
+
+        // Also check for "reverted with the following reason:" format
+        const followingReasonMatch = err.message.match(/reverted with the following reason:\s*(.+?)(?:\n|$)/i);
+        if (followingReasonMatch) {
+            return mapRevertReason(followingReasonMatch[1].trim());
         }
 
         // Check for known error strings directly in message
+        if (err.message.includes('Insufficient collateral')) {
+            return 'The escrow does not have enough collateral to release. This may indicate a data inconsistency with the loan. Please contact support.';
+        }
         if (err.message.includes('Price data is stale')) {
             return 'Price data is stale. Please refresh the price feed before proceeding.';
         }
@@ -201,6 +295,35 @@ export const formatSimulationError = (error: unknown): string => {
 
     return err.message || 'Transaction simulation failed';
 };
+
+/**
+ * Map require statement reasons to user-friendly messages
+ */
+const REQUIRE_REASON_MESSAGES: Record<string, string> = {
+    'Insufficient collateral': 'The escrow does not have enough collateral to release. This may indicate a data inconsistency with the loan.',
+    'Amount must be > 0': 'Amount must be greater than zero.',
+    'Only for crypto loans': 'This operation is only available for crypto loans.',
+    'Caller is not the marketplace': 'Only the marketplace contract can perform this action.',
+    'Loan not found': 'The specified loan was not found.',
+    'Insufficient collateral value for liquidation': 'The collateral value is insufficient for liquidation.',
+    'Profit below minimum threshold': 'The liquidation profit is below the minimum required threshold.',
+    'Insufficient collateral value': 'The collateral value is insufficient for this operation.',
+};
+
+function mapRevertReason(reason: string): string {
+    // Check for exact matches first
+    if (REQUIRE_REASON_MESSAGES[reason]) {
+        return REQUIRE_REASON_MESSAGES[reason];
+    }
+    // Check for partial matches
+    for (const [key, message] of Object.entries(REQUIRE_REASON_MESSAGES)) {
+        if (reason.toLowerCase().includes(key.toLowerCase())) {
+            return message;
+        }
+    }
+    // Return the original reason if no mapping found
+    return reason;
+}
 
 /**
  * Format error name with arguments into readable message

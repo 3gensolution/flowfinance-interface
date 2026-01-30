@@ -1,10 +1,11 @@
 'use client';
 
-import { useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt, useWatchContractEvent, usePublicClient } from 'wagmi';
-import { useQueryClient } from '@tanstack/react-query';
+import { useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from 'wagmi';
 import { Address, Abi, formatUnits } from 'viem';
 import { useEffect, useCallback } from 'react';
 import { CONTRACT_ADDRESSES, getTokenByAddress, TOKEN_LIST } from '@/config/contracts';
+import { useContractStore } from '@/stores/contractStore';
+import { LoanRequest, LenderOffer, Loan } from '@/types';
 import LoanMarketPlaceABIJson from '@/contracts/LoanMarketPlaceABI.json';
 import ConfigurationABIJson from '@/contracts/ConfigurationABI.json';
 import LTVConfigABIJson from '@/contracts/LTVConfigABI.json';
@@ -340,6 +341,11 @@ const MockV3AggregatorABI = [
 ] as const;
 
 export function useTokenPrice(tokenAddress: Address | undefined) {
+  const setTokenPrice = useContractStore((state) => state.setTokenPrice);
+  const storedPrice = useContractStore((state) =>
+    tokenAddress ? state.tokenPrices[tokenAddress.toLowerCase()] : undefined
+  );
+
   const priceFeedAddress = useReadContract({
     address: CONTRACT_ADDRESSES.configuration,
     abi: ConfigurationABI,
@@ -361,8 +367,27 @@ export function useTokenPrice(tokenAddress: Address | undefined) {
 
   // Extract price and updatedAt from response
   const priceDataTuple = priceData.data as readonly unknown[] | undefined;
-  const price = priceDataTuple ? priceDataTuple[1] as bigint : undefined;
-  const updatedAt = priceDataTuple ? Number(priceDataTuple[3]) : undefined;
+  const contractPrice = priceDataTuple ? priceDataTuple[1] as bigint : undefined;
+  const contractUpdatedAt = priceDataTuple ? Number(priceDataTuple[3]) : undefined;
+
+  // Update store when we get new data from contract
+  useEffect(() => {
+    if (tokenAddress && contractPrice !== undefined && contractUpdatedAt !== undefined && priceFeedAddress.data) {
+      const storedData = storedPrice;
+      // Only update if we have newer data
+      if (!storedData || contractUpdatedAt > storedData.updatedAt) {
+        setTokenPrice(tokenAddress, contractPrice, contractUpdatedAt, priceFeedAddress.data as Address);
+      }
+    }
+  }, [tokenAddress, contractPrice, contractUpdatedAt, priceFeedAddress.data, setTokenPrice, storedPrice]);
+
+  // Use store price if it's newer than contract data, otherwise use contract data
+  const price = storedPrice && contractUpdatedAt && storedPrice.updatedAt > contractUpdatedAt
+    ? storedPrice.price
+    : contractPrice ?? storedPrice?.price;
+  const updatedAt = storedPrice && contractUpdatedAt && storedPrice.updatedAt > contractUpdatedAt
+    ? storedPrice.updatedAt
+    : contractUpdatedAt ?? storedPrice?.updatedAt;
 
   // Check if price is stale (>15 minutes old) - matches contract requirement
   const STALENESS_THRESHOLD = 15 * 60; // 15 minutes in seconds
@@ -385,14 +410,23 @@ export function useTokenPrice(tokenAddress: Address | undefined) {
 // This calls updateAnswer with the current price to refresh the timestamp
 export function useRefreshMockPrice() {
   const { writeContractAsync, isPending, error } = useWriteContract();
+  const setTokenPrice = useContractStore((state) => state.setTokenPrice);
 
-  const refreshPrice = async (priceFeedAddress: Address, currentPrice: bigint) => {
-    return await writeContractAsync({
+  const refreshPrice = async (priceFeedAddress: Address, currentPrice: bigint, tokenAddress?: Address) => {
+    const result = await writeContractAsync({
       address: priceFeedAddress,
       abi: MockV3AggregatorABI,
       functionName: 'updateAnswer',
       args: [currentPrice],
     });
+
+    // Update the store immediately with the new timestamp
+    if (tokenAddress) {
+      const newTimestamp = Math.floor(Date.now() / 1000);
+      setTokenPrice(tokenAddress, currentPrice, newTimestamp, priceFeedAddress);
+    }
+
+    return result;
   };
 
   return { refreshPrice, isPending, error };
@@ -424,6 +458,75 @@ export function useTokenAllowance(
     args: ownerAddress && spenderAddress ? [ownerAddress, spenderAddress] : undefined,
     query: {
       enabled: !!tokenAddress && !!ownerAddress && !!spenderAddress,
+    },
+  });
+}
+
+// Minimal ABI for CollateralEscrow read operations
+const CollateralEscrowReadABI = [
+  {
+    inputs: [{ name: 'loanId', type: 'uint256' }],
+    name: 'loanCollateralAmount',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'loanId', type: 'uint256' }],
+    name: 'loanCollateralToken',
+    outputs: [{ name: '', type: 'address' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'loanId', type: 'uint256' }],
+    name: 'loanDepositor',
+    outputs: [{ name: '', type: 'address' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'loanId', type: 'uint256' }],
+    name: 'isCryptoLoan',
+    outputs: [{ name: '', type: 'bool' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'loanId', type: 'uint256' }],
+    name: 'getCollateralInfo',
+    outputs: [
+      { name: 'token', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+      { name: 'depositor', type: 'address' },
+    ],
+    stateMutability: 'view',
+    type: 'function',
+  },
+] as const;
+
+// Read escrow collateral amount for a loan
+export function useEscrowCollateralAmount(loanId: bigint | undefined) {
+  return useReadContract({
+    address: CONTRACT_ADDRESSES.collateralEscrow,
+    abi: CollateralEscrowReadABI,
+    functionName: 'loanCollateralAmount',
+    args: loanId !== undefined ? [loanId] : undefined,
+    query: {
+      enabled: loanId !== undefined,
+    },
+  });
+}
+
+// Read full escrow collateral info for a loan
+export function useEscrowCollateralInfo(loanId: bigint | undefined) {
+  return useReadContract({
+    address: CONTRACT_ADDRESSES.collateralEscrow,
+    abi: CollateralEscrowReadABI,
+    functionName: 'getCollateralInfo',
+    args: loanId !== undefined ? [loanId] : undefined,
+    query: {
+      enabled: loanId !== undefined,
     },
   });
 }
@@ -494,13 +597,6 @@ export function useApproveToken() {
 export function useCreateLoanRequest() {
   const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
-  const { invalidateAll } = useInvalidateContractQueries();
-
-  useEffect(() => {
-    if (isSuccess) {
-      invalidateAll();
-    }
-  }, [isSuccess, invalidateAll]);
 
   const createRequest = async (
     collateralToken: Address,
@@ -524,11 +620,6 @@ export function useCreateLoanRequest() {
 export function useFundLoanRequest() {
   const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
-  const { invalidateAll } = useInvalidateContractQueries();
-
-  useEffect(() => {
-    if (isSuccess) invalidateAll();
-  }, [isSuccess, invalidateAll]);
 
   const fundRequest = (requestId: bigint) => {
     writeContract({
@@ -545,11 +636,6 @@ export function useFundLoanRequest() {
 export function useCreateLenderOffer() {
   const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
-  const { invalidateAll } = useInvalidateContractQueries();
-
-  useEffect(() => {
-    if (isSuccess) invalidateAll();
-  }, [isSuccess, invalidateAll]);
 
   const createOffer = (
     lendAsset: Address,
@@ -571,34 +657,35 @@ export function useCreateLenderOffer() {
 }
 
 export function useAcceptLenderOffer() {
-  const { writeContract, data: hash, isPending, error } = useWriteContract();
+  const { writeContract, writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
-  const { invalidateAll } = useInvalidateContractQueries();
 
-  useEffect(() => {
-    if (isSuccess) invalidateAll();
-  }, [isSuccess, invalidateAll]);
-
-  const acceptOffer = (offerId: bigint, collateralAmount: bigint) => {
+  // Fire-and-forget version (for backward compatibility)
+  const acceptOffer = (offerId: bigint, collateralAsset: `0x${string}`, collateralAmount: bigint) => {
     writeContract({
       address: CONTRACT_ADDRESSES.loanMarketPlace,
       abi: LoanMarketPlaceABI,
       functionName: 'acceptLenderOffer',
-      args: [offerId, collateralAmount],
+      args: [offerId, collateralAsset, collateralAmount],
     });
   };
 
-  return { acceptOffer, hash, isPending, isConfirming, isSuccess, error };
+  // Async version that returns the transaction hash
+  const acceptOfferAsync = async (offerId: bigint, collateralAsset: `0x${string}`, collateralAmount: bigint) => {
+    return await writeContractAsync({
+      address: CONTRACT_ADDRESSES.loanMarketPlace,
+      abi: LoanMarketPlaceABI,
+      functionName: 'acceptLenderOffer',
+      args: [offerId, collateralAsset, collateralAmount],
+    });
+  };
+
+  return { acceptOffer, acceptOfferAsync, hash, isPending, isConfirming, isSuccess, error };
 }
 
 export function useRepayLoan() {
   const { writeContract, writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
-  const { invalidateAll } = useInvalidateContractQueries();
-
-  useEffect(() => {
-    if (isSuccess) invalidateAll();
-  }, [isSuccess, invalidateAll]);
 
   // Fire-and-forget version (for backward compatibility)
   const repay = (loanId: bigint, amount: bigint) => {
@@ -626,11 +713,6 @@ export function useRepayLoan() {
 export function useCancelLoanRequest() {
   const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
-  const { invalidateAll } = useInvalidateContractQueries();
-
-  useEffect(() => {
-    if (isSuccess) invalidateAll();
-  }, [isSuccess, invalidateAll]);
 
   const cancelRequest = (requestId: bigint) => {
     writeContract({
@@ -647,11 +729,6 @@ export function useCancelLoanRequest() {
 export function useCancelLenderOffer() {
   const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
-  const { invalidateAll } = useInvalidateContractQueries();
-
-  useEffect(() => {
-    if (isSuccess) invalidateAll();
-  }, [isSuccess, invalidateAll]);
 
   const cancelOffer = (offerId: bigint) => {
     writeContract({
@@ -700,11 +777,6 @@ export function useApproveExtension() {
 export function useLiquidateLoan() {
   const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
-  const { invalidateAll } = useInvalidateContractQueries();
-
-  useEffect(() => {
-    if (isSuccess) invalidateAll();
-  }, [isSuccess, invalidateAll]);
 
   const liquidate = (loanId: bigint) => {
     writeContract({
@@ -720,6 +792,7 @@ export function useLiquidateLoan() {
 
 // Batch fetch loan requests using multicall
 export function useBatchLoanRequests(startId: number, count: number) {
+  const setLoanRequests = useContractStore((state) => state.setLoanRequests);
   const { data: requestsData, isLoading, isError, refetch } = useReadContracts({
     contracts: Array.from({ length: count }, (_, i) => ({
       address: CONTRACT_ADDRESSES.loanMarketPlace,
@@ -800,11 +873,19 @@ export function useBatchLoanRequests(startId: number, count: number) {
     })
     .filter((r): r is NonNullable<typeof r> => r !== null);
 
+  // Update store when data loads
+  useEffect(() => {
+    if (requests.length > 0) {
+      setLoanRequests(requests as LoanRequest[]);
+    }
+  }, [requests, setLoanRequests]);
+
   return { data: requests, isLoading, isError, refetch };
 }
 
 // Batch fetch lender offers using multicall
 export function useBatchLenderOffers(startId: number, count: number) {
+  const setLenderOffers = useContractStore((state) => state.setLenderOffers);
   const { data: offersData, isLoading, isError, refetch } = useReadContracts({
     contracts: Array.from({ length: count }, (_, i) => ({
       address: CONTRACT_ADDRESSES.loanMarketPlace,
@@ -879,11 +960,19 @@ export function useBatchLenderOffers(startId: number, count: number) {
     })
     .filter((o): o is NonNullable<typeof o> => o !== null);
 
+  // Update store when data loads
+  useEffect(() => {
+    if (offers.length > 0) {
+      setLenderOffers(offers as LenderOffer[]);
+    }
+  }, [offers, setLenderOffers]);
+
   return { data: offers, isLoading, isError, refetch };
 }
 
 // Batch fetch loans using multicall
 export function useBatchLoans(startId: number, count: number) {
+  const setLoans = useContractStore((state) => state.setLoans);
   const { data: loansData, isLoading, isError, refetch } = useReadContracts({
     contracts: Array.from({ length: count }, (_, i) => ({
       address: CONTRACT_ADDRESSES.loanMarketPlace,
@@ -991,6 +1080,13 @@ export function useBatchLoans(startId: number, count: number) {
       };
     })
     .filter((l): l is NonNullable<typeof l> => l !== null);
+
+  // Update store when data loads
+  useEffect(() => {
+    if (loans.length > 0) {
+      setLoans(loans as Loan[]);
+    }
+  }, [loans, setLoans]);
 
   return { data: loans, isLoading, isError, refetch };
 }
@@ -1184,115 +1280,6 @@ export function useUserDashboardData(userAddress: Address | undefined) {
   };
 }
 
-// Hook to invalidate all contract-related queries after blockchain writes
-export function useInvalidateContractQueries() {
-  const queryClient = useQueryClient();
-
-  const invalidateAll = useCallback(() => {
-    // Invalidate all wagmi readContract queries
-    queryClient.invalidateQueries({ queryKey: ['readContract'] });
-    queryClient.invalidateQueries({ queryKey: ['readContracts'] });
-    queryClient.invalidateQueries({ queryKey: ['balance'] });
-  }, [queryClient]);
-
-  return { invalidateAll };
-}
-
-// Hook that watches for LoanMarketPlace contract events and auto-invalidates queries
-export function useContractEventListener() {
-  const { invalidateAll } = useInvalidateContractQueries();
-
-  // Watch for loan-related events
-  useWatchContractEvent({
-    address: CONTRACT_ADDRESSES.loanMarketPlace,
-    abi: LoanMarketPlaceABI,
-    eventName: 'LoanRequestCreated',
-    onLogs: () => {
-      invalidateAll();
-    },
-  });
-
-  useWatchContractEvent({
-    address: CONTRACT_ADDRESSES.loanMarketPlace,
-    abi: LoanMarketPlaceABI,
-    eventName: 'LoanFunded',
-    onLogs: () => {
-      invalidateAll();
-    },
-  });
-
-  useWatchContractEvent({
-    address: CONTRACT_ADDRESSES.loanMarketPlace,
-    abi: LoanMarketPlaceABI,
-    eventName: 'LenderOfferCreated',
-    onLogs: () => {
-      invalidateAll();
-    },
-  });
-
-  useWatchContractEvent({
-    address: CONTRACT_ADDRESSES.loanMarketPlace,
-    abi: LoanMarketPlaceABI,
-    eventName: 'LenderOfferAccepted',
-    onLogs: () => {
-      invalidateAll();
-    },
-  });
-
-  useWatchContractEvent({
-    address: CONTRACT_ADDRESSES.loanMarketPlace,
-    abi: LoanMarketPlaceABI,
-    eventName: 'LoanRepaid',
-    onLogs: () => {
-      invalidateAll();
-    },
-  });
-
-  useWatchContractEvent({
-    address: CONTRACT_ADDRESSES.loanMarketPlace,
-    abi: LoanMarketPlaceABI,
-    eventName: 'LoanLiquidated',
-    onLogs: () => {
-      invalidateAll();
-    },
-  });
-
-  useWatchContractEvent({
-    address: CONTRACT_ADDRESSES.loanMarketPlace,
-    abi: LoanMarketPlaceABI,
-    eventName: 'LoanRequestCancelled',
-    onLogs: () => {
-      invalidateAll();
-    },
-  });
-
-  useWatchContractEvent({
-    address: CONTRACT_ADDRESSES.loanMarketPlace,
-    abi: LoanMarketPlaceABI,
-    eventName: 'LenderOfferCancelled',
-    onLogs: () => {
-      invalidateAll();
-    },
-  });
-}
-
-// Hook that auto-invalidates queries when a transaction hash is confirmed
-export function useAutoRefreshOnTx(hash: `0x${string}` | undefined) {
-  const { invalidateAll } = useInvalidateContractQueries();
-  const publicClient = usePublicClient();
-
-  useEffect(() => {
-    if (!hash || !publicClient) return;
-
-    publicClient.waitForTransactionReceipt({ hash }).then((receipt) => {
-      if (receipt.status === 'success') {
-        // Small delay to ensure blockchain state is updated
-        setTimeout(() => {
-          invalidateAll();
-        }, 1000);
-      }
-    }).catch(() => {
-      // Ignore errors - tx might have already been processed
-    });
-  }, [hash, publicClient, invalidateAll]);
-}
+// NOTE: useInvalidateContractQueries, useContractEventListener, and useAutoRefreshOnTx
+// have been removed. Use the event hooks from '@/hooks/events' instead for real-time updates.
+// The store at '@/stores/contractStore' is automatically updated by event watchers.

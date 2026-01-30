@@ -48,7 +48,7 @@ export function AcceptFiatLenderOfferModal({ offer, isOpen, onClose, onSuccess }
   const { price: collateralPrice } = useTokenPrice(collateralToken);
 
   // Hooks for approval and acceptance
-  const { approve, isSuccess: approveSuccess } = useApproveToken();
+  const { approveAsync, isPending: isApproving, isConfirming: isApprovalConfirming, isSuccess: approveSuccess } = useApproveToken();
   const { acceptFiatLenderOffer, isPending: isAccepting, isSuccess: acceptSuccess } = useAcceptFiatLenderOffer();
 
   const parsedCollateralAmount = collateralAmount
@@ -121,7 +121,8 @@ export function AcceptFiatLenderOfferModal({ offer, isOpen, onClose, onSuccess }
     if (needsApproval) {
       setStep('approve');
       try {
-        await approve(collateralToken, CONTRACT_ADDRESSES.fiatLoanBridge, parsedCollateralAmount);
+        await approveAsync(collateralToken, CONTRACT_ADDRESSES.fiatLoanBridge, parsedCollateralAmount);
+        // Transaction submitted - useEffect will handle success and move to confirm step
       } catch (error) {
         console.error('Approval failed:', error);
         toast.error('Failed to approve collateral');
@@ -281,9 +282,15 @@ export function AcceptFiatLenderOfferModal({ offer, isOpen, onClose, onSuccess }
         {step === 'approve' && (
           <div className="text-center py-8">
             <Shield className="w-12 h-12 text-primary-400 mx-auto mb-4 animate-pulse" />
-            <h4 className="text-lg font-semibold mb-2">Approving Collateral</h4>
+            <h4 className="text-lg font-semibold mb-2">
+              {isApproving ? 'Approving Collateral' : isApprovalConfirming ? 'Confirming Transaction' : 'Approving Collateral'}
+            </h4>
             <p className="text-gray-400">
-              Please confirm the transaction in your wallet...
+              {isApproving
+                ? 'Please confirm the transaction in your wallet...'
+                : isApprovalConfirming
+                  ? 'Waiting for transaction confirmation...'
+                  : 'Processing...'}
             </p>
           </div>
         )}

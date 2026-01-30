@@ -3,15 +3,14 @@
 import { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
 import { useRouter } from 'next/navigation';
-import { Address, parseUnits, formatUnits } from 'viem';
+import { Address, parseUnits, formatUnits, zeroAddress } from 'viem';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Input';
 import { TOKEN_LIST, CONTRACT_ADDRESSES } from '@/config/contracts';
-import { useApproveToken, useCreateLenderOffer, useTokenBalance, useTokenAllowance, useTokenPrice, useLTV, useMaxInterestRate, useSupportedAssets, usePlatformFeeRate } from '@/hooks/useContracts';
-import { PriceFeedDisplay } from '@/components/loan/PriceFeedDisplay';
+import { useApproveToken, useCreateLenderOffer, useTokenBalance, useTokenAllowance, useMaxInterestRate, useSupportedAssets, usePlatformFeeRate } from '@/hooks/useContracts';
 import { formatTokenAmount, daysToSeconds, getTokenDecimals } from '@/lib/utils';
-import { ArrowRight, AlertCircle, CheckCircle } from 'lucide-react';
+import { ArrowRight, AlertCircle, CheckCircle, Info } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
 import { simulateContractWrite, formatSimulationError } from '@/lib/contractSimulation';
@@ -36,7 +35,6 @@ export function CreateLenderOfferForm() {
 
   const [lendToken, setLendToken] = useState<Address>(TOKEN_LIST[1].address);
   const [lendAmount, setLendAmount] = useState('');
-  const [collateralToken, setCollateralToken] = useState<Address>(TOKEN_LIST[0].address);
   const [interestRate, setInterestRate] = useState('12');
   const [duration, setDuration] = useState('30');
   const [step, setStep] = useState<'form' | 'approve' | 'confirm'>('form');
@@ -54,19 +52,6 @@ export function CreateLenderOfferForm() {
   const availableTokens = supportedTokens.length > 0 ? supportedTokens : TOKEN_LIST;
 
   const lendDecimals = getTokenDecimals(lendToken);
-  const collateralDecimals = getTokenDecimals(collateralToken);
-
-  // Get LTV from contract based on collateral token and duration
-  const durationDays = parseInt(duration) || 30;
-  const { data: ltvBpsRaw, isLoading: isLtvLoading } = useLTV(collateralToken, durationDays);
-  const ltvBps = ltvBpsRaw as bigint | undefined;
-
-  // LTV is in basis points (e.g., 7500 = 75%)
-  // To get required collateral: collateral = loan_value / (LTV / 10000)
-  // Example: If LTV is 75%, borrower can borrow 75% of collateral value
-  // So for $100 loan, need $100 / 0.75 = $133.33 collateral
-  const ltvPercentage = ltvBps ? Number(ltvBps) / 100 : 0; // Convert bps to percentage
-  const ltvDecimal = ltvBps ? Number(ltvBps) / 10000 : 0; // Convert bps to decimal
 
   const { data: lendBalance } = useTokenBalance(lendToken, address);
   const { data: allowance, refetch: refetchAllowance } = useTokenAllowance(
@@ -75,7 +60,7 @@ export function CreateLenderOfferForm() {
     CONTRACT_ADDRESSES.loanMarketPlace
   );
 
-  const { approve, isPending: isApproving, isSuccess: approveSuccess } = useApproveToken();
+  const { approveAsync, isPending: isApproving, isConfirming: isApprovalConfirming, isSuccess: approveSuccess } = useApproveToken();
   const { createOffer, isPending: isCreating, isSuccess: createSuccess, error: createError } = useCreateLenderOffer();
 
   const parsedLendAmount = lendAmount
@@ -97,56 +82,17 @@ export function CreateLenderOfferForm() {
     : true;
   const hasInsufficientBalance = parsedLendAmount > 0 && !hasEnoughBalance;
 
-  // Check if form is valid (will be recalculated after price hooks)
-  // const isFormValid = lendAmount && minCollateralAmount && hasEnoughBalance && !hasZeroBalance;
-
-  // Check if buttons should be disabled (will be updated after price calculation)
-  // Moved after price calculations
-
-  // Get USD prices for both tokens
-  const { price: lendPrice, isStale: isLendPriceStale } = useTokenPrice(lendToken);
-  const { price: collateralPrice, isStale: isCollateralPriceStale } = useTokenPrice(collateralToken);
-  const isPriceStale = isLendPriceStale || isCollateralPriceStale;
-
-  // Calculate USD value of lend amount
-  const lendUSD = lendAmount && lendPrice
-    ? parseFloat(lendAmount) * Number(lendPrice) / 1e8
-    : 0;
-
-  // Calculate total repayment with flat interest
-  // Formula: principal + (principal × interest_rate / 100)
-  // Note: Interest rate is flat, not annualized. Same rate regardless of duration.
+  // Calculate interest amount for display
   const interestDecimal = (parseFloat(interestRate) || 0) / 100;
-  const interestAmount = lendUSD * interestDecimal;
-  const totalRepaymentUSD = lendUSD + interestAmount;
-
-  // Calculate required collateral in collateral token using LTV from contract
-  // If LTV is 75%, borrower can borrow up to 75% of collateral value
-  // So required collateral = total_repayment / LTV_decimal
-  // Example: $100 loan with 75% LTV needs $100 / 0.75 = $133.33 collateral
-  const collateralPricePerToken = collateralPrice ? Number(collateralPrice) / 1e8 : 0;
-  const calculatedCollateralAmount = collateralPricePerToken > 0 && totalRepaymentUSD > 0 && ltvDecimal > 0
-    ? (totalRepaymentUSD / ltvDecimal) / collateralPricePerToken
-    : 0;
-
-  // Format for display and contract usage
-  const minCollateralAmount = calculatedCollateralAmount > 0
-    ? calculatedCollateralAmount.toFixed(6)
-    : '';
-
-  // Calculate USD value of collateral
-  const collateralUSD = calculatedCollateralAmount * collateralPricePerToken;
+  const lendAmountNum = parseFloat(lendAmount) || 0;
+  const interestAmount = lendAmountNum * interestDecimal;
+  const totalRepayment = lendAmountNum + interestAmount;
 
   // Check if submit button should be disabled
   const isSubmitDisabled =
     !lendAmount ||
-    !minCollateralAmount ||
     hasZeroBalance ||
-    hasInsufficientBalance ||
-    isPriceStale ||
-    isLtvLoading ||
-    !ltvBps ||
-    calculatedCollateralAmount <= 0;
+    hasInsufficientBalance;
 
   useEffect(() => {
     if (approveSuccess) {
@@ -184,16 +130,6 @@ export function CreateLenderOfferForm() {
 
     if (!lendAmount) {
       toast.error('Please enter a lend amount');
-      return;
-    }
-
-    if (!minCollateralAmount || calculatedCollateralAmount <= 0) {
-      toast.error('Unable to calculate collateral. Please check prices are available.');
-      return;
-    }
-
-    if (isPriceStale) {
-      toast.error('Price data is stale. Please wait for updated prices.');
       return;
     }
 
@@ -246,7 +182,8 @@ export function CreateLenderOfferForm() {
         return;
       }
 
-      approve(lendToken, CONTRACT_ADDRESSES.loanMarketPlace, parsedLendAmount);
+      await approveAsync(lendToken, CONTRACT_ADDRESSES.loanMarketPlace, parsedLendAmount);
+      // Transaction submitted - useEffect will handle success
     } catch (error: unknown) {
       const errorMsg = formatSimulationError(error);
       setSimulationError(errorMsg);
@@ -257,7 +194,10 @@ export function CreateLenderOfferForm() {
   const handleCreateOffer = async () => {
     setSimulationError('');
 
-    const parsedCollateralAmount = parseUnits(minCollateralAmount, collateralDecimals);
+    // Hardcode collateral to address(0) - borrower chooses collateral when accepting
+    const requiredCollateral = zeroAddress;
+    // Hardcode minCollateralAmount to 1 (smallest unit)
+    const minCollateralAmount = BigInt(1);
     const interestRateBps = BigInt(Math.floor(parseFloat(interestRate) * 100));
     const durationSeconds = daysToSeconds(parseInt(duration));
 
@@ -270,8 +210,8 @@ export function CreateLenderOfferForm() {
         args: [
           lendToken,
           parsedLendAmount,
-          collateralToken,
-          parsedCollateralAmount,
+          requiredCollateral,
+          minCollateralAmount,
           interestRateBps,
           durationSeconds
         ],
@@ -286,8 +226,8 @@ export function CreateLenderOfferForm() {
       createOffer(
         lendToken,
         parsedLendAmount,
-        collateralToken,
-        parsedCollateralAmount,
+        requiredCollateral,
+        minCollateralAmount,
         interestRateBps,
         durationSeconds
       );
@@ -319,205 +259,107 @@ export function CreateLenderOfferForm() {
 
       {step === 'form' && (
         <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-accent-400">You Lend</h3>
-              <Select
-                label="Lend Token"
-                options={tokenOptions}
-                value={lendToken}
-                onChange={(e) => setLendToken(e.target.value as Address)}
-              />
+          {/* Info about how offers work */}
+          <div className="p-4 bg-primary-500/10 border border-primary-500/30 rounded-lg">
+            <div className="flex gap-3 items-start">
+              <Info className="w-5 h-5 text-primary-400 flex-shrink-0 mt-0.5" />
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Lend Amount</label>
-                <div className="flex items-center gap-2">
-                  <div className="flex-1">
-                    <input
-                      type="number"
-                      step="any"
-                      placeholder="0.0"
-                      value={lendAmount}
-                      onChange={(e) => handleLendAmountChange(e.target.value)}
-                      className="input-field w-full"
-                    />
-                  </div>
-                  {maxLendBalanceNumber > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setLendAmount(maxLendBalance)}
-                      className="px-3 py-2 text-xs font-semibold text-primary-400 hover:text-primary-300 bg-primary-400/10 hover:bg-primary-400/20 rounded-lg transition-colors"
-                    >
-                      MAX
-                    </button>
-                  )}
-                  <span className="text-sm text-gray-400 min-w-[40px]">
-                    {TOKEN_LIST.find((t) => t.address === lendToken)?.symbol}
-                  </span>
-                </div>
-                {lendUSD > 0 && (
-                  <p className="text-xs text-gray-500 mt-1">
-                    ≈ ${lendUSD.toFixed(2)} USD
-                  </p>
-                )}
+                <p className="text-primary-400 font-medium">How Lender Offers Work</p>
+                <p className="text-gray-400 text-sm mt-1">
+                  You provide liquidity and set your terms. When a borrower accepts your offer,
+                  they choose which collateral to deposit based on the platform&apos;s supported assets and LTV ratios.
+                </p>
               </div>
-              {lendBalance !== undefined && lendBalance !== null && (
-                <div className="text-sm space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">
-                      Balance: {formatTokenAmount(lendBalance as bigint, lendDecimals)}{' '}
-                      {TOKEN_LIST.find((t) => t.address === lendToken)?.symbol}
-                    </span>
-                  </div>
-
-                  {/* Zero Balance Warning */}
-                  {hasZeroBalance && (
-                    <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-                      <div className="flex gap-2 items-start">
-                        <AlertCircle className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
-                        <div>
-                          <p className="text-yellow-400 font-medium">No {TOKEN_LIST.find((t) => t.address === lendToken)?.symbol} Balance</p>
-                          <p className="text-gray-400 mt-1">
-                            You need tokens to create an offer.{' '}
-                            <Link
-                              href="/faucet"
-                              className="text-primary-400 hover:text-primary-300 hover:underline font-medium"
-                            >
-                              Get test tokens from the faucet
-                            </Link>
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Insufficient Balance Warning */}
-                  {hasInsufficientBalance && !hasZeroBalance && (
-                    <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
-                      <div className="flex gap-2 items-start">
-                        <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
-                        <div>
-                          <p className="text-red-400 font-medium">Insufficient Balance</p>
-                          <p className="text-gray-400 mt-1">
-                            Maximum available: {formatTokenAmount(lendBalance as bigint, lendDecimals)}.{' '}
-                            <Link
-                              href="/faucet"
-                              className="text-primary-400 hover:text-primary-300 hover:underline font-medium"
-                            >
-                              Get more tokens from the faucet
-                            </Link>
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-primary-400">Required Collateral</h3>
-              <Select
-                label="Collateral Token"
-                options={tokenOptions}
-                value={collateralToken}
-                onChange={(e) => setCollateralToken(e.target.value as Address)}
-              />
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Min Collateral (Auto-calculated)</label>
-                <div className="flex items-center gap-2">
-                  <div className="flex-1">
-                    <input
-                      type="text"
-                      placeholder="Enter lend amount first"
-                      value={minCollateralAmount}
-                      readOnly
-                      disabled
-                      className="input-field w-full bg-white/5 cursor-not-allowed"
-                    />
-                  </div>
-                  <span className="text-sm text-gray-400 min-w-[40px]">
-                    {TOKEN_LIST.find((t) => t.address === collateralToken)?.symbol}
-                  </span>
-                </div>
-                {collateralUSD > 0 && (
-                  <p className="text-xs text-gray-500 mt-1">
-                    ≈ ${collateralUSD.toFixed(2)} USD
-                  </p>
-                )}
-              </div>
-
-              {/* LTV Loading State */}
-              {isLtvLoading && (
-                <div className="p-3 bg-white/5 rounded-lg">
-                  <p className="text-gray-400 text-sm">Loading LTV configuration...</p>
-                </div>
-              )}
-
-              {/* LTV Not Available Warning */}
-              {!isLtvLoading && !ltvBps && lendAmount && (
-                <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-                  <div className="flex gap-2 items-start">
-                    <AlertCircle className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-yellow-400 font-medium text-sm">LTV Not Configured</p>
-                      <p className="text-gray-400 text-xs mt-1">
-                        LTV is not configured for this collateral token and duration combination.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Calculation Breakdown */}
-              {lendAmount && lendUSD > 0 && ltvBps && (
-                <div className="p-3 bg-white/5 rounded-lg space-y-2 text-sm">
-                  <p className="text-gray-400 font-medium">Collateral Calculation:</p>
-                  <div className="space-y-1 text-xs">
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">Principal</span>
-                      <span className="text-gray-300">${lendUSD.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">+ Interest ({interestRate}% APY × {durationDays} days)</span>
-                      <span className="text-gray-300">${interestAmount.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between border-t border-white/10 pt-1">
-                      <span className="text-gray-500">Total Repayment</span>
-                      <span className="text-gray-300">${totalRepaymentUSD.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">÷ LTV ({ltvPercentage.toFixed(1)}%)</span>
-                      <span className="text-gray-300">${(totalRepaymentUSD / ltvDecimal).toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between border-t border-white/10 pt-1 font-medium">
-                      <span className="text-primary-400">Required Collateral</span>
-                      <span className="text-primary-400">
-                        {calculatedCollateralAmount.toFixed(4)} {TOKEN_LIST.find((t) => t.address === collateralToken)?.symbol}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Price Feeds */}
-              <PriceFeedDisplay tokenAddress={collateralToken} variant="compact" />
-
-              {/* LTV Display */}
-              {ltvPercentage > 0 && (
-                <div className="flex items-center justify-between px-3 py-2 bg-white/5 rounded-lg">
-                  <span className="text-xs text-gray-400">LTV Ratio</span>
-                  <span className={`text-sm font-medium ${ltvPercentage > 80 ? 'text-red-400' : ltvPercentage > 70 ? 'text-yellow-400' : 'text-green-400'}`}>
-                    {ltvPercentage.toFixed(1)}%
-                  </span>
-                </div>
-              )}
             </div>
           </div>
 
-          {/* Price Feeds */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <PriceFeedDisplay tokenAddress={lendToken} variant="compact" />
-            <PriceFeedDisplay tokenAddress={collateralToken} variant="compact" />
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold text-accent-400">You Lend</h3>
+            <Select
+              label="Lend Token"
+              options={tokenOptions}
+              value={lendToken}
+              onChange={(e) => setLendToken(e.target.value as Address)}
+            />
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Lend Amount</label>
+              <div className="flex items-center gap-2">
+                <div className="flex-1">
+                  <input
+                    type="number"
+                    step="any"
+                    placeholder="0.0"
+                    value={lendAmount}
+                    onChange={(e) => handleLendAmountChange(e.target.value)}
+                    className="input-field w-full"
+                  />
+                </div>
+                {maxLendBalanceNumber > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setLendAmount(maxLendBalance)}
+                    className="px-3 py-2 text-xs font-semibold text-primary-400 hover:text-primary-300 bg-primary-400/10 hover:bg-primary-400/20 rounded-lg transition-colors"
+                  >
+                    MAX
+                  </button>
+                )}
+                <span className="text-sm text-gray-400 min-w-[40px]">
+                  {TOKEN_LIST.find((t) => t.address === lendToken)?.symbol}
+                </span>
+              </div>
+            </div>
+            {lendBalance !== undefined && lendBalance !== null && (
+              <div className="text-sm space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-gray-400">
+                    Balance: {formatTokenAmount(lendBalance as bigint, lendDecimals)}{' '}
+                    {TOKEN_LIST.find((t) => t.address === lendToken)?.symbol}
+                  </span>
+                </div>
+
+                {/* Zero Balance Warning */}
+                {hasZeroBalance && (
+                  <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                    <div className="flex gap-2 items-start">
+                      <AlertCircle className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-yellow-400 font-medium">No {TOKEN_LIST.find((t) => t.address === lendToken)?.symbol} Balance</p>
+                        <p className="text-gray-400 mt-1">
+                          You need tokens to create an offer.{' '}
+                          <Link
+                            href="/faucet"
+                            className="text-primary-400 hover:text-primary-300 hover:underline font-medium"
+                          >
+                            Get test tokens from the faucet
+                          </Link>
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Insufficient Balance Warning */}
+                {hasInsufficientBalance && !hasZeroBalance && (
+                  <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+                    <div className="flex gap-2 items-start">
+                      <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-red-400 font-medium">Insufficient Balance</p>
+                        <p className="text-gray-400 mt-1">
+                          Maximum available: {formatTokenAmount(lendBalance as bigint, lendDecimals)}.{' '}
+                          <Link
+                            href="/faucet"
+                            className="text-primary-400 hover:text-primary-300 hover:underline font-medium"
+                          >
+                            Get more tokens from the faucet
+                          </Link>
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -557,16 +399,13 @@ export function CreateLenderOfferForm() {
             <h4 className="font-semibold text-gray-300">Summary</h4>
             <div className="flex justify-between text-sm">
               <span className="text-gray-400">You Lend</span>
-              <div className="text-right">
-                <span>
-                  {lendAmount || '0'} {TOKEN_LIST.find((t) => t.address === lendToken)?.symbol}
-                </span>
-                {lendUSD > 0 && <div className="text-xs text-gray-500">≈ ${lendUSD.toFixed(2)}</div>}
-              </div>
+              <span>
+                {lendAmount || '0'} {TOKEN_LIST.find((t) => t.address === lendToken)?.symbol}
+              </span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-gray-400">Interest Rate</span>
-              <span>{interestRate}% APY</span>
+              <span>{interestRate}%</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-gray-400">Duration</span>
@@ -579,32 +418,23 @@ export function CreateLenderOfferForm() {
             {interestAmount > 0 && (
               <div className="flex justify-between text-sm">
                 <span className="text-gray-400">Interest Earned</span>
-                <span className="text-green-400">+${interestAmount.toFixed(2)}</span>
+                <span className="text-green-400">
+                  +{interestAmount.toFixed(6)} {TOKEN_LIST.find((t) => t.address === lendToken)?.symbol}
+                </span>
               </div>
             )}
-            {totalRepaymentUSD > 0 && (
+            {totalRepayment > 0 && (
               <div className="flex justify-between text-sm border-t border-white/10 pt-2">
                 <span className="text-gray-400">Total Repayment</span>
-                <span className="font-medium">${totalRepaymentUSD.toFixed(2)}</span>
+                <span className="font-medium">
+                  {totalRepayment.toFixed(6)} {TOKEN_LIST.find((t) => t.address === lendToken)?.symbol}
+                </span>
               </div>
             )}
             <div className="flex justify-between text-sm border-t border-white/10 pt-2">
-              <span className="text-gray-400">Min Collateral Required</span>
-              <div className="text-right">
-                <span>
-                  {minCollateralAmount || '0'} {TOKEN_LIST.find((t) => t.address === collateralToken)?.symbol}
-                </span>
-                {collateralUSD > 0 && <div className="text-xs text-gray-500">≈ ${collateralUSD.toFixed(2)}</div>}
-              </div>
+              <span className="text-gray-400">Collateral</span>
+              <span className="text-primary-400">Borrower chooses</span>
             </div>
-            {ltvPercentage > 0 && (
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-400">LTV Ratio</span>
-                <span className={`font-medium ${ltvPercentage > 80 ? 'text-red-400' : ltvPercentage > 70 ? 'text-yellow-400' : 'text-green-400'}`}>
-                  {ltvPercentage.toFixed(1)}%
-                </span>
-              </div>
-            )}
           </div>
 
           <Button
@@ -645,11 +475,11 @@ export function CreateLenderOfferForm() {
           )}
 
           <div className="flex gap-4">
-            <Button variant="secondary" onClick={() => setStep('form')} className="flex-1">
+            <Button variant="secondary" onClick={() => setStep('form')} className="flex-1" disabled={isApproving || isApprovalConfirming}>
               Back
             </Button>
-            <Button onClick={handleApprove} loading={isApproving} className="flex-1">
-              Approve
+            <Button onClick={handleApprove} loading={isApproving || isApprovalConfirming} className="flex-1">
+              {isApproving ? 'Approving...' : isApprovalConfirming ? 'Confirming...' : 'Approve'}
             </Button>
           </div>
         </div>

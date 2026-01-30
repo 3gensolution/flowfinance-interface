@@ -1,8 +1,14 @@
 'use client';
 
-import { useContractEventListener } from '@/hooks/useContracts';
+import { useAllMarketplaceEvents } from '@/hooks/events/useMarketplaceEvents';
+import { useAllFiatBridgeEvents } from '@/hooks/events/useFiatBridgeEvents';
 
 export function ContractEventListener() {
-  useContractEventListener();
+  // Watch all marketplace events (LoanMarketPlace contract)
+  useAllMarketplaceEvents();
+
+  // Watch all fiat bridge events (FiatLoanBridge contract)
+  useAllFiatBridgeEvents();
+
   return null;
 }

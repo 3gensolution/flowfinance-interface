@@ -5,7 +5,7 @@ import { useCallback, useEffect } from 'react';
 import { Address, Abi } from 'viem';
 import { CONTRACT_ADDRESSES } from '@/config/contracts';
 import FiatLoanBridgeABIJson from '@/contracts/FiatLoanBridgeABI.json';
-import { useInvalidateContractQueries } from './useContracts';
+import { useContractStore } from '@/stores/contractStore';
 import { convertToUSDCents } from './useFiatOracle';
 
 const FiatLoanBridgeABI = FiatLoanBridgeABIJson as Abi;
@@ -202,6 +202,7 @@ export function useFiatLoanHealthFactor(loanId: bigint | undefined) {
 
 // Batch fetch fiat loans by IDs
 export function useBatchFiatLoans(loanIds: bigint[]) {
+  const setFiatLoans = useContractStore((state) => state.setFiatLoans);
   const { data: loansData, isLoading, isError, refetch } = useReadContracts({
     contracts: loanIds.map((id) => ({
       address: CONTRACT_ADDRESSES.fiatLoanBridge,
@@ -276,11 +277,19 @@ export function useBatchFiatLoans(loanIds: bigint[]) {
     })
     .filter((l): l is FiatLoan => l !== null);
 
+  // Update store when data loads
+  useEffect(() => {
+    if (loans.length > 0) {
+      setFiatLoans(loans);
+    }
+  }, [loans, setFiatLoans]);
+
   return { data: loans, isLoading, isError, refetch };
 }
 
 // Batch fetch fiat lender offers by IDs
 export function useBatchFiatLenderOffers(offerIds: bigint[]) {
+  const setFiatLenderOffers = useContractStore((state) => state.setFiatLenderOffers);
   const { data: offersData, isLoading, isError, refetch } = useReadContracts({
     contracts: offerIds.map((id) => ({
       address: CONTRACT_ADDRESSES.fiatLoanBridge,
@@ -340,6 +349,13 @@ export function useBatchFiatLenderOffers(offerIds: bigint[]) {
       } as FiatLenderOffer;
     })
     .filter((o): o is FiatLenderOffer => o !== null);
+
+  // Update store when data loads
+  useEffect(() => {
+    if (offers.length > 0) {
+      setFiatLenderOffers(offers);
+    }
+  }, [offers, setFiatLenderOffers]);
 
   return { data: offers, isLoading, isError, refetch };
 }
@@ -464,15 +480,8 @@ export function useUserFiatLenderOffers(userAddress: Address | undefined) {
 export function useCreateFiatLoanRequest() {
   const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
-  const { invalidateAll } = useInvalidateContractQueries();
   const { address } = useAccount();
   const publicClient = usePublicClient();
-
-  useEffect(() => {
-    if (isSuccess) {
-      invalidateAll();
-    }
-  }, [isSuccess, invalidateAll]);
 
   // Simulate the transaction before executing
   const simulateCreateFiatLoanRequest = async (
@@ -558,13 +567,6 @@ export function useCreateFiatLoanRequest() {
 export function useCancelFiatLoanRequest() {
   const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
-  const { invalidateAll } = useInvalidateContractQueries();
-
-  useEffect(() => {
-    if (isSuccess) {
-      invalidateAll();
-    }
-  }, [isSuccess, invalidateAll]);
 
   const cancelFiatLoanRequest = async (loanId: bigint) => {
     return await writeContractAsync({
@@ -582,13 +584,6 @@ export function useCancelFiatLoanRequest() {
 export function useAcceptFiatLoanRequest() {
   const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
-  const { invalidateAll } = useInvalidateContractQueries();
-
-  useEffect(() => {
-    if (isSuccess) {
-      invalidateAll();
-    }
-  }, [isSuccess, invalidateAll]);
 
   const acceptFiatLoanRequest = async (loanId: bigint) => {
     return await writeContractAsync({
@@ -606,13 +601,6 @@ export function useAcceptFiatLoanRequest() {
 export function useCreateFiatLenderOffer() {
   const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
-  const { invalidateAll } = useInvalidateContractQueries();
-
-  useEffect(() => {
-    if (isSuccess) {
-      invalidateAll();
-    }
-  }, [isSuccess, invalidateAll]);
 
   const createFiatLenderOffer = async (
     fiatAmountCents: bigint,
@@ -636,13 +624,6 @@ export function useCreateFiatLenderOffer() {
 export function useAcceptFiatLenderOffer() {
   const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
-  const { invalidateAll } = useInvalidateContractQueries();
-
-  useEffect(() => {
-    if (isSuccess) {
-      invalidateAll();
-    }
-  }, [isSuccess, invalidateAll]);
 
   const acceptFiatLenderOffer = async (
     offerId: bigint,
@@ -664,13 +645,6 @@ export function useAcceptFiatLenderOffer() {
 export function useCancelFiatLenderOffer() {
   const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
-  const { invalidateAll } = useInvalidateContractQueries();
-
-  useEffect(() => {
-    if (isSuccess) {
-      invalidateAll();
-    }
-  }, [isSuccess, invalidateAll]);
 
   const cancelFiatLenderOffer = async (offerId: bigint) => {
     return await writeContractAsync({
