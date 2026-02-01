@@ -31,6 +31,7 @@ export interface LoanRequest {
   createdAt: bigint;
   expireAt: bigint;
   status: LoanRequestStatus;
+  chainId?: bigint;
 }
 
 // Lender Offer from smart contract
@@ -39,6 +40,8 @@ export interface LenderOffer {
   lender: Address;
   lendAsset: Address;
   lendAmount: bigint;
+  remainingAmount: bigint;
+  borrowedAmount: bigint;
   requiredCollateralAsset: Address;
   minCollateralAmount: bigint;
   duration: bigint;
@@ -46,6 +49,7 @@ export interface LenderOffer {
   createdAt: bigint;
   expireAt: bigint;
   status: LoanRequestStatus;
+  chainId?: bigint;
 }
 
 // Active Loan from smart contract

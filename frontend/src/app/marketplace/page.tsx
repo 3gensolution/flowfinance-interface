@@ -18,14 +18,18 @@ import {
   usePendingFiatLoansWithDetails,
   useActiveFiatLoansWithDetails,
   useFiatLoanStats,
-  FiatLoanStatus,
   useAcceptFiatLoanRequest,
   useActiveFiatLenderOffersWithDetails,
-  FiatLenderOfferStatus,
   FiatLenderOffer,
 } from '@/hooks/useFiatLoan';
 import { useSupplierDetails } from '@/hooks/useSupplier';
-import { LoanRequestStatus } from '@/types';
+import {
+  useContractStore,
+  usePendingLoanRequests,
+  useActiveLenderOffers,
+  usePendingFiatLoansFromStore,
+  useActiveFiatLenderOffersFromStore,
+} from '@/stores/contractStore';
 import { Search, Filter, TrendingUp, FileText, Loader2, RefreshCw, Clock, Banknote, Coins, DollarSign } from 'lucide-react';
 import Link from 'next/link';
 import { getTokenDecimals } from '@/lib/utils';
@@ -47,6 +51,18 @@ function MarketplaceContent() {
   // Supplier status for fiat loans
   const { isVerified: isSupplierVerified, isActive: isSupplierActive } = useSupplierDetails(address);
   const isVerifiedSupplier = isSupplierVerified && isSupplierActive;
+
+  // Store actions to populate store with fetched data
+  const setLoanRequests = useContractStore((state) => state.setLoanRequests);
+  const setLenderOffers = useContractStore((state) => state.setLenderOffers);
+  const setFiatLoans = useContractStore((state) => state.setFiatLoans);
+  const setFiatLenderOffers = useContractStore((state) => state.setFiatLenderOffers);
+
+  // Store selectors for reactive data (updates when events come in)
+  const storeLoanRequests = usePendingLoanRequests();
+  const storeLenderOffers = useActiveLenderOffers();
+  const storeFiatLoans = usePendingFiatLoansFromStore();
+  const storeFiatLenderOffers = useActiveFiatLenderOffersFromStore();
 
   // Handle tab query parameter
   useEffect(() => {
@@ -80,6 +96,19 @@ function MarketplaceContent() {
     refetch: refetchOffers
   } = useBatchLenderOffers(0, Math.min(offerCount, 20));
 
+  // Populate store with fetched crypto data
+  useEffect(() => {
+    if (allRequests && allRequests.length > 0) {
+      setLoanRequests(allRequests);
+    }
+  }, [allRequests, setLoanRequests]);
+
+  useEffect(() => {
+    if (allOffers && allOffers.length > 0) {
+      setLenderOffers(allOffers);
+    }
+  }, [allOffers, setLenderOffers]);
+
   // Fiat loan data
   const {
     data: pendingFiatLoans,
@@ -101,91 +130,93 @@ function MarketplaceContent() {
     refetch: refetchFiatOffers
   } = useActiveFiatLenderOffersWithDetails();
 
+  // Populate store with fetched fiat data
+  useEffect(() => {
+    if (pendingFiatLoans && pendingFiatLoans.length > 0) {
+      setFiatLoans(pendingFiatLoans);
+    }
+  }, [pendingFiatLoans, setFiatLoans]);
+
+  useEffect(() => {
+    if (fiatLenderOffers && fiatLenderOffers.length > 0) {
+      setFiatLenderOffers(fiatLenderOffers);
+    }
+  }, [fiatLenderOffers, setFiatLenderOffers]);
+
   // Accept fiat loan request hook
   const { acceptFiatLoanRequest, isPending: isAcceptingFiat } = useAcceptFiatLoanRequest();
 
-  // Filter fiat loans for display (exclude user's own)
+  // Filter fiat loans for display (exclude user's own) - using store data for reactive updates
   const displayPendingFiatLoans = useMemo(() => {
-    if (!pendingFiatLoans) return [];
-    return pendingFiatLoans.filter((loan) => {
+    return storeFiatLoans.filter((loan) => {
       if (address && loan.borrower.toLowerCase() === address.toLowerCase()) return false;
-      return loan.status === FiatLoanStatus.PENDING_SUPPLIER;
+      return true; // storeFiatLoans already filtered for PENDING_SUPPLIER status
     });
-  }, [pendingFiatLoans, address]);
+  }, [storeFiatLoans, address]);
 
   // User's own pending fiat loans
   const userPendingFiatLoans = useMemo(() => {
-    if (!pendingFiatLoans || !address) return 0;
-    return pendingFiatLoans.filter((loan) =>
-      loan.borrower.toLowerCase() === address.toLowerCase() &&
-      loan.status === FiatLoanStatus.PENDING_SUPPLIER
+    if (!address) return 0;
+    return storeFiatLoans.filter((loan) =>
+      loan.borrower.toLowerCase() === address.toLowerCase()
     ).length;
-  }, [pendingFiatLoans, address]);
+  }, [storeFiatLoans, address]);
 
-  // Filter fiat lender offers for display (exclude user's own)
+  // Filter fiat lender offers for display (exclude user's own) - using store data for reactive updates
   const displayFiatLenderOffers = useMemo(() => {
-    if (!fiatLenderOffers) return [];
-    return fiatLenderOffers.filter((offer) => {
+    return storeFiatLenderOffers.filter((offer) => {
       if (address && offer.lender.toLowerCase() === address.toLowerCase()) return false;
-      return offer.status === FiatLenderOfferStatus.ACTIVE;
+      return true; // storeFiatLenderOffers already filtered for ACTIVE status
     });
-  }, [fiatLenderOffers, address]);
+  }, [storeFiatLenderOffers, address]);
 
   // User's own pending fiat offers
   const userPendingFiatOffers = useMemo(() => {
-    if (!fiatLenderOffers || !address) return 0;
-    return fiatLenderOffers.filter((offer) =>
-      offer.lender.toLowerCase() === address.toLowerCase() &&
-      offer.status === FiatLenderOfferStatus.ACTIVE
+    if (!address) return 0;
+    return storeFiatLenderOffers.filter((offer) =>
+      offer.lender.toLowerCase() === address.toLowerCase()
     ).length;
-  }, [fiatLenderOffers, address]);
+  }, [storeFiatLenderOffers, address]);
 
-  // Filter for PENDING status and exclude user's own requests
+  // Filter for PENDING status and exclude user's own requests - using store data for reactive updates
   const loanRequests = useMemo(() => {
-    if (!allRequests) return [];
-    return allRequests.filter((r) => {
-      // Only show PENDING requests
-      if (r.status !== LoanRequestStatus.PENDING) return false;
+    return storeLoanRequests.filter((r) => {
       // Hide user's own requests from them (they can't fund their own request)
       if (address && r.borrower.toLowerCase() === address.toLowerCase()) return false;
-      return true;
+      return true; // storeLoanRequests already filtered for PENDING status
     });
-  }, [allRequests, address]);
+  }, [storeLoanRequests, address]);
 
   // Count user's own pending requests (hidden from marketplace)
   const userPendingRequests = useMemo(() => {
-    if (!allRequests || !address) return 0;
-    return allRequests.filter((r) =>
-      r.status === LoanRequestStatus.PENDING &&
+    if (!address) return 0;
+    return storeLoanRequests.filter((r) =>
       r.borrower.toLowerCase() === address.toLowerCase()
     ).length;
-  }, [allRequests, address]);
+  }, [storeLoanRequests, address]);
 
-  // Filter for PENDING status and exclude user's own offers
+  // Filter for PENDING status and exclude user's own offers - using store data for reactive updates
   const lenderOffers = useMemo(() => {
-    if (!allOffers) return [];
-    return allOffers.filter((o) => {
-      // Only show PENDING offers
-      if (o.status !== LoanRequestStatus.PENDING) return false;
+    return storeLenderOffers.filter((o) => {
       // Hide user's own offers from them (they can't accept their own offer)
       if (address && o.lender.toLowerCase() === address.toLowerCase()) return false;
-      return true;
+      return true; // storeLenderOffers already filtered for PENDING status
     });
-  }, [allOffers, address]);
+  }, [storeLenderOffers, address]);
 
   // Count user's own pending offers (hidden from marketplace)
   const userPendingOffers = useMemo(() => {
-    if (!allOffers || !address) return 0;
-    return allOffers.filter((o) =>
-      o.status === LoanRequestStatus.PENDING &&
+    if (!address) return 0;
+    return storeLenderOffers.filter((o) =>
       o.lender.toLowerCase() === address.toLowerCase()
     ).length;
-  }, [allOffers, address]);
+  }, [storeLenderOffers, address]);
 
-  // Calculate real stats from the data
+  // Calculate real stats from the store data (reactive updates)
   const stats = useMemo(() => {
-    const allPendingRequests = (allRequests || []).filter(r => r.status === LoanRequestStatus.PENDING);
-    const allPendingOffers = (allOffers || []).filter(o => o.status === LoanRequestStatus.PENDING);
+    // Use store data for reactive updates
+    const allPendingRequests = storeLoanRequests;
+    const allPendingOffers = storeLenderOffers;
 
     // Calculate average interest rate from all pending items
     let totalInterestRate = BigInt(0);
@@ -232,7 +263,7 @@ function MarketplaceContent() {
       avgInterestRate: `${avgInterestRate}%`,
       totalVolume: formattedVolume
     };
-  }, [allRequests, allOffers]);
+  }, [storeLoanRequests, storeLenderOffers]);
 
   const handleRefresh = () => {
     refetchRequestCount();

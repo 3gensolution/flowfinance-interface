@@ -815,7 +815,10 @@ export function useBatchLoanRequests(startId: number, count: number) {
       // Check if data is array (tuple) or object
       const isArray = Array.isArray(data);
 
-      // Map based on actual ABI structure
+      // Map based on actual ABI structure from DataTypes.LoanRequest
+      // Order: requestId, borrower, collateralAmount, collateralToken, borrowAsset,
+      //        borrowAmount, duration, maxInterestRate, interestRate, createdAt,
+      //        expireAt, status, chainId
       let requestData;
       if (isArray) {
         const arr = data as readonly unknown[];
@@ -827,11 +830,12 @@ export function useBatchLoanRequests(startId: number, count: number) {
           borrowAsset: arr[4],
           borrowAmount: arr[5],
           duration: arr[6],
-          interestRate: arr[7],
-          maxInterestRate: arr[8],
+          maxInterestRate: arr[7],
+          interestRate: arr[8],
           createdAt: arr[9],
           expireAt: arr[10],
           status: arr[11],
+          chainId: arr[12],
         };
       } else {
         const obj = data as Record<string, unknown>;
@@ -843,11 +847,12 @@ export function useBatchLoanRequests(startId: number, count: number) {
           borrowAsset: obj.borrowAsset,
           borrowAmount: obj.borrowAmount,
           duration: obj.duration,
-          interestRate: obj.interestRate,
           maxInterestRate: obj.maxInterestRate,
+          interestRate: obj.interestRate,
           createdAt: obj.createdAt,
           expireAt: obj.expireAt,
           status: obj.status,
+          chainId: obj.chainId,
         };
       }
 
@@ -905,7 +910,10 @@ export function useBatchLenderOffers(startId: number, count: number) {
       const data = result.result;
       const isArray = Array.isArray(data);
 
-      // Map based on actual ABI structure
+      // Map based on actual ABI structure from DataTypes.LenderOffer
+      // Order: offerId, lender, lendAsset, lendAmount, remainingAmount, borrowedAmount,
+      //        requiredCollateralAsset, minCollateralAmount, duration, interestRate,
+      //        createdAt, expireAt, status, chainId
       let offerData;
       if (isArray) {
         const arr = data as readonly unknown[];
@@ -914,13 +922,16 @@ export function useBatchLenderOffers(startId: number, count: number) {
           lender: arr[1],
           lendAsset: arr[2],
           lendAmount: arr[3],
-          requiredCollateralAsset: arr[4],
-          minCollateralAmount: arr[5],
-          duration: arr[6],
-          interestRate: arr[7],
-          createdAt: arr[8],
-          expireAt: arr[9],
-          status: arr[10],
+          remainingAmount: arr[4],
+          borrowedAmount: arr[5],
+          requiredCollateralAsset: arr[6],
+          minCollateralAmount: arr[7],
+          duration: arr[8],
+          interestRate: arr[9],
+          createdAt: arr[10],
+          expireAt: arr[11],
+          status: arr[12],
+          chainId: arr[13],
         };
       } else {
         const obj = data as Record<string, unknown>;
@@ -929,6 +940,8 @@ export function useBatchLenderOffers(startId: number, count: number) {
           lender: obj.lender,
           lendAsset: obj.lendAsset,
           lendAmount: obj.lendAmount,
+          remainingAmount: obj.remainingAmount,
+          borrowedAmount: obj.borrowedAmount,
           requiredCollateralAsset: obj.requiredCollateralAsset,
           minCollateralAmount: obj.minCollateralAmount,
           duration: obj.duration,
@@ -936,6 +949,7 @@ export function useBatchLenderOffers(startId: number, count: number) {
           createdAt: obj.createdAt,
           expireAt: obj.expireAt,
           status: obj.status,
+          chainId: obj.chainId,
         };
       }
 
@@ -949,6 +963,8 @@ export function useBatchLenderOffers(startId: number, count: number) {
         lender: offerData.lender as Address,
         lendAsset: offerData.lendAsset as Address,
         lendAmount: offerData.lendAmount as bigint,
+        remainingAmount: offerData.remainingAmount as bigint,
+        borrowedAmount: offerData.borrowedAmount as bigint,
         requiredCollateralAsset: offerData.requiredCollateralAsset as Address,
         minCollateralAmount: offerData.minCollateralAmount as bigint,
         duration: offerData.duration as bigint,
@@ -956,6 +972,7 @@ export function useBatchLenderOffers(startId: number, count: number) {
         createdAt: offerData.createdAt as bigint,
         expireAt: offerData.expireAt as bigint,
         status: Number(offerData.status),
+        chainId: offerData.chainId as bigint,
       };
     })
     .filter((o): o is NonNullable<typeof o> => o !== null);

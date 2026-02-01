@@ -32,6 +32,15 @@ import {
   FiatLenderOfferStatus,
   FiatLoanStatus,
 } from '@/hooks/useFiatLoan';
+import {
+  useContractStore,
+  useFiatLenderOffersByLender,
+  useFiatLoansByBorrower,
+  useLoanRequestsByBorrower,
+  useLenderOffersByLender,
+  useLoansByBorrower,
+  useLoansByLender,
+} from '@/stores/contractStore';
 import { CONTRACT_ADDRESSES, getTokenByAddress } from '@/config/contracts';
 import { simulateContractWrite, formatSimulationError } from '@/lib/contractSimulation';
 import LoanMarketPlaceABIJson from '@/contracts/LoanMarketPlaceABI.json';
@@ -70,29 +79,69 @@ export default function DashboardPage() {
   const [repayStep, setRepayStep] = useState<'input' | 'approve' | 'repay'>('input');
   const hasInitializedRepayAmount = useRef(false);
 
+  // Store actions to populate store with fetched data
+  const setLoanRequests = useContractStore((state) => state.setLoanRequests);
+  const setLenderOffers = useContractStore((state) => state.setLenderOffers);
+  const setLoans = useContractStore((state) => state.setLoans);
+
   // Fetch user dashboard data from contracts
   const {
-    borrowedLoans,
-    lentLoans,
-    loanRequests,
-    lenderOffers,
+    borrowedLoans: fetchedBorrowedLoans,
+    lentLoans: fetchedLentLoans,
+    loanRequests: fetchedLoanRequests,
+    lenderOffers: fetchedLenderOffers,
     isLoading,
     refetch
   } = useUserDashboardData(address);
 
-  // Fetch user's fiat lender offers
+  // Populate store with fetched crypto data
+  useEffect(() => {
+    if (fetchedLoanRequests && fetchedLoanRequests.length > 0) {
+      setLoanRequests(fetchedLoanRequests);
+    }
+  }, [fetchedLoanRequests, setLoanRequests]);
+
+  useEffect(() => {
+    if (fetchedLenderOffers && fetchedLenderOffers.length > 0) {
+      setLenderOffers(fetchedLenderOffers);
+    }
+  }, [fetchedLenderOffers, setLenderOffers]);
+
+  useEffect(() => {
+    if (fetchedBorrowedLoans && fetchedBorrowedLoans.length > 0) {
+      setLoans(fetchedBorrowedLoans);
+    }
+  }, [fetchedBorrowedLoans, setLoans]);
+
+  useEffect(() => {
+    if (fetchedLentLoans && fetchedLentLoans.length > 0) {
+      setLoans(fetchedLentLoans);
+    }
+  }, [fetchedLentLoans, setLoans]);
+
+  // Get crypto data from store (reactively updates when events come in)
+  const loanRequests = useLoanRequestsByBorrower(address);
+  const lenderOffers = useLenderOffersByLender(address);
+  const borrowedLoans = useLoansByBorrower(address);
+  const lentLoans = useLoansByLender(address);
+
+  // Fetch user's fiat lender offers (this also populates the store)
   const {
-    data: fiatLenderOffers,
     isLoading: isLoadingFiatOffers,
     refetch: refetchFiatOffers,
   } = useUserFiatLenderOffers(address);
 
-  // Fetch user's fiat loan requests (as borrower)
+  // Get fiat lender offers from store (reactively updates when events come in)
+  const fiatLenderOffers = useFiatLenderOffersByLender(address);
+
+  // Fetch user's fiat loan requests (as borrower) - this also populates the store
   const {
-    data: fiatLoanRequests,
     isLoading: isLoadingFiatRequests,
     refetch: refetchFiatRequests,
   } = useUserFiatLoansAsBorrower(address);
+
+  // Get fiat loan requests from store (reactively updates when events come in)
+  const fiatLoanRequests = useFiatLoansByBorrower(address);
 
   // Contract write hooks
   const { repayAsync, isPending: isRepayPending } = useRepayLoan();
@@ -689,12 +738,15 @@ export default function DashboardPage() {
                 size="sm"
                 onClick={() => setActiveTab('offers')}
               >
-                My Offers ({pendingOffers.length})
+                Crypto Offers ({pendingOffers.length})
               </Button>
               <Button
                 variant={activeTab === 'fiatOffers' ? 'primary' : 'secondary'}
                 size="sm"
-                onClick={() => setActiveTab('fiatOffers')}
+                onClick={() => {
+                  setActiveTab('fiatOffers');
+                  refetchFiatOffers();
+                }}
                 className={activeTab === 'fiatOffers' ? 'bg-green-600 hover:bg-green-700' : ''}
               >
                 <Banknote className="w-4 h-4 mr-1" />
@@ -835,6 +887,17 @@ export default function DashboardPage() {
 
               {activeTab === 'fiatOffers' && (
                 <>
+                  <div className="flex justify-end mb-4">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => refetchFiatOffers()}
+                      disabled={isLoadingFiatOffers}
+                      icon={<RefreshCw className={`w-4 h-4 ${isLoadingFiatOffers ? 'animate-spin' : ''}`} />}
+                    >
+                      Refresh
+                    </Button>
+                  </div>
                   {isLoadingFiatOffers ? (
                     <div className="flex justify-center py-12">
                       <Loader2 className="w-8 h-8 animate-spin text-green-400" />
@@ -1147,9 +1210,12 @@ export default function DashboardPage() {
             {repayStep === 'approve' && (
               <>
                 <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-                  <p className="text-yellow-400 font-medium mb-1">Approval Required</p>
-                  <p className="text-sm text-gray-400">
-                    You need to approve the contract to spend {repayAmount} {getTokenByAddress(selectedLoan.borrowAsset)?.symbol} before you can repay.
+                  <p className="text-yellow-400 font-medium mb-1">Token Approval Required</p>
+                  <p className="text-sm text-gray-400 mb-2">
+                    Before you can repay this loan, you need to approve the loan contract to transfer your {getTokenByAddress(selectedLoan.borrowAsset)?.symbol} tokens.
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    <strong>Why is this needed?</strong> ERC-20 tokens require a two-step process: first you approve the contract to access your tokens, then you can complete the repayment. This is a standard security feature that protects your assets.
                   </p>
                 </div>
 

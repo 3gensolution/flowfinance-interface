@@ -35,6 +35,11 @@
         "name": "collateralAmount",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "borrowAmount",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [
@@ -175,33 +180,44 @@
   },
   {
     "type": "function",
-    "name": "confirmCrossChainRepayment",
+    "name": "createCrossChainLoan",
     "inputs": [
       {
-        "name": "loanId",
+        "name": "requestId",
         "type": "uint256",
         "internalType": "uint256"
       },
       {
-        "name": "amountRepaid",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "createCrossChainLoanRequest",
-    "inputs": [
+        "name": "lender",
+        "type": "address",
+        "internalType": "address"
+      },
       {
         "name": "sourceChainId",
         "type": "uint256",
         "internalType": "uint256"
       },
       {
-        "name": "sourceLoanId",
+        "name": "remoteLoanId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "loanId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "createCrossChainRequest",
+    "inputs": [
+      {
+        "name": "sourceChainId",
         "type": "uint256",
         "internalType": "uint256"
       },
@@ -340,52 +356,16 @@
   },
   {
     "type": "function",
-    "name": "depositCollateralAndRequestLoan",
-    "inputs": [
-      {
-        "name": "_collateralToken",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "_collateralAmount",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "_borrowAsset",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "_borrowAmount",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "_interestRate",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "_duration",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "_targetChainId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
+    "name": "crossChainManager",
+    "inputs": [],
     "outputs": [
       {
-        "name": "requestId",
-        "type": "uint256",
-        "internalType": "uint256"
+        "name": "",
+        "type": "address",
+        "internalType": "address"
       }
     ],
-    "stateMutability": "nonpayable"
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -415,35 +395,6 @@
   },
   {
     "type": "function",
-    "name": "fundCrossChainLoanRequest",
-    "inputs": [
-      {
-        "name": "requestId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "sourceChainId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "sourceLoanId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "loanId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "fundLoanRequest",
     "inputs": [
       {
@@ -460,19 +411,6 @@
       }
     ],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "getLiquidationBonusRate",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "bonusRate",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -567,6 +505,16 @@
         "internalType": "uint256"
       },
       {
+        "name": "remainingAmount",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "borrowedAmount",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
         "name": "requiredCollateralAsset",
         "type": "address",
         "internalType": "address"
@@ -600,6 +548,11 @@
         "name": "status",
         "type": "uint8",
         "internalType": "enum DataTypes.LoanRequestStatus"
+      },
+      {
+        "name": "chainId",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -627,24 +580,6 @@
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "liquidateCrossChainCollateral",
-    "inputs": [
-      {
-        "name": "requestId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "liquidator",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -758,6 +693,11 @@
         "name": "status",
         "type": "uint8",
         "internalType": "enum DataTypes.LoanRequestStatus"
+      },
+      {
+        "name": "chainId",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -896,15 +836,23 @@
   },
   {
     "type": "function",
-    "name": "markCrossChainLoanFunded",
+    "name": "markCrossChainLoanRepaid",
+    "inputs": [
+      {
+        "name": "loanId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "markRequestFunded",
     "inputs": [
       {
         "name": "requestId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "remoteLoanId",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -1030,19 +978,6 @@
   },
   {
     "type": "function",
-    "name": "releaseCrossChainCollateral",
-    "inputs": [
-      {
-        "name": "requestId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "remoteChainLoanIdToLocal",
     "inputs": [
       {
@@ -1110,10 +1045,10 @@
   },
   {
     "type": "function",
-    "name": "setLTVConfig",
+    "name": "setCrossChainManager",
     "inputs": [
       {
-        "name": "_ltvConfig",
+        "name": "_crossChainManager",
         "type": "address",
         "internalType": "address"
       }
@@ -1123,10 +1058,10 @@
   },
   {
     "type": "function",
-    "name": "setRelayService",
+    "name": "setLTVConfig",
     "inputs": [
       {
-        "name": "_relayService",
+        "name": "_ltvConfig",
         "type": "address",
         "internalType": "address"
       }
@@ -1193,6 +1128,29 @@
   },
   {
     "type": "function",
+    "name": "updateCrossChainRepayment",
+    "inputs": [
+      {
+        "name": "loanId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "amountRepaid",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "collateralToRelease",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "upgradeToAndCall",
     "inputs": [
       {
@@ -1235,25 +1193,6 @@
   },
   {
     "type": "event",
-    "name": "ChainSupportUpdated",
-    "inputs": [
-      {
-        "name": "chainId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "supported",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "CollateralReleased",
     "inputs": [
       {
@@ -1279,111 +1218,19 @@
   },
   {
     "type": "event",
-    "name": "CrossChainLoanFunded",
+    "name": "CrossChainManagerUpdated",
     "inputs": [
       {
-        "name": "loanId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "lender",
+        "name": "oldManager",
         "type": "address",
         "indexed": true,
         "internalType": "address"
       },
       {
-        "name": "targetChainId",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "remoteChainLoanId",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "CrossChainLoanRequested",
-    "inputs": [
-      {
-        "name": "loanId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "borrower",
+        "name": "newManager",
         "type": "address",
         "indexed": true,
         "internalType": "address"
-      },
-      {
-        "name": "sourceChainId",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "targetChainId",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "collateralAsset",
-        "type": "address",
-        "indexed": false,
-        "internalType": "address"
-      },
-      {
-        "name": "collateralAmount",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "borrowAsset",
-        "type": "address",
-        "indexed": false,
-        "internalType": "address"
-      },
-      {
-        "name": "borrowAmount",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "CrossChainRepaymentConfirmed",
-    "inputs": [
-      {
-        "name": "loanId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "amountRepaid",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "remainingDebt",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
       }
     ],
     "anonymous": false
@@ -1416,6 +1263,37 @@
         "type": "address",
         "indexed": true,
         "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "LenderOfferAcceptance",
+    "inputs": [
+      {
+        "name": "offerId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "loanId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "remaining",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
       }
     ],
     "anonymous": false
@@ -1938,25 +1816,6 @@
   },
   {
     "type": "event",
-    "name": "RelayServiceUpdated",
-    "inputs": [
-      {
-        "name": "oldRelay",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "newRelay",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "Unpaused",
     "inputs": [
       {
@@ -2009,11 +1868,6 @@
   },
   {
     "type": "error",
-    "name": "BorrowAssetNotSupported",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "CannotAcceptOwnOffer",
     "inputs": []
   },
@@ -2024,7 +1878,7 @@
   },
   {
     "type": "error",
-    "name": "CannotModifyOwnChain",
+    "name": "CannotLiquidate",
     "inputs": []
   },
   {
@@ -2035,11 +1889,6 @@
   {
     "type": "error",
     "name": "CollateralNotSupported",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "CrossChainPartialLiquidationNotSupported",
     "inputs": []
   },
   {
@@ -2090,6 +1939,11 @@
   },
   {
     "type": "error",
+    "name": "InsufficientOfferBalance",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "InvalidConfigAddress",
     "inputs": []
   },
@@ -2110,27 +1964,7 @@
   },
   {
     "type": "error",
-    "name": "InvalidLiquidator",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "InvalidLoanID",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "InvalidPercentage",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "InvalidRelayService",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "InvalidRequest",
     "inputs": []
   },
   {
@@ -2140,37 +1974,17 @@
   },
   {
     "type": "error",
-    "name": "LoanCannotBeLiquidated",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "LoanIsStillHealthy",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "LoanMustBeActiveForMinimumDuration",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "LoanNotActive",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "NoCollateral",
+    "name": "LoanTooNew",
     "inputs": []
   },
   {
     "type": "error",
     "name": "NoExtensionRequested",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NotACrossChainLoan",
     "inputs": []
   },
   {
@@ -2195,6 +2009,11 @@
   },
   {
     "type": "error",
+    "name": "OfferFullyUtilized",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "OfferNotAvailable",
     "inputs": []
   },
@@ -2215,17 +2034,12 @@
   },
   {
     "type": "error",
+    "name": "OnlyCrossChainManager",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "OnlyLenderCanCancel",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "OnlyRelayService",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "Overpayment",
     "inputs": []
   },
   {
@@ -2277,11 +2091,6 @@
   },
   {
     "type": "error",
-    "name": "RequestNotFunded",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "RequestNotPending",
     "inputs": []
   },
@@ -2299,16 +2108,6 @@
   {
     "type": "error",
     "name": "SourceChainNotSupported",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "TargetChainMustDiffer",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "TargetChainNotSupported",
     "inputs": []
   },
   {

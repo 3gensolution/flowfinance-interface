@@ -73,19 +73,25 @@ export default function OfferDetailPage() {
   const { data: offerData, isLoading: offerLoading, refetch } = useLenderOffer(offerId);
 
   // Parse offer data from contract (it returns a tuple)
+  // Order: offerId, lender, lendAsset, lendAmount, remainingAmount, borrowedAmount,
+  //        requiredCollateralAsset, minCollateralAmount, duration, interestRate,
+  //        createdAt, expireAt, status, chainId
   const offerTuple = offerData as readonly unknown[];
   const offer = offerData ? {
     offerId: offerTuple[0] as bigint,
     lender: offerTuple[1] as `0x${string}`,
     lendAsset: offerTuple[2] as `0x${string}`,
     lendAmount: offerTuple[3] as bigint,
-    requiredCollateralAsset: offerTuple[4] as `0x${string}`,
-    minCollateralAmount: offerTuple[5] as bigint,
-    duration: offerTuple[6] as bigint,
-    interestRate: offerTuple[7] as bigint,
-    createdAt: offerTuple[8] as bigint,
-    expireAt: offerTuple[9] as bigint,
-    status: offerTuple[10] as LoanRequestStatus,
+    remainingAmount: offerTuple[4] as bigint,
+    borrowedAmount: offerTuple[5] as bigint,
+    requiredCollateralAsset: offerTuple[6] as `0x${string}`,
+    minCollateralAmount: offerTuple[7] as bigint,
+    duration: offerTuple[8] as bigint,
+    interestRate: offerTuple[9] as bigint,
+    createdAt: offerTuple[10] as bigint,
+    expireAt: offerTuple[11] as bigint,
+    status: offerTuple[12] as LoanRequestStatus,
+    chainId: offerTuple[13] as bigint,
   } : null;
 
   // Check if this is a flexible collateral offer (zero address means borrower chooses)
@@ -1089,6 +1095,15 @@ export default function OfferDetailPage() {
                   <span>Accept</span>
                 </div>
               </div>
+
+              {/* Approval Explanation */}
+              {!hasApproval && (
+                <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                  <p className="text-xs text-gray-300">
+                    <span className="text-yellow-400 font-medium">Why approve?</span> ERC-20 tokens require you to authorize the contract before it can lock your {collateralSymbol} as collateral. This is a standard security feature that protects your assets.
+                  </p>
+                </div>
+              )}
 
               {/* Action Button */}
               {!hasApproval ? (

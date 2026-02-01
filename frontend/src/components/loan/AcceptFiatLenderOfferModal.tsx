@@ -258,6 +258,15 @@ export function AcceptFiatLenderOfferModal({ offer, isOpen, onClose, onSuccess }
               </div>
             )}
 
+            {/* Approval Explanation */}
+            {needsApproval && collateralAmount && meetsMinimum && hasEnoughBalance && (
+              <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                <p className="text-xs text-gray-300">
+                  <span className="text-yellow-400 font-medium">Why approve first?</span> ERC-20 tokens require you to authorize the contract before it can lock your collateral. This is a standard security feature.
+                </p>
+              </div>
+            )}
+
             {/* Submit Button */}
             <div className="flex gap-3 pt-4">
               <Button
@@ -287,10 +296,13 @@ export function AcceptFiatLenderOfferModal({ offer, isOpen, onClose, onSuccess }
             </h4>
             <p className="text-gray-400">
               {isApproving
-                ? 'Please confirm the transaction in your wallet...'
+                ? 'Please confirm the approval transaction in your wallet...'
                 : isApprovalConfirming
                   ? 'Waiting for transaction confirmation...'
                   : 'Processing...'}
+            </p>
+            <p className="text-xs text-gray-500 mt-3">
+              This approval allows the contract to lock your collateral when the offer is accepted.
             </p>
           </div>
         )}

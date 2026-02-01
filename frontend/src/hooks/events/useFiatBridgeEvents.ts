@@ -57,6 +57,7 @@ export function useFiatLoanRequestedEvent(enabled = true) {
           fundsWithdrawn: false,
           repaymentDepositId: '0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`,
           exchangeRateAtCreation: BigInt(0),
+          chainId: BigInt(84532), // Base Sepolia chain ID
         });
 
         const amountFormatted = (Number(args.fiatAmountCents) / 100).toFixed(2);
@@ -294,6 +295,8 @@ export function useFiatLenderOfferCreatedEvent(enabled = true) {
           offerId: args.offerId,
           lender: args.lender,
           fiatAmountCents: args.fiatAmountCents,
+          remainingAmountCents: args.fiatAmountCents, // Initially, remaining = full amount
+          borrowedAmountCents: BigInt(0),
           currency: args.currency,
           minCollateralValueUSD: args.minCollateralValueUSD,
           duration: args.duration,
@@ -302,6 +305,7 @@ export function useFiatLenderOfferCreatedEvent(enabled = true) {
           expireAt: BigInt(Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60),
           status: FiatLenderOfferStatus.ACTIVE,
           exchangeRateAtCreation: BigInt(0),
+          chainId: BigInt(84532), // Base Sepolia chain ID
         });
 
         const amountFormatted = (Number(args.fiatAmountCents) / 100).toFixed(2);

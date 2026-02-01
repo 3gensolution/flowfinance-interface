@@ -53,6 +53,7 @@ export function useLoanRequestCreatedEvent(enabled = true) {
           status: LoanRequestStatus.PENDING,
           createdAt: BigInt(Math.floor(Date.now() / 1000)),
           expireAt: BigInt(Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60),
+          chainId: BigInt(84532), // Base Sepolia chain ID
         });
 
         toast.success(`New loan request #${args.requestId.toString()} created`);
@@ -200,6 +201,8 @@ export function useLenderOfferCreatedEvent(enabled = true) {
           lender: args.lender,
           lendAsset: args.lendAsset,
           lendAmount: args.lendAmount,
+          remainingAmount: args.lendAmount, // Initially, remaining = full amount
+          borrowedAmount: BigInt(0),
           requiredCollateralAsset: args.requiredCollateralAsset,
           minCollateralAmount: args.minCollateralAmount,
           interestRate: args.interestRate,
@@ -207,6 +210,7 @@ export function useLenderOfferCreatedEvent(enabled = true) {
           status: LoanRequestStatus.PENDING,
           createdAt: BigInt(Math.floor(Date.now() / 1000)),
           expireAt: BigInt(Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60),
+          chainId: BigInt(84532), // Base Sepolia chain ID
         });
 
         toast.success(`New lender offer #${args.offerId.toString()} created`);

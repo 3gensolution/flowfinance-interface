@@ -9,7 +9,7 @@ import { Select } from '@/components/ui/Input';
 import { useCreateFiatLenderOffer } from '@/hooks/useFiatLoan';
 import { useSupplierDetails } from '@/hooks/useSupplier';
 import { useMaxInterestRate } from '@/hooks/useContracts';
-import { SUPPORTED_FIAT_CURRENCIES, useSupplierBalance, useBatchExchangeRates, getCurrencySymbol, convertToUSDCents } from '@/hooks/useFiatOracle';
+import { SUPPORTED_FIAT_CURRENCIES, useSupplierBalance, useSupplierBalances, useBatchExchangeRates, getCurrencySymbol, convertToUSDCents, formatCentsToDecimal } from '@/hooks/useFiatOracle';
 import { daysToSeconds } from '@/lib/utils';
 import { ArrowRight, AlertCircle, DollarSign, Banknote } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -31,7 +31,6 @@ export function CreateFiatLenderOfferForm() {
 
   const [currency, setCurrency] = useState('USD');
   const [fiatAmount, setFiatAmount] = useState('');
-  const [minCollateralUSD, setMinCollateralUSD] = useState('');
   const [interestRate, setInterestRate] = useState('12');
   const [duration, setDuration] = useState('30');
 
@@ -48,6 +47,18 @@ export function CreateFiatLenderOfferForm() {
   const balanceInCents = supplierBalance as bigint | undefined;
   const balanceAmount = balanceInCents ? Number(balanceInCents) / 100 : 0;
 
+  // Get all supplier balances to show available funds
+  const { data: allBalances, isLoading: isLoadingBalances } = useSupplierBalances(address);
+  const currenciesWithFunds = SUPPORTED_FIAT_CURRENCIES
+    .filter(curr => {
+      const balance = allBalances?.[curr.code];
+      return balance && balance > BigInt(0);
+    })
+    .map(curr => ({
+      ...curr,
+      balance: allBalances?.[curr.code] || BigInt(0),
+    }));
+
   // Get exchange rates
   const { data: exchangeRates } = useBatchExchangeRates();
   const currentRate = exchangeRates?.[currency];
@@ -57,21 +68,20 @@ export function CreateFiatLenderOfferForm() {
   // Calculate values
   const fiatAmountNumber = parseFloat(fiatAmount) || 0;
   const fiatAmountCents = BigInt(Math.floor(fiatAmountNumber * 100));
-  const minCollateralUSDNumber = parseFloat(minCollateralUSD) || 0;
-  const minCollateralUSDAmount = BigInt(Math.floor(minCollateralUSDNumber));
 
   // Convert fiat amount to USD for comparison
   const fiatAmountUSD = currentRate && fiatAmountNumber > 0
     ? Number(convertToUSDCents(fiatAmountCents, currentRate)) / 100
     : 0;
 
-  // Calculate interest (flat, not annualized)
+  // Calculate interest in the selected currency (same as borrowing)
   const interestDecimal = (parseFloat(interestRate) || 0) / 100;
-  const interestAmount = fiatAmountUSD * interestDecimal;
-  const totalRepaymentUSD = fiatAmountUSD + interestAmount;
+  const interestAmountInCurrency = fiatAmountNumber * interestDecimal;
+  const totalRepaymentInCurrency = fiatAmountNumber + interestAmountInCurrency;
 
-  // Calculate suggested LTV (around 75%)
-  const suggestedCollateralUSD = totalRepaymentUSD > 0 ? totalRepaymentUSD / 0.75 : 0;
+  // Auto-calculate min collateral based on 75% LTV (collateral = total repayment / 0.75)
+  const totalRepaymentUSD = fiatAmountUSD * (1 + interestDecimal);
+  const minCollateralUSDAmount = BigInt(Math.floor(totalRepaymentUSD / 0.75));
 
   // Balance checks
   const hasZeroBalance = balanceAmount === 0;
@@ -83,8 +93,6 @@ export function CreateFiatLenderOfferForm() {
     isVerifiedSupplier &&
     fiatAmount &&
     fiatAmountNumber > 0 &&
-    minCollateralUSD &&
-    minCollateralUSDNumber > 0 &&
     hasEnoughBalance &&
     !hasZeroBalance &&
     currentRate;
@@ -102,13 +110,6 @@ export function CreateFiatLenderOfferForm() {
     }
   }, [createError]);
 
-  // Auto-fill suggested collateral
-  const handleUseSuggested = () => {
-    if (suggestedCollateralUSD > 0) {
-      setMinCollateralUSD(suggestedCollateralUSD.toFixed(2));
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -119,11 +120,6 @@ export function CreateFiatLenderOfferForm() {
 
     if (!fiatAmount || fiatAmountNumber <= 0) {
       toast.error('Please enter a valid fiat amount');
-      return;
-    }
-
-    if (!minCollateralUSD || minCollateralUSDNumber <= 0) {
-      toast.error('Please enter a valid minimum collateral amount');
       return;
     }
 
@@ -194,6 +190,44 @@ export function CreateFiatLenderOfferForm() {
           Fiat Lender Offer Details
         </h3>
 
+        {/* Available Balances */}
+        <div className="mb-6">
+          <label className="block text-sm font-medium mb-2">Your Available Balances</label>
+          <div className="bg-white/5 rounded-lg border border-gray-700/50 max-h-32 overflow-y-auto">
+            {isLoadingBalances ? (
+              <div className="p-3 text-center text-xs text-gray-500">Loading balances...</div>
+            ) : currenciesWithFunds.length > 0 ? (
+              <div className="divide-y divide-gray-700/30">
+                {currenciesWithFunds.map((curr) => (
+                  <button
+                    key={curr.code}
+                    type="button"
+                    onClick={() => setCurrency(curr.code)}
+                    className={`w-full flex items-center justify-between px-3 py-2 hover:bg-white/5 transition-colors text-left ${
+                      currency === curr.code ? 'bg-green-500/10 border-l-2 border-green-500' : ''
+                    }`}
+                  >
+                    <span className="text-sm">
+                      <span className="font-medium">{curr.code}</span>
+                      <span className="text-gray-500 ml-1">{curr.name}</span>
+                    </span>
+                    <span className="text-sm font-semibold text-green-400">
+                      {curr.symbol}{formatCentsToDecimal(curr.balance)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="p-4 text-center">
+                <p className="text-xs text-gray-500 mb-2">No fiat funds available</p>
+                <Link href="/dashboard" className="text-xs text-green-400 hover:text-green-300 underline">
+                  Deposit funds via Dashboard
+                </Link>
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Currency Selection */}
         <div className="mb-4">
           <label className="block text-sm font-medium mb-2">Currency</label>
@@ -251,41 +285,6 @@ export function CreateFiatLenderOfferForm() {
           )}
         </div>
 
-        {/* Min Collateral USD */}
-        <div className="mb-4">
-          <label className="block text-sm font-medium mb-2">
-            Minimum Collateral Value (USD)
-          </label>
-          <div className="relative">
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              value={minCollateralUSD}
-              onChange={(e) => setMinCollateralUSD(e.target.value)}
-              placeholder="0.00"
-              className="input-field w-full pr-16"
-            />
-            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
-              USD
-            </span>
-          </div>
-          {suggestedCollateralUSD > 0 && (
-            <div className="mt-2 flex items-center gap-2">
-              <p className="text-xs text-gray-400">
-                Suggested (75% LTV): ${suggestedCollateralUSD.toFixed(2)}
-              </p>
-              <button
-                type="button"
-                onClick={handleUseSuggested}
-                className="text-xs text-green-400 hover:text-green-300 underline"
-              >
-                Use Suggested
-              </button>
-            </div>
-          )}
-        </div>
-
         {/* Interest Rate */}
         <div className="mb-4">
           <label className="block text-sm font-medium mb-2">
@@ -329,29 +328,35 @@ export function CreateFiatLenderOfferForm() {
         </div>
 
         {/* Summary */}
-        {fiatAmountNumber > 0 && totalRepaymentUSD > 0 && (
+        {fiatAmountNumber > 0 && totalRepaymentInCurrency > 0 && (
           <div className="glass-card p-4 mt-6">
             <h4 className="text-sm font-semibold mb-3 text-green-400">Offer Summary</h4>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-gray-400">Lend Amount:</span>
-                <span className="font-medium">{getCurrencySymbol(currency)}{fiatAmountNumber.toLocaleString()} {currency}</span>
+                <span className="font-medium">{getCurrencySymbol(currency)}{fiatAmountNumber.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currency}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-400">Min Collateral:</span>
-                <span className="font-medium">${minCollateralUSDNumber.toLocaleString()} USD</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-400">Interest ({interestRate}% APY):</span>
+                <span className="text-gray-400">Interest ({interestRate}%):</span>
                 <span className="font-medium text-green-400">
-                  ${interestAmount.toFixed(2)} USD
+                  {getCurrencySymbol(currency)}{interestAmountInCurrency.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currency}
                 </span>
               </div>
               <div className="flex justify-between pt-2 border-t border-gray-700">
                 <span className="text-gray-400">Total Repayment:</span>
                 <span className="font-semibold text-green-400">
-                  ${totalRepaymentUSD.toFixed(2)} USD
+                  {getCurrencySymbol(currency)}{totalRepaymentInCurrency.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currency}
                 </span>
+              </div>
+              {fiatAmountUSD > 0 && currency !== 'USD' && (
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>USD Equivalent:</span>
+                  <span>≈ ${totalRepaymentUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD</span>
+                </div>
+              )}
+              <div className="flex justify-between text-xs text-gray-500 pt-2">
+                <span>Min Collateral (auto 75% LTV):</span>
+                <span>${Number(minCollateralUSDAmount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD</span>
               </div>
             </div>
           </div>

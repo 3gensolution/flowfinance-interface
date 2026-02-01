@@ -16,7 +16,7 @@ import {
   // polygon,
 } from 'wagmi/chains';
 import { http } from 'wagmi';
-import { fallback } from 'viem';
+// import { fallback } from 'viem';
 
 export const config = getDefaultConfig({
   appName: 'FlowFinance',
@@ -31,13 +31,13 @@ export const config = getDefaultConfig({
   ],
   transports: {
     // Testnet transports
-    // [baseSepolia.id]: http('https://sepolia.base.org'),
-    [baseSepolia.id]: fallback([
-      http('https://sepolia.base.org'),
-      http('https://base-sepolia.drpc.org'),
-      http('https://base-sepolia-public.nodies.app'),
-      // webSocket('wss://base-sepolia-rpc.publicnode.com'),
-    ]),
+    [baseSepolia.id]: http('https://sepolia.base.org'),
+    // [baseSepolia.id]: fallback([
+    //   http('https://sepolia.base.org'),
+    //   http('https://base-sepolia.drpc.org'),
+    //   http('https://base-sepolia-public.nodies.app'),
+    //   // webSocket('wss://base-sepolia-rpc.publicnode.com'),
+    // ]),
     [sepolia.id]: http('https://rpc.sepolia.org'),
     [arbitrumSepolia.id]: http('https://sepolia-rollup.arbitrum.io/rpc'),
     [optimismSepolia.id]: http('https://sepolia.optimism.io'),

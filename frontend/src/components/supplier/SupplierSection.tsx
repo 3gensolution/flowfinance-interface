@@ -14,6 +14,12 @@ import {
 import { useGenerateLinkApi } from '@/hooks/useGenerateLink';
 import { GenerateLinkResponse } from '@/services/mutation/generate-link';
 import {
+  useGetSupportedCurrencies,
+  useSupplierBalances,
+  getCurrencySymbol,
+  getCurrencyName,
+} from '@/hooks/useFiatOracle';
+import {
   UserPlus,
   Shield,
   DollarSign,
@@ -52,6 +58,18 @@ export function SupplierSection() {
   const linkResponse = linkData?.data as GenerateLinkResponse | undefined;
   const generatedLink = linkResponse?.data?.url;
   const linkExpiresAt = linkResponse?.data?.expiresAt;
+
+  // Fiat Oracle data - supported currencies and balances
+  const { data: supportedCurrencies, isLoading: isLoadingCurrencies } = useGetSupportedCurrencies();
+  const { data: supplierBalances, isLoading: isLoadingBalances } = useSupplierBalances(address);
+
+  // Filter currencies with balances and sort by balance (highest first)
+  const currenciesWithBalances = (supportedCurrencies as string[] || [])
+    .map(currency => ({
+      currency,
+      balance: supplierBalances?.[currency] || BigInt(0),
+    }))
+    .sort((a, b) => Number(b.balance - a.balance));
 
   // Format expiration time in human-readable format
   const formatExpirationTime = (expiresAt: string | undefined) => {
@@ -317,7 +335,7 @@ export function SupplierSection() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 gap-3 mb-4">
+        <div className="grid grid-cols-3 gap-3 mb-4">
           <div className="p-3 bg-white/5 rounded-lg">
             <p className="text-xs text-gray-400">Loans Provided</p>
             <p className="text-sm font-semibold">
@@ -330,7 +348,68 @@ export function SupplierSection() {
               {supplier?.totalVolumeProvided ? formatEther(supplier.totalVolumeProvided) : '0'}
             </p>
           </div>
+          <div className="p-3 bg-white/5 rounded-lg">
+            <p className="text-xs text-gray-400">Rating</p>
+            <p className="text-sm font-semibold">
+              {supplier?.numberOfRatings && Number(supplier.numberOfRatings) > 0
+                ? `${(Number(supplier.averageRating) / 100).toFixed(1)}/5 (${supplier.numberOfRatings.toString()} reviews)`
+                : 'No ratings yet'}
+            </p>
+          </div>
         </div>
+
+        {/* Registration Date */}
+        {supplier?.registeredAt && Number(supplier.registeredAt) > 0 && (
+          <p className="text-xs text-gray-500 mb-4">
+            Registered: {new Date(Number(supplier.registeredAt) * 1000).toLocaleDateString('en-US', {
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric'
+            })}
+          </p>
+        )}
+
+        {/* Fiat Balances Section - Only show for verified suppliers */}
+        {isVerified && (
+          <div className="mb-4">
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-sm font-medium text-gray-300">Fiat Balances</h4>
+              {(isLoadingCurrencies || isLoadingBalances) && (
+                <Loader2 className="w-3 h-3 animate-spin text-gray-400" />
+              )}
+            </div>
+            <div className="bg-white/5 rounded-lg border border-gray-700/50 max-h-40 overflow-y-auto">
+              {currenciesWithBalances.length > 0 ? (
+                <div className="divide-y divide-gray-700/50">
+                  {currenciesWithBalances.map(({ currency, balance }) => (
+                    <div
+                      key={currency}
+                      className="flex items-center justify-between px-3 py-2 hover:bg-white/5 transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-white">{currency}</span>
+                        <span className="text-xs text-gray-500">{getCurrencyName(currency)}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className={`text-sm font-semibold ${balance > BigInt(0) ? 'text-green-400' : 'text-gray-500'}`}>
+                          {getCurrencySymbol(currency)}{(Number(balance) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="px-3 py-4 text-center text-xs text-gray-500">
+                  {isLoadingCurrencies || isLoadingBalances ? (
+                    'Loading balances...'
+                  ) : (
+                    'No currencies available'
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Status message based on verification */}
         <div className={`p-3 rounded-lg mb-4 ${

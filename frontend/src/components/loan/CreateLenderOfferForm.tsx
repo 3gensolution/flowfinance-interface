@@ -454,10 +454,18 @@ export function CreateLenderOfferForm() {
             <AlertCircle className="w-8 h-8 text-yellow-400" />
           </div>
           <div>
-            <h3 className="text-xl font-semibold mb-2">Approve Token</h3>
+            <h3 className="text-xl font-semibold mb-2">Token Approval Required</h3>
             <p className="text-gray-400">
-              You need to approve the contract to spend your{' '}
-              {TOKEN_LIST.find((t) => t.address === lendToken)?.symbol}
+              Before you can create this lender offer, you need to approve the contract to transfer your{' '}
+              {TOKEN_LIST.find((t) => t.address === lendToken)?.symbol} tokens.
+            </p>
+          </div>
+          <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg text-left">
+            <p className="text-sm text-gray-300 mb-2">
+              <span className="text-yellow-400 font-medium">Why is this needed?</span>
+            </p>
+            <p className="text-xs text-gray-400">
+              ERC-20 tokens require a two-step process: first you approve the contract to access your tokens, then you can create the offer. When a borrower accepts your offer, the contract will transfer your tokens to fund the loan.
             </p>
           </div>
 

@@ -241,17 +241,16 @@ export function useAddStake() {
   return { addStake, hash, isPending, isConfirming, isSuccess, error };
 }
 
-// Withdraw stake
+// Withdraw stake (no amount param - withdraws full stake)
 export function useWithdrawStake() {
   const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
-  const withdrawStake = async (amount: bigint) => {
+  const withdrawStake = async () => {
     return await writeContractAsync({
       address: CONTRACT_ADDRESSES.supplierRegistry,
       abi: SupplierRegistryABI,
       functionName: 'withdrawStake',
-      args: [amount],
     });
   };
 

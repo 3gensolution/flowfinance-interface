@@ -35,6 +35,11 @@
         "name": "collateralAmount",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "borrowAmountCents",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [
@@ -404,6 +409,16 @@
         "internalType": "uint256"
       },
       {
+        "name": "remainingAmountCents",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "borrowedAmountCents",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
         "name": "currency",
         "type": "string",
         "internalType": "string"
@@ -440,6 +455,11 @@
       },
       {
         "name": "exchangeRateAtCreation",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "chainId",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -544,6 +564,11 @@
       },
       {
         "name": "exchangeRateAtCreation",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "chainId",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -664,6 +689,16 @@
             "internalType": "uint256"
           },
           {
+            "name": "remainingAmountCents",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "borrowedAmountCents",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
             "name": "currency",
             "type": "string",
             "internalType": "string"
@@ -700,6 +735,11 @@
           },
           {
             "name": "exchangeRateAtCreation",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "chainId",
             "type": "uint256",
             "internalType": "uint256"
           }
@@ -813,6 +853,11 @@
             "name": "exchangeRateAtCreation",
             "type": "uint256",
             "internalType": "uint256"
+          },
+          {
+            "name": "chainId",
+            "type": "uint256",
+            "internalType": "uint256"
           }
         ]
       }
@@ -900,6 +945,25 @@
   },
   {
     "type": "function",
+    "name": "isCrossChainLoan",
+    "inputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "lenderFiatOffers",
     "inputs": [
       {
@@ -937,6 +1001,63 @@
   },
   {
     "type": "function",
+    "name": "loanFromOffer",
+    "inputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "loanSourceChainId",
+    "inputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "loanSourceOfferId",
+    "inputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "nextFiatLenderOfferId",
     "inputs": [],
     "outputs": [
@@ -952,6 +1073,68 @@
     "type": "function",
     "name": "nextFiatLoanId",
     "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "offerLoans",
+    "inputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "offerTargetChainId",
+    "inputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "offerTargetLoanId",
+    "inputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
     "outputs": [
       {
         "name": "",
@@ -1028,6 +1211,19 @@
   },
   {
     "type": "function",
+    "name": "relayService",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "renounceOwnership",
     "inputs": [],
     "outputs": [],
@@ -1041,6 +1237,37 @@
         "name": "_nextId",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setRelayService",
+    "inputs": [
+      {
+        "name": "_relayService",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setSupportedChain",
+    "inputs": [
+      {
+        "name": "chainId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "supported",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "outputs": [],
@@ -1079,6 +1306,25 @@
         "name": "",
         "type": "address",
         "internalType": "contract SupplierRegistry"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "supportedChains",
+    "inputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "stateMutability": "view"
@@ -1234,6 +1480,56 @@
         "name": "offerId",
         "type": "uint256",
         "indexed": true,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "FiatLenderOfferFullyUtilized",
+    "inputs": [
+      {
+        "name": "offerId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "FiatLenderOfferPartiallyAccepted",
+    "inputs": [
+      {
+        "name": "offerId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "borrower",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "loanId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "borrowedAmountCents",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "remainingAmountCents",
+        "type": "uint256",
+        "indexed": false,
         "internalType": "uint256"
       }
     ],
@@ -1516,6 +1812,22 @@
   },
   {
     "type": "error",
+    "name": "CannotModifyOwnChain",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "CurrencyNotSupported",
+    "inputs": [
+      {
+        "name": "currency",
+        "type": "string",
+        "internalType": "string"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "ERC1967InvalidImplementation",
     "inputs": [
       {
@@ -1547,12 +1859,38 @@
   },
   {
     "type": "error",
+    "name": "InsufficientOfferBalance",
+    "inputs": [
+      {
+        "name": "requested",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "available",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "InvalidInitialization",
     "inputs": []
   },
   {
     "type": "error",
+    "name": "InvalidRelayService",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "NotInitializing",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "OfferFullyUtilized",
     "inputs": []
   },
   {

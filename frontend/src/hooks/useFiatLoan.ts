@@ -27,7 +27,7 @@ export enum FiatLenderOfferStatus {
   EXPIRED = 3,
 }
 
-// Fiat loan type
+// Fiat loan type - matches FiatLoanBridge.FiatLoan struct
 export interface FiatLoan {
   loanId: bigint;
   borrower: Address;
@@ -47,13 +47,16 @@ export interface FiatLoan {
   fundsWithdrawn: boolean;
   repaymentDepositId: `0x${string}`;
   exchangeRateAtCreation: bigint; // Exchange rate (units per 1 USD, scaled by 1e8) at loan creation
+  chainId: bigint;
 }
 
-// Fiat lender offer type
+// Fiat lender offer type - matches FiatLoanBridge.FiatLenderOffer struct
 export interface FiatLenderOffer {
   offerId: bigint;
   lender: Address;
   fiatAmountCents: bigint;
+  remainingAmountCents: bigint;
+  borrowedAmountCents: bigint;
   currency: string;
   minCollateralValueUSD: bigint;
   duration: bigint;
@@ -62,6 +65,7 @@ export interface FiatLenderOffer {
   expireAt: bigint;
   status: FiatLenderOfferStatus;
   exchangeRateAtCreation: bigint; // Exchange rate (units per 1 USD, scaled by 1e8) at offer creation
+  chainId: bigint;
 }
 
 // Get next fiat loan ID
@@ -148,6 +152,8 @@ export function useLenderFiatOffers(lender: Address | undefined) {
     args: lender ? [lender] : undefined,
     query: {
       enabled: !!lender,
+      refetchOnMount: 'always',
+      staleTime: 0,
     },
   });
 }
@@ -222,6 +228,11 @@ export function useBatchFiatLoans(loanIds: bigint[]) {
       const data = result.result;
       const isArray = Array.isArray(data);
 
+      // Map based on FiatLoanBridge.FiatLoan struct order:
+      // loanId, borrower, supplier, collateralAsset, collateralAmount, fiatAmountCents,
+      // currency, interestRate, duration, status, createdAt, activatedAt, dueDate,
+      // gracePeriodEnd, claimableAmountCents, fundsWithdrawn, repaymentDepositId,
+      // exchangeRateAtCreation, chainId
       let loanData;
       if (isArray) {
         const arr = data as readonly unknown[];
@@ -244,6 +255,7 @@ export function useBatchFiatLoans(loanIds: bigint[]) {
           fundsWithdrawn: arr[15],
           repaymentDepositId: arr[16],
           exchangeRateAtCreation: arr[17],
+          chainId: arr[18],
         };
       } else {
         loanData = data as Record<string, unknown>;
@@ -273,6 +285,7 @@ export function useBatchFiatLoans(loanIds: bigint[]) {
         fundsWithdrawn: loanData.fundsWithdrawn as boolean,
         repaymentDepositId: loanData.repaymentDepositId as `0x${string}`,
         exchangeRateAtCreation: (loanData.exchangeRateAtCreation as bigint) || BigInt(0),
+        chainId: (loanData.chainId as bigint) || BigInt(0),
       } as FiatLoan;
     })
     .filter((l): l is FiatLoan => l !== null);
@@ -299,6 +312,8 @@ export function useBatchFiatLenderOffers(offerIds: bigint[]) {
     })),
     query: {
       enabled: offerIds.length > 0,
+      refetchOnMount: 'always',
+      staleTime: 0,
     },
   });
 
@@ -309,6 +324,10 @@ export function useBatchFiatLenderOffers(offerIds: bigint[]) {
       const data = result.result;
       const isArray = Array.isArray(data);
 
+      // Map based on FiatLoanBridge.FiatLenderOffer struct order:
+      // offerId, lender, fiatAmountCents, remainingAmountCents, borrowedAmountCents,
+      // currency, minCollateralValueUSD, duration, interestRate, createdAt, expireAt,
+      // status, exchangeRateAtCreation, chainId
       let offerData;
       if (isArray) {
         const arr = data as readonly unknown[];
@@ -316,14 +335,17 @@ export function useBatchFiatLenderOffers(offerIds: bigint[]) {
           offerId: arr[0],
           lender: arr[1],
           fiatAmountCents: arr[2],
-          currency: arr[3],
-          minCollateralValueUSD: arr[4],
-          duration: arr[5],
-          interestRate: arr[6],
-          createdAt: arr[7],
-          expireAt: arr[8],
-          status: arr[9],
-          exchangeRateAtCreation: arr[10],
+          remainingAmountCents: arr[3],
+          borrowedAmountCents: arr[4],
+          currency: arr[5],
+          minCollateralValueUSD: arr[6],
+          duration: arr[7],
+          interestRate: arr[8],
+          createdAt: arr[9],
+          expireAt: arr[10],
+          status: arr[11],
+          exchangeRateAtCreation: arr[12],
+          chainId: arr[13],
         };
       } else {
         offerData = data as Record<string, unknown>;
@@ -338,6 +360,8 @@ export function useBatchFiatLenderOffers(offerIds: bigint[]) {
         offerId: offerIds[index],
         lender: offerData.lender as Address,
         fiatAmountCents: offerData.fiatAmountCents as bigint,
+        remainingAmountCents: (offerData.remainingAmountCents as bigint) || BigInt(0),
+        borrowedAmountCents: (offerData.borrowedAmountCents as bigint) || BigInt(0),
         currency: offerData.currency as string,
         minCollateralValueUSD: offerData.minCollateralValueUSD as bigint,
         duration: offerData.duration as bigint,
@@ -346,6 +370,7 @@ export function useBatchFiatLenderOffers(offerIds: bigint[]) {
         expireAt: offerData.expireAt as bigint,
         status: Number(offerData.status) as FiatLenderOfferStatus,
         exchangeRateAtCreation: (offerData.exchangeRateAtCreation as bigint) || BigInt(0),
+        chainId: (offerData.chainId as bigint) || BigInt(0),
       } as FiatLenderOffer;
     })
     .filter((o): o is FiatLenderOffer => o !== null);
