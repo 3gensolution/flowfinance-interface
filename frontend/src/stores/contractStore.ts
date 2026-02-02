@@ -1,6 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
+import { useShallow } from 'zustand/react/shallow';
 import { Address } from 'viem';
 import { LoanRequest, LenderOffer, Loan, LoanRequestStatus, LoanStatus } from '@/types';
 import { FiatLoan, FiatLenderOffer, FiatLoanStatus, FiatLenderOfferStatus } from '@/hooks/useFiatLoan';
@@ -310,76 +311,77 @@ export const useContractStore = create<ContractStore>((set, get) => ({
 }));
 
 // ==================== SELECTOR HOOKS ====================
+// All array selectors use useShallow to prevent infinite re-renders
 
 // Get all loan requests as array
 export const useLoanRequestsArray = () =>
-  useContractStore((state) => Object.values(state.loanRequests));
+  useContractStore(useShallow((state) => Object.values(state.loanRequests)));
 
 // Get pending loan requests
 export const usePendingLoanRequests = () =>
-  useContractStore((state) =>
+  useContractStore(useShallow((state) =>
     Object.values(state.loanRequests).filter((r) => r.status === LoanRequestStatus.PENDING)
-  );
+  ));
 
 // Get loan requests by borrower
 export const useLoanRequestsByBorrower = (borrower: Address | undefined) =>
-  useContractStore((state) =>
+  useContractStore(useShallow((state) =>
     borrower
       ? Object.values(state.loanRequests).filter(
           (r) => r.borrower.toLowerCase() === borrower.toLowerCase()
         )
       : []
-  );
+  ));
 
 // Get all lender offers as array
 export const useLenderOffersArray = () =>
-  useContractStore((state) => Object.values(state.lenderOffers));
+  useContractStore(useShallow((state) => Object.values(state.lenderOffers)));
 
 // Get active lender offers
 export const useActiveLenderOffers = () =>
-  useContractStore((state) =>
+  useContractStore(useShallow((state) =>
     Object.values(state.lenderOffers).filter((o) => o.status === LoanRequestStatus.PENDING)
-  );
+  ));
 
 // Get lender offers by lender
 export const useLenderOffersByLender = (lender: Address | undefined) =>
-  useContractStore((state) =>
+  useContractStore(useShallow((state) =>
     lender
       ? Object.values(state.lenderOffers).filter(
           (o) => o.lender.toLowerCase() === lender.toLowerCase()
         )
       : []
-  );
+  ));
 
 // Get all loans as array
 export const useLoansArray = () =>
-  useContractStore((state) => Object.values(state.loans));
+  useContractStore(useShallow((state) => Object.values(state.loans)));
 
 // Get active loans
 export const useActiveLoans = () =>
-  useContractStore((state) =>
+  useContractStore(useShallow((state) =>
     Object.values(state.loans).filter((l) => l.status === LoanStatus.ACTIVE)
-  );
+  ));
 
 // Get loans by borrower
 export const useLoansByBorrower = (borrower: Address | undefined) =>
-  useContractStore((state) =>
+  useContractStore(useShallow((state) =>
     borrower
       ? Object.values(state.loans).filter(
           (l) => l.borrower.toLowerCase() === borrower.toLowerCase()
         )
       : []
-  );
+  ));
 
 // Get loans by lender
 export const useLoansByLender = (lender: Address | undefined) =>
-  useContractStore((state) =>
+  useContractStore(useShallow((state) =>
     lender
       ? Object.values(state.loans).filter(
           (l) => l.lender.toLowerCase() === lender.toLowerCase()
         )
       : []
-  );
+  ));
 
 // Get single loan request by ID
 export const useLoanRequestById = (id: bigint | undefined) =>
@@ -397,39 +399,39 @@ export const useLoanById = (id: bigint | undefined) =>
 
 // Get all fiat loans as array
 export const useFiatLoansArray = () =>
-  useContractStore((state) => Object.values(state.fiatLoans));
+  useContractStore(useShallow((state) => Object.values(state.fiatLoans)));
 
 // Get pending fiat loans
 export const usePendingFiatLoansFromStore = () =>
-  useContractStore((state) =>
+  useContractStore(useShallow((state) =>
     Object.values(state.fiatLoans).filter((l) => l.status === FiatLoanStatus.PENDING_SUPPLIER)
-  );
+  ));
 
 // Get active fiat loans
 export const useActiveFiatLoansFromStore = () =>
-  useContractStore((state) =>
+  useContractStore(useShallow((state) =>
     Object.values(state.fiatLoans).filter((l) => l.status === FiatLoanStatus.ACTIVE)
-  );
+  ));
 
 // Get fiat loans by borrower
 export const useFiatLoansByBorrower = (borrower: Address | undefined) =>
-  useContractStore((state) =>
+  useContractStore(useShallow((state) =>
     borrower
       ? Object.values(state.fiatLoans).filter(
           (l) => l.borrower.toLowerCase() === borrower.toLowerCase()
         )
       : []
-  );
+  ));
 
 // Get fiat loans by supplier
 export const useFiatLoansBySupplier = (supplier: Address | undefined) =>
-  useContractStore((state) =>
+  useContractStore(useShallow((state) =>
     supplier
       ? Object.values(state.fiatLoans).filter(
           (l) => l.supplier.toLowerCase() === supplier.toLowerCase()
         )
       : []
-  );
+  ));
 
 // Get single fiat loan by ID
 export const useFiatLoanById = (id: bigint | undefined) =>
@@ -437,23 +439,23 @@ export const useFiatLoanById = (id: bigint | undefined) =>
 
 // Get all fiat lender offers as array
 export const useFiatLenderOffersArray = () =>
-  useContractStore((state) => Object.values(state.fiatLenderOffers));
+  useContractStore(useShallow((state) => Object.values(state.fiatLenderOffers)));
 
 // Get active fiat lender offers
 export const useActiveFiatLenderOffersFromStore = () =>
-  useContractStore((state) =>
+  useContractStore(useShallow((state) =>
     Object.values(state.fiatLenderOffers).filter((o) => o.status === FiatLenderOfferStatus.ACTIVE)
-  );
+  ));
 
 // Get fiat lender offers by lender
 export const useFiatLenderOffersByLender = (lender: Address | undefined) =>
-  useContractStore((state) =>
+  useContractStore(useShallow((state) =>
     lender
       ? Object.values(state.fiatLenderOffers).filter(
           (o) => o.lender.toLowerCase() === lender.toLowerCase()
         )
       : []
-  );
+  ));
 
 // Get single fiat lender offer by ID
 export const useFiatLenderOfferById = (id: bigint | undefined) =>

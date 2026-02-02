@@ -1,7 +1,7 @@
 'use client';
 
 import { useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt, useAccount, usePublicClient } from 'wagmi';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { Address, Abi } from 'viem';
 import { CONTRACT_ADDRESSES } from '@/config/contracts';
 import FiatLoanBridgeABIJson from '@/contracts/FiatLoanBridgeABI.json';
@@ -221,74 +221,76 @@ export function useBatchFiatLoans(loanIds: bigint[]) {
     },
   });
 
-  const loans = (loansData || [])
-    .map((result, index) => {
-      if (result.status !== 'success' || !result.result) return null;
+  const loans = useMemo(() => {
+    return (loansData || [])
+      .map((result, index) => {
+        if (result.status !== 'success' || !result.result) return null;
 
-      const data = result.result;
-      const isArray = Array.isArray(data);
+        const data = result.result;
+        const isArray = Array.isArray(data);
 
-      // Map based on FiatLoanBridge.FiatLoan struct order:
-      // loanId, borrower, supplier, collateralAsset, collateralAmount, fiatAmountCents,
-      // currency, interestRate, duration, status, createdAt, activatedAt, dueDate,
-      // gracePeriodEnd, claimableAmountCents, fundsWithdrawn, repaymentDepositId,
-      // exchangeRateAtCreation, chainId
-      let loanData;
-      if (isArray) {
-        const arr = data as readonly unknown[];
-        loanData = {
-          loanId: arr[0],
-          borrower: arr[1],
-          supplier: arr[2],
-          collateralAsset: arr[3],
-          collateralAmount: arr[4],
-          fiatAmountCents: arr[5],
-          currency: arr[6],
-          interestRate: arr[7],
-          duration: arr[8],
-          status: arr[9],
-          createdAt: arr[10],
-          activatedAt: arr[11],
-          dueDate: arr[12],
-          gracePeriodEnd: arr[13],
-          claimableAmountCents: arr[14],
-          fundsWithdrawn: arr[15],
-          repaymentDepositId: arr[16],
-          exchangeRateAtCreation: arr[17],
-          chainId: arr[18],
-        };
-      } else {
-        loanData = data as Record<string, unknown>;
-      }
+        // Map based on FiatLoanBridge.FiatLoan struct order:
+        // loanId, borrower, supplier, collateralAsset, collateralAmount, fiatAmountCents,
+        // currency, interestRate, duration, status, createdAt, activatedAt, dueDate,
+        // gracePeriodEnd, claimableAmountCents, fundsWithdrawn, repaymentDepositId,
+        // exchangeRateAtCreation, chainId
+        let loanData;
+        if (isArray) {
+          const arr = data as readonly unknown[];
+          loanData = {
+            loanId: arr[0],
+            borrower: arr[1],
+            supplier: arr[2],
+            collateralAsset: arr[3],
+            collateralAmount: arr[4],
+            fiatAmountCents: arr[5],
+            currency: arr[6],
+            interestRate: arr[7],
+            duration: arr[8],
+            status: arr[9],
+            createdAt: arr[10],
+            activatedAt: arr[11],
+            dueDate: arr[12],
+            gracePeriodEnd: arr[13],
+            claimableAmountCents: arr[14],
+            fundsWithdrawn: arr[15],
+            repaymentDepositId: arr[16],
+            exchangeRateAtCreation: arr[17],
+            chainId: arr[18],
+          };
+        } else {
+          loanData = data as Record<string, unknown>;
+        }
 
-      // Filter out empty loans
-      if (!loanData.borrower || loanData.borrower === '0x0000000000000000000000000000000000000000') {
-        return null;
-      }
+        // Filter out empty loans
+        if (!loanData.borrower || loanData.borrower === '0x0000000000000000000000000000000000000000') {
+          return null;
+        }
 
-      return {
-        loanId: loanIds[index],
-        borrower: loanData.borrower as Address,
-        supplier: loanData.supplier as Address,
-        collateralAsset: loanData.collateralAsset as Address,
-        collateralAmount: loanData.collateralAmount as bigint,
-        fiatAmountCents: loanData.fiatAmountCents as bigint,
-        currency: loanData.currency as string,
-        interestRate: loanData.interestRate as bigint,
-        duration: loanData.duration as bigint,
-        status: Number(loanData.status) as FiatLoanStatus,
-        createdAt: loanData.createdAt as bigint,
-        activatedAt: loanData.activatedAt as bigint,
-        dueDate: loanData.dueDate as bigint,
-        gracePeriodEnd: loanData.gracePeriodEnd as bigint,
-        claimableAmountCents: loanData.claimableAmountCents as bigint,
-        fundsWithdrawn: loanData.fundsWithdrawn as boolean,
-        repaymentDepositId: loanData.repaymentDepositId as `0x${string}`,
-        exchangeRateAtCreation: (loanData.exchangeRateAtCreation as bigint) || BigInt(0),
-        chainId: (loanData.chainId as bigint) || BigInt(0),
-      } as FiatLoan;
-    })
-    .filter((l): l is FiatLoan => l !== null);
+        return {
+          loanId: loanIds[index],
+          borrower: loanData.borrower as Address,
+          supplier: loanData.supplier as Address,
+          collateralAsset: loanData.collateralAsset as Address,
+          collateralAmount: loanData.collateralAmount as bigint,
+          fiatAmountCents: loanData.fiatAmountCents as bigint,
+          currency: loanData.currency as string,
+          interestRate: loanData.interestRate as bigint,
+          duration: loanData.duration as bigint,
+          status: Number(loanData.status) as FiatLoanStatus,
+          createdAt: loanData.createdAt as bigint,
+          activatedAt: loanData.activatedAt as bigint,
+          dueDate: loanData.dueDate as bigint,
+          gracePeriodEnd: loanData.gracePeriodEnd as bigint,
+          claimableAmountCents: loanData.claimableAmountCents as bigint,
+          fundsWithdrawn: loanData.fundsWithdrawn as boolean,
+          repaymentDepositId: loanData.repaymentDepositId as `0x${string}`,
+          exchangeRateAtCreation: (loanData.exchangeRateAtCreation as bigint) || BigInt(0),
+          chainId: (loanData.chainId as bigint) || BigInt(0),
+        } as FiatLoan;
+      })
+      .filter((l): l is FiatLoan => l !== null);
+  }, [loansData, loanIds]);
 
   // Update store when data loads
   useEffect(() => {
@@ -317,63 +319,65 @@ export function useBatchFiatLenderOffers(offerIds: bigint[]) {
     },
   });
 
-  const offers = (offersData || [])
-    .map((result, index) => {
-      if (result.status !== 'success' || !result.result) return null;
+  const offers = useMemo(() => {
+    return (offersData || [])
+      .map((result, index) => {
+        if (result.status !== 'success' || !result.result) return null;
 
-      const data = result.result;
-      const isArray = Array.isArray(data);
+        const data = result.result;
+        const isArray = Array.isArray(data);
 
-      // Map based on FiatLoanBridge.FiatLenderOffer struct order:
-      // offerId, lender, fiatAmountCents, remainingAmountCents, borrowedAmountCents,
-      // currency, minCollateralValueUSD, duration, interestRate, createdAt, expireAt,
-      // status, exchangeRateAtCreation, chainId
-      let offerData;
-      if (isArray) {
-        const arr = data as readonly unknown[];
-        offerData = {
-          offerId: arr[0],
-          lender: arr[1],
-          fiatAmountCents: arr[2],
-          remainingAmountCents: arr[3],
-          borrowedAmountCents: arr[4],
-          currency: arr[5],
-          minCollateralValueUSD: arr[6],
-          duration: arr[7],
-          interestRate: arr[8],
-          createdAt: arr[9],
-          expireAt: arr[10],
-          status: arr[11],
-          exchangeRateAtCreation: arr[12],
-          chainId: arr[13],
-        };
-      } else {
-        offerData = data as Record<string, unknown>;
-      }
+        // Map based on FiatLoanBridge.FiatLenderOffer struct order:
+        // offerId, lender, fiatAmountCents, remainingAmountCents, borrowedAmountCents,
+        // currency, minCollateralValueUSD, duration, interestRate, createdAt, expireAt,
+        // status, exchangeRateAtCreation, chainId
+        let offerData;
+        if (isArray) {
+          const arr = data as readonly unknown[];
+          offerData = {
+            offerId: arr[0],
+            lender: arr[1],
+            fiatAmountCents: arr[2],
+            remainingAmountCents: arr[3],
+            borrowedAmountCents: arr[4],
+            currency: arr[5],
+            minCollateralValueUSD: arr[6],
+            duration: arr[7],
+            interestRate: arr[8],
+            createdAt: arr[9],
+            expireAt: arr[10],
+            status: arr[11],
+            exchangeRateAtCreation: arr[12],
+            chainId: arr[13],
+          };
+        } else {
+          offerData = data as Record<string, unknown>;
+        }
 
-      // Filter out empty offers
-      if (!offerData.lender || offerData.lender === '0x0000000000000000000000000000000000000000') {
-        return null;
-      }
+        // Filter out empty offers
+        if (!offerData.lender || offerData.lender === '0x0000000000000000000000000000000000000000') {
+          return null;
+        }
 
-      return {
-        offerId: offerIds[index],
-        lender: offerData.lender as Address,
-        fiatAmountCents: offerData.fiatAmountCents as bigint,
-        remainingAmountCents: (offerData.remainingAmountCents as bigint) || BigInt(0),
-        borrowedAmountCents: (offerData.borrowedAmountCents as bigint) || BigInt(0),
-        currency: offerData.currency as string,
-        minCollateralValueUSD: offerData.minCollateralValueUSD as bigint,
-        duration: offerData.duration as bigint,
-        interestRate: offerData.interestRate as bigint,
-        createdAt: offerData.createdAt as bigint,
-        expireAt: offerData.expireAt as bigint,
-        status: Number(offerData.status) as FiatLenderOfferStatus,
-        exchangeRateAtCreation: (offerData.exchangeRateAtCreation as bigint) || BigInt(0),
-        chainId: (offerData.chainId as bigint) || BigInt(0),
-      } as FiatLenderOffer;
-    })
-    .filter((o): o is FiatLenderOffer => o !== null);
+        return {
+          offerId: offerIds[index],
+          lender: offerData.lender as Address,
+          fiatAmountCents: offerData.fiatAmountCents as bigint,
+          remainingAmountCents: (offerData.remainingAmountCents as bigint) || BigInt(0),
+          borrowedAmountCents: (offerData.borrowedAmountCents as bigint) || BigInt(0),
+          currency: offerData.currency as string,
+          minCollateralValueUSD: offerData.minCollateralValueUSD as bigint,
+          duration: offerData.duration as bigint,
+          interestRate: offerData.interestRate as bigint,
+          createdAt: offerData.createdAt as bigint,
+          expireAt: offerData.expireAt as bigint,
+          status: Number(offerData.status) as FiatLenderOfferStatus,
+          exchangeRateAtCreation: (offerData.exchangeRateAtCreation as bigint) || BigInt(0),
+          chainId: (offerData.chainId as bigint) || BigInt(0),
+        } as FiatLenderOffer;
+      })
+      .filter((o): o is FiatLenderOffer => o !== null);
+  }, [offersData, offerIds]);
 
   // Update store when data loads
   useEffect(() => {
