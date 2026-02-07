@@ -4,12 +4,8 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { CreateLoanRequestForm } from '@/components/loan/CreateLoanRequestForm';
 import { CreateFiatLoanRequestForm } from '@/components/loan/CreateFiatLoanRequestForm';
-import { FiatLenderOfferCard } from '@/components/loan/LoanCard';
-import { AcceptFiatLenderOfferModal } from '@/components/loan/AcceptFiatLenderOfferModal';
 import { Card } from '@/components/ui/Card';
-import { useActiveFiatLenderOffersWithDetails, FiatLenderOffer } from '@/hooks/useFiatLoan';
-import { ArrowDownUp, FileText, TrendingUp, Shield, Coins, Banknote, DollarSign, Building2, Loader2 } from 'lucide-react';
-import Link from 'next/link';
+import { ArrowDownUp, FileText, TrendingUp, Shield, Coins, Banknote, DollarSign, Building2 } from 'lucide-react';
 
 type LoanType = 'crypto' | 'fiat';
 
@@ -84,11 +80,6 @@ const fiatSteps = [
 
 export default function BorrowPage() {
   const [loanType, setLoanType] = useState<LoanType>('crypto');
-  const [selectedFiatOffer, setSelectedFiatOffer] = useState<FiatLenderOffer | null>(null);
-  const [isAcceptModalOpen, setIsAcceptModalOpen] = useState(false);
-
-  // Fetch fiat lender offers
-  const { data: fiatLenderOffers, isLoading: isLoadingOffers, refetch: refetchOffers } = useActiveFiatLenderOffersWithDetails();
 
   const benefits = loanType === 'crypto' ? cryptoBenefits : fiatBenefits;
   const steps = loanType === 'crypto' ? cryptoSteps : fiatSteps;
@@ -235,62 +226,6 @@ export default function BorrowPage() {
           </div>
         </div>
 
-        {/* Available Fiat Lender Offers */}
-        {loanType === 'fiat' && fiatLenderOffers && fiatLenderOffers.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.5 }}
-            className="mt-12"
-          >
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="text-2xl font-bold mb-2">
-                  Available <span className="text-green-400">Fiat Offers</span>
-                </h2>
-                <p className="text-gray-400">
-                  Accept an offer instantly instead of waiting for your request to be funded
-                </p>
-              </div>
-              <Link href="/marketplace?tab=offers" className="text-sm text-green-400 hover:text-green-300">
-                View All Offers →
-              </Link>
-            </div>
-
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {isLoadingOffers ? (
-                <div className="col-span-full flex justify-center py-12">
-                  <Loader2 className="w-8 h-8 animate-spin text-green-400" />
-                </div>
-              ) : (
-                fiatLenderOffers.slice(0, 6).map((offer) => (
-                  <FiatLenderOfferCard
-                    key={offer.offerId.toString()}
-                    offer={offer}
-                    isOwner={false}
-                    onAccept={() => {
-                      setSelectedFiatOffer(offer);
-                      setIsAcceptModalOpen(true);
-                    }}
-                  />
-                ))
-              )}
-            </div>
-          </motion.div>
-        )}
-
-        {/* Accept Fiat Lender Offer Modal */}
-        <AcceptFiatLenderOfferModal
-          offer={selectedFiatOffer}
-          isOpen={isAcceptModalOpen}
-          onClose={() => {
-            setIsAcceptModalOpen(false);
-            setSelectedFiatOffer(null);
-          }}
-          onSuccess={() => {
-            refetchOffers();
-          }}
-        />
       </div>
     </div>
   );

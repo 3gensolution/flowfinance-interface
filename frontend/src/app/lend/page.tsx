@@ -139,7 +139,7 @@ export default function LendPage() {
               transition={{ delay: 0.2 }}
             >
               <Card className={offerType === 'fiat' ? 'border-green-500/20' : ''}>
-                <h3 className="text-lg font-semibold mb-4">Why Lend with FlowFinance?</h3>
+                <h3 className="text-lg font-semibold mb-4">Why Lend in AwinFi?</h3>
                 <div className="space-y-4">
                   {(offerType === 'crypto' ? cryptoBenefits : fiatBenefits).map((benefit) => (
                     <div key={benefit.title} className="flex items-start gap-3">
@@ -254,6 +254,7 @@ export default function LendPage() {
             </motion.div>
           </div>
         </div>
+
       </div>
     </div>
   );

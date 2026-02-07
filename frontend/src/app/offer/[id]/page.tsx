@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAccount } from 'wagmi';
 import { motion } from 'framer-motion';
-import { formatUnits } from 'viem';
+import { formatUnits, parseUnits } from 'viem';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge, RequestStatusBadge } from '@/components/ui/Badge';
@@ -18,6 +18,7 @@ import {
   useTokenBalance,
   useTokenAllowance,
   useLTV,
+  useRefreshMockPrice,
 } from '@/hooks/useContracts';
 import { LoanRequestStatus } from '@/types';
 import {
@@ -45,6 +46,7 @@ import {
   Wallet,
   Info,
   AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
@@ -68,6 +70,9 @@ export default function OfferDetailPage() {
 
   // State for flexible collateral (when offer accepts any collateral)
   const [selectedCollateralToken, setSelectedCollateralToken] = useState<Address | ''>('');
+
+  // State for partial borrowing - how much user wants to borrow (up to remaining amount)
+  const [borrowAmountInput, setBorrowAmountInput] = useState<string>('');
 
   // Fetch lender offer data
   const { data: offerData, isLoading: offerLoading, refetch } = useLenderOffer(offerId);
@@ -97,9 +102,27 @@ export default function OfferDetailPage() {
   // Check if this is a flexible collateral offer (zero address means borrower chooses)
   const isFlexibleCollateral = offer?.requiredCollateralAsset === '0x0000000000000000000000000000000000000000';
 
+  // Get the remaining amount available to borrow
+  const remainingAmount = offer?.remainingAmount || BigInt(0);
+
   // Token info
   const lendSymbol = offer ? getTokenSymbol(offer.lendAsset) : '';
   const lendDecimals = offer ? Number(getTokenDecimals(offer.lendAsset)) : 18;
+
+  // Parse borrow amount input (after lendDecimals is defined)
+  const parsedBorrowAmount = borrowAmountInput
+    ? parseUnits(borrowAmountInput, lendDecimals)
+    : remainingAmount; // Default to full remaining amount
+
+  // Initialize borrow amount when offer loads
+  useEffect(() => {
+    if (offer && remainingAmount > BigInt(0) && !borrowAmountInput) {
+      setBorrowAmountInput(formatUnits(remainingAmount, lendDecimals));
+    }
+  }, [offer, remainingAmount, lendDecimals, borrowAmountInput]);
+
+  // Validate borrow amount
+  const isBorrowAmountValid = parsedBorrowAmount > BigInt(0) && parsedBorrowAmount <= remainingAmount;
 
   // For flexible collateral, use selected token; otherwise use the required token
   const activeCollateralToken = isFlexibleCollateral
@@ -129,9 +152,33 @@ export default function OfferDetailPage() {
   const lendPrice = lendPriceHook.price;
   const collateralPrice = collateralPriceHook.price;
 
+  // Price refresh hook
+  const { refreshPrice, isPending: isRefreshingPrice } = useRefreshMockPrice();
+
   // Check price staleness (skip collateral price check if no token selected for flexible)
   const isPriceStale = lendPriceHook.isStale || (!isFlexibleCollateral && collateralPriceHook.isStale) ||
     (isFlexibleCollateral && selectedCollateralToken && collateralPriceHook.isStale);
+
+  // Handle price refresh
+  const handleRefreshPrices = async () => {
+    try {
+      // Refresh lend asset price if stale
+      if (lendPriceHook.isStale && lendPriceHook.priceFeedAddress && lendPrice) {
+        await refreshPrice(lendPriceHook.priceFeedAddress as Address, BigInt(lendPrice), offer?.lendAsset);
+      }
+      // Refresh collateral price if stale
+      if (collateralPriceHook.isStale && collateralPriceHook.priceFeedAddress && collateralPrice && activeCollateralToken) {
+        await refreshPrice(collateralPriceHook.priceFeedAddress as Address, BigInt(collateralPrice), activeCollateralToken);
+      }
+      toast.success('Price feeds refreshed!');
+      // Refetch price data
+      lendPriceHook.refetch();
+      collateralPriceHook.refetch();
+    } catch (error) {
+      console.error('Failed to refresh prices:', error);
+      toast.error('Failed to refresh price feeds');
+    }
+  };
 
   // Calculate USD values
   const lendUSD = offer && lendPrice
@@ -142,40 +189,44 @@ export default function OfferDetailPage() {
   const durationDays = offer ? Math.ceil(Number(offer.duration) / (24 * 60 * 60)) : 0;
   const { data: ltvBps } = useLTV(activeCollateralToken, durationDays);
 
-  // LTV from contract is in basis points (10000 = 100%)
+  // LTV from contract is in basis points (10000 = 100%) - fixed by contract, borrower cannot change
   const currentLTV = ltvBps ? Number(ltvBps) / 100 : 0;
 
-  // Calculate required collateral from LTV and prices
-  // Formula: requiredCollateral = (borrowAmount * borrowPrice / collateralPrice) / (LTV / 10000)
-  // Add 5% safety margin to ensure transaction succeeds
+  // Calculate required collateral from contract LTV and prices based on borrow amount
+  // Formula: requiredCollateral = (borrowAmount * borrowPrice / collateralPrice) / (LTV / 100)
   const calculatedCollateralAmount = (() => {
     const ltvValue = ltvBps ? Number(ltvBps) : 0;
-    if (!offer || !lendPrice || !collateralPrice || ltvValue === 0) {
+    if (!offer || !lendPrice || !collateralPrice || ltvValue === 0 || parsedBorrowAmount === BigInt(0)) {
       return BigInt(0);
     }
-    // borrowAmountUSD = lendAmount * lendPrice / 10^lendDecimals (price has 8 decimals, keep it)
-    // requiredCollateralUSD = borrowAmountUSD * 10000 / ltvBps
-    // requiredCollateral = requiredCollateralUSD * 10^collateralDecimals / collateralPrice
-    const lendAmountBN = BigInt(offer.lendAmount);
+    // Use parsedBorrowAmount instead of offer.lendAmount for partial borrowing
+    const borrowAmountBN = parsedBorrowAmount;
     const lendPriceBN = BigInt(lendPrice);
     const collateralPriceBN = BigInt(collateralPrice);
     const ltvBpsBN = BigInt(ltvValue);
 
-    // Calculate: (lendAmount * lendPrice * 10000 * 10^collateralDecimals) / (ltvBps * collateralPrice * 10^lendDecimals)
-    const numerator = lendAmountBN * lendPriceBN * BigInt(10000) * BigInt(10 ** collateralDecimals);
+    // Calculate: (borrowAmount * lendPrice * 10000 * 10^collateralDecimals) / (ltvBps * collateralPrice * 10^lendDecimals)
+    const numerator = borrowAmountBN * lendPriceBN * BigInt(10000) * BigInt(10 ** collateralDecimals);
     const denominator = ltvBpsBN * collateralPriceBN * BigInt(10 ** lendDecimals);
 
     if (denominator === BigInt(0)) return BigInt(0);
 
-    // Add 5% safety margin
-    const baseAmount = numerator / denominator;
-    return (baseAmount * BigInt(105)) / BigInt(100);
+    return numerator / denominator;
   })();
 
-  // For flexible collateral, use calculated amount; otherwise use minimum from offer
-  const collateralAmountBigInt = isFlexibleCollateral
-    ? calculatedCollateralAmount
-    : (offer?.minCollateralAmount || BigInt(0));
+  // For flexible collateral, use calculated amount
+  // For fixed collateral, calculate proportional to borrow amount: (minCollateral * borrowAmount) / lendAmount
+  const collateralAmountBigInt = (() => {
+    if (isFlexibleCollateral) {
+      return calculatedCollateralAmount;
+    }
+    if (!offer || offer.lendAmount === BigInt(0)) {
+      return offer?.minCollateralAmount || BigInt(0);
+    }
+    // Proportional collateral for partial borrowing
+    const proportionalCollateral = (offer.minCollateralAmount * parsedBorrowAmount) / offer.lendAmount;
+    return proportionalCollateral;
+  })();
 
   const minCollateralUSD = collateralPrice && collateralAmountBigInt
     ? (Number(collateralAmountBigInt) / Math.pow(10, Number(collateralDecimals))) * Number(collateralPrice) / 1e8
@@ -240,17 +291,59 @@ export default function OfferDetailPage() {
     }
   }, [acceptSuccess, router, refetch]);
 
+  // Handler to open accept modal with validation
+  const openAcceptModal = () => {
+    if (!offer) {
+      toast.error('Offer data not available. Please refresh the page.');
+      return;
+    }
+    if (offerId === undefined) {
+      toast.error('Invalid offer ID.');
+      return;
+    }
+    console.log('Opening accept modal with data:', {
+      offerId: offerId.toString(),
+      lender: offer.lender,
+      lendAmount: offer.lendAmount.toString(),
+      lendAsset: offer.lendAsset,
+      isFlexibleCollateral,
+    });
+    setShowAcceptModal(true);
+  };
+
   // Reset step when opening modal
   useEffect(() => {
     if (showAcceptModal) {
+      console.log('Accept modal opened - checking approval status:', {
+        hasApproval,
+        borrowerCollateralAllowance: borrowerCollateralAllowance ? borrowerCollateralAllowance.toString() : 'undefined',
+        collateralAmountBigInt: collateralAmountBigInt.toString(),
+        borrowerCollateralBalance: borrowerCollateralBalance ? borrowerCollateralBalance.toString() : 'undefined',
+        hasZeroBalance,
+        hasInsufficientBalance,
+        isPriceStale,
+        acceptStep: hasApproval ? 'accept' : 'approve',
+      });
       setAcceptStep(hasApproval ? 'accept' : 'approve');
       setSimulationError('');
     }
-  }, [showAcceptModal, hasApproval]);
+  }, [showAcceptModal, hasApproval, borrowerCollateralAllowance, collateralAmountBigInt, borrowerCollateralBalance, hasZeroBalance, hasInsufficientBalance, isPriceStale]);
 
   const handleApprove = async () => {
-    if (!offer) return;
-    if (isFlexibleCollateral && !selectedCollateralToken) return;
+    console.log('handleApprove called', { offer, address, selectedCollateralToken });
+
+    if (!offer) {
+      toast.error('Offer data not available');
+      return;
+    }
+    if (!address) {
+      toast.error('Please connect your wallet first');
+      return;
+    }
+    if (isFlexibleCollateral && !selectedCollateralToken) {
+      toast.error('Please select a collateral token');
+      return;
+    }
     if (collateralAmountBigInt === BigInt(0)) {
       toast.error('Unable to calculate required collateral. Please ensure prices are loaded.');
       return;
@@ -262,7 +355,13 @@ export default function OfferDetailPage() {
       : offer.requiredCollateralAsset;
 
     try {
-      // Simulate approval first
+      console.log('Simulating approve...', {
+        token: tokenToApprove,
+        spender: CONTRACT_ADDRESSES.loanMarketPlace,
+        amount: collateralAmountBigInt.toString()
+      });
+
+      // Simulate approval first with explicit account
       const simulation = await simulateContractWrite({
         address: tokenToApprove,
         abi: [
@@ -279,7 +378,10 @@ export default function OfferDetailPage() {
         ],
         functionName: 'approve',
         args: [CONTRACT_ADDRESSES.loanMarketPlace, collateralAmountBigInt],
+        account: address,
       });
+
+      console.log('Approval simulation result:', simulation);
 
       if (!simulation.success) {
         setSimulationError(simulation.errorMessage || 'Simulation failed');
@@ -287,9 +389,12 @@ export default function OfferDetailPage() {
         return;
       }
 
+      console.log('Calling approveAsync...');
       await approveAsync(tokenToApprove, CONTRACT_ADDRESSES.loanMarketPlace, collateralAmountBigInt);
+      console.log('approveAsync completed');
       // Transaction submitted - useEffect will handle success
     } catch (error: unknown) {
+      console.error('handleApprove error:', error);
       const errorMsg = formatSimulationError(error);
       setSimulationError(errorMsg);
       toast.error(errorMsg);
@@ -297,8 +402,22 @@ export default function OfferDetailPage() {
   };
 
   const handleAccept = async () => {
-    if (!offer || !offerId) return;
-    if (isFlexibleCollateral && !selectedCollateralToken) return;
+    console.log('handleAccept called', { offer, offerId: offerId?.toString(), address });
+
+    if (!offer || offerId === undefined) {
+      console.error('handleAccept: Missing offer or offerId', { offer, offerId: offerId?.toString() });
+      toast.error('Unable to accept: Missing offer data');
+      return;
+    }
+    if (!address) {
+      console.error('handleAccept: No wallet connected');
+      toast.error('Please connect your wallet first');
+      return;
+    }
+    if (isFlexibleCollateral && !selectedCollateralToken) {
+      toast.error('Please select a collateral token');
+      return;
+    }
     if (collateralAmountBigInt === BigInt(0)) {
       toast.error('Unable to calculate required collateral. Please ensure prices are loaded.');
       return;
@@ -322,27 +441,37 @@ export default function OfferDetailPage() {
       offerMinCollateralFormatted: formatUnits(offer.minCollateralAmount, collateralDecimals),
       allowance: borrowerCollateralAllowance?.toString(),
       balance: borrowerCollateralBalance?.toString(),
+      borrowAmount: parsedBorrowAmount.toString(),
     });
 
     try {
-      // Simulate first
+      console.log('Simulating acceptLenderOffer...');
+      // Simulate first with explicit account
       const simulation = await simulateContractWrite({
         address: CONTRACT_ADDRESSES.loanMarketPlace,
         abi: LoanMarketPlaceABI,
         functionName: 'acceptLenderOffer',
-        args: [offerId, collateralAssetToUse, collateralAmountBigInt],
+        args: [offerId, collateralAssetToUse, collateralAmountBigInt, parsedBorrowAmount],
+        account: address,
       });
 
+      console.log('Simulation result:', simulation);
+
       if (!simulation.success) {
-        setSimulationError(simulation.errorMessage || 'Transaction would fail');
-        toast.error(simulation.errorMessage || 'Transaction would fail');
+        const errorMsg = simulation.errorMessage || 'Transaction would fail';
+        console.error('Simulation failed:', errorMsg);
+        setSimulationError(errorMsg);
+        toast.error(errorMsg);
         setIsAccepting(false);
         return;
       }
 
-      await acceptOfferAsync(offerId, collateralAssetToUse, collateralAmountBigInt);
+      console.log('Calling acceptOfferAsync...');
+      await acceptOfferAsync(offerId, collateralAssetToUse, collateralAmountBigInt, parsedBorrowAmount);
+      console.log('acceptOfferAsync completed');
       // Transaction submitted - useEffect will handle success
     } catch (error: unknown) {
+      console.error('handleAccept error:', error);
       const errorMsg = formatSimulationError(error);
       setSimulationError(errorMsg);
       toast.error(errorMsg);
@@ -355,9 +484,10 @@ export default function OfferDetailPage() {
     toast.success('Address copied!');
   };
 
-  // Check if accept button should be disabled
-  const isAcceptDisabled =
+  // Check if the main "Accept This Offer" button (that opens modal) should be disabled
+  const isOpenModalDisabled =
     !offer ||
+    !isBorrowAmountValid ||
     (isFlexibleCollateral && !hasValidFlexibleInput) ||
     (isFlexibleCollateral && !selectedCollateralToken) ||
     (!isFlexibleCollateral && hasZeroBalance) ||
@@ -370,6 +500,33 @@ export default function OfferDetailPage() {
     approveIsPending ||
     isApprovalConfirming;
 
+  // Check if approve button in modal should be disabled
+  const isApproveDisabled =
+    !offer ||
+    !isBorrowAmountValid ||
+    (isFlexibleCollateral && !hasValidFlexibleInput) ||
+    (isFlexibleCollateral && !selectedCollateralToken) ||
+    (!isFlexibleCollateral && hasZeroBalance) ||
+    (isFlexibleCollateral && selectedCollateralToken && hasZeroBalance) ||
+    hasInsufficientBalance ||
+    isPriceStale ||
+    approveIsPending ||
+    isApprovalConfirming;
+
+  // Check if accept button in modal should be disabled (separate from approve)
+  const isAcceptDisabled =
+    !offer ||
+    !isBorrowAmountValid ||
+    (isFlexibleCollateral && !hasValidFlexibleInput) ||
+    (isFlexibleCollateral && !selectedCollateralToken) ||
+    (!isFlexibleCollateral && hasZeroBalance) ||
+    (isFlexibleCollateral && selectedCollateralToken && hasZeroBalance) ||
+    hasInsufficientBalance ||
+    isPriceStale ||
+    isAccepting ||
+    acceptIsPending ||
+    isAcceptConfirming;
+
   if (offerLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -378,8 +535,8 @@ export default function OfferDetailPage() {
     );
   }
 
-  // Check if offer exists (invalid/empty slot will have zero address lender)
-  if (!offer || !offer.lender || offer.lender === '0x0000000000000000000000000000000000000000') {
+  // Check if offer exists (invalid/empty slot will have zero address lender or zero lend amount)
+  if (!offer || !offer.lender || offer.lender === '0x0000000000000000000000000000000000000000' || offer.lendAmount === BigInt(0)) {
     return (
       <div className="min-h-screen flex items-center justify-center py-12 px-4">
         <Card className="max-w-md w-full text-center py-12">
@@ -429,10 +586,10 @@ export default function OfferDetailPage() {
 
           {canAccept && (
             <Button
-              onClick={() => setShowAcceptModal(true)}
+              onClick={openAcceptModal}
               icon={<Wallet className="w-4 h-4" />}
               size="lg"
-              disabled={isAcceptDisabled}
+              disabled={isOpenModalDisabled}
             >
               Accept This Offer
             </Button>
@@ -571,10 +728,45 @@ export default function OfferDetailPage() {
                     <h3 className="font-semibold">Borrowing Opportunity</h3>
                   </div>
                   <div className="space-y-3">
+                    {/* Borrow Amount Input for Partial Borrowing */}
+                    <div className="py-2 border-b border-white/10">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-gray-400">Amount to Borrow</span>
+                        <span className="text-xs text-gray-500">
+                          Max: {formatTokenAmount(remainingAmount, lendDecimals)} {lendSymbol}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          step="any"
+                          min="0"
+                          value={borrowAmountInput}
+                          onChange={(e) => setBorrowAmountInput(e.target.value)}
+                          placeholder="0.0"
+                          className="input-field flex-1"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setBorrowAmountInput(formatUnits(remainingAmount, lendDecimals))}
+                          className="px-3 py-2 text-xs font-semibold text-accent-400 hover:text-accent-300 bg-accent-400/10 hover:bg-accent-400/20 rounded-lg transition-colors"
+                        >
+                          MAX
+                        </button>
+                        <span className="text-sm text-gray-400 min-w-[50px]">{lendSymbol}</span>
+                      </div>
+                      {!isBorrowAmountValid && borrowAmountInput && (
+                        <p className="text-xs text-red-400 mt-1">
+                          {parsedBorrowAmount > remainingAmount
+                            ? 'Amount exceeds available'
+                            : 'Enter a valid amount'}
+                        </p>
+                      )}
+                    </div>
                     <div className="flex justify-between items-center py-2 border-b border-white/10">
-                      <span className="text-gray-400">You Receive</span>
-                      <span className="font-medium">
-                        {formatTokenAmount(offer.lendAmount, lendDecimals)} {lendSymbol}
+                      <span className="text-gray-400">You Will Receive</span>
+                      <span className="font-medium text-accent-400">
+                        {borrowAmountInput || '0'} {lendSymbol}
                       </span>
                     </div>
                     <div className="flex justify-between items-center py-2 border-b border-white/10">
@@ -648,7 +840,7 @@ export default function OfferDetailPage() {
                               <span className="text-gray-400">Loading prices...</span>
                             )}
                             <p className="text-xs text-gray-500 mt-2">
-                              Based on {currentLTV.toFixed(1)}% LTV + 5% safety margin
+                              Based on {currentLTV.toFixed(1)}% LTV
                             </p>
                           </div>
                           <div className="flex justify-between text-xs text-gray-400 mt-2">
@@ -729,11 +921,20 @@ export default function OfferDetailPage() {
                 <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
                   <div className="flex gap-3">
                     <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-                    <div className="space-y-1 text-sm">
+                    <div className="flex-1 space-y-2 text-sm">
                       <p className="text-red-400 font-medium">Price Data is Stale</p>
                       <p className="text-gray-400">
                         The price feed data is outdated. Transactions will fail until prices are refreshed.
                       </p>
+                      <Button
+                        onClick={handleRefreshPrices}
+                        loading={isRefreshingPrice}
+                        size="sm"
+                        variant="secondary"
+                        icon={<RefreshCw className="w-4 h-4" />}
+                      >
+                        Refresh Price Feeds
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -786,10 +987,10 @@ export default function OfferDetailPage() {
                     <>
                       {isConnected ? (
                         <Button
-                          onClick={() => setShowAcceptModal(true)}
+                          onClick={openAcceptModal}
                           className="w-full"
                           icon={<Wallet className="w-4 h-4" />}
-                          disabled={isAcceptDisabled}
+                          disabled={isOpenModalDisabled}
                         >
                           Accept This Offer
                         </Button>
@@ -901,10 +1102,18 @@ export default function OfferDetailPage() {
           <div className="glass-card p-4 space-y-3">
             <div className="flex justify-between">
               <span className="text-gray-400">You Will Receive</span>
-              <span className="font-semibold">
-                {offer && formatTokenAmount(offer.lendAmount, lendDecimals)} {lendSymbol}
+              <span className="font-semibold text-accent-400">
+                {borrowAmountInput || '0'} {lendSymbol}
               </span>
             </div>
+            {parsedBorrowAmount < remainingAmount && (
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">Remaining in Offer</span>
+                <span className="text-gray-400">
+                  {formatTokenAmount(remainingAmount - parsedBorrowAmount, lendDecimals)} {lendSymbol}
+                </span>
+              </div>
+            )}
             <div className="flex justify-between">
               <span className="text-gray-400">Interest Rate</span>
               <span className="font-semibold text-yellow-400">
@@ -959,7 +1168,7 @@ export default function OfferDetailPage() {
                       <span className="text-gray-400">Loading prices...</span>
                     )}
                     <p className="text-xs text-gray-500 mt-2">
-                      Based on {currentLTV.toFixed(1)}% LTV + 5% safety margin
+                      Based on {currentLTV.toFixed(1)}% LTV
                     </p>
                   </div>
                   <div className="mt-2 flex justify-between text-sm">
@@ -1052,11 +1261,20 @@ export default function OfferDetailPage() {
             <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
               <div className="flex gap-2 items-start">
                 <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-                <div className="text-sm">
+                <div className="flex-1 text-sm space-y-2">
                   <p className="text-red-400 font-medium">Price Data is Stale</p>
-                  <p className="text-gray-400 mt-1">
+                  <p className="text-gray-400">
                     Transaction will fail until price feeds are refreshed.
                   </p>
+                  <Button
+                    onClick={handleRefreshPrices}
+                    loading={isRefreshingPrice}
+                    size="sm"
+                    variant="secondary"
+                    icon={<RefreshCw className="w-4 h-4" />}
+                  >
+                    Refresh Price Feeds
+                  </Button>
                 </div>
               </div>
             </div>
@@ -1109,11 +1327,11 @@ export default function OfferDetailPage() {
               {!hasApproval ? (
                 <Button
                   onClick={handleApprove}
-                  loading={approveIsPending}
+                  loading={approveIsPending || isApprovalConfirming}
                   className="w-full"
-                  disabled={isAcceptDisabled}
+                  disabled={isApproveDisabled}
                 >
-                  Approve {collateralSymbol}
+                  {approveIsPending ? 'Approving...' : isApprovalConfirming ? 'Confirming...' : `Approve ${collateralSymbol}`}
                 </Button>
               ) : (
                 <Button

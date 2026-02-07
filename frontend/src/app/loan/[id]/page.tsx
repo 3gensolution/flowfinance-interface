@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAccount } from 'wagmi';
 import { motion } from 'framer-motion';
-import { formatUnits } from 'viem';
+import { formatUnits, Address } from 'viem';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge, RequestStatusBadge } from '@/components/ui/Badge';
@@ -14,6 +14,7 @@ import {
   useFundLoanRequest,
   useTokenPrice,
   useLTV,
+  useRefreshMockPrice,
 } from '@/hooks/useContracts';
 import { LoanRequestStatus } from '@/types';
 import {
@@ -38,6 +39,7 @@ import {
   Copy,
   DollarSign,
   AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
@@ -108,6 +110,27 @@ export default function LoanDetailPage() {
   // Check price staleness
   const isPriceStale = collateralPriceHook.isStale || borrowPriceHook.isStale;
 
+  // Price refresh hook
+  const { refreshPrice, isPending: isRefreshingPrice } = useRefreshMockPrice();
+
+  // Handle price refresh
+  const handleRefreshPrices = async () => {
+    try {
+      if (collateralPriceHook.isStale && collateralPriceHook.priceFeedAddress && collateralPrice) {
+        await refreshPrice(collateralPriceHook.priceFeedAddress as Address, BigInt(collateralPrice), request?.collateralToken);
+      }
+      if (borrowPriceHook.isStale && borrowPriceHook.priceFeedAddress && borrowPrice) {
+        await refreshPrice(borrowPriceHook.priceFeedAddress as Address, BigInt(borrowPrice), request?.borrowAsset);
+      }
+      toast.success('Price feeds refreshed!');
+      collateralPriceHook.refetch();
+      borrowPriceHook.refetch();
+    } catch (error) {
+      console.error('Failed to refresh prices:', error);
+      toast.error('Failed to refresh price feeds');
+    }
+  };
+
   // Calculate USD values
   const collateralUSD = request && collateralPrice
     ? (Number(request.collateralAmount) / Math.pow(10, Number(collateralDecimals))) * Number(collateralPrice) / 1e8
@@ -135,14 +158,14 @@ export default function LoanDetailPage() {
     ? (lenderBalance as bigint) < request.borrowAmount
     : false;
 
-  // Check if already approved
-  const hasApproval = lenderAllowance && request
+  // Check if already approved (must have valid borrow amount > 0)
+  const hasApproval = lenderAllowance && request && request.borrowAmount > BigInt(0)
     ? (lenderAllowance as bigint) >= request.borrowAmount
     : false;
 
   // Write hooks
   const { approveAsync, isPending: approveIsPending, isConfirming: isApprovalConfirming, isSuccess: approveSuccess } = useApproveToken();
-  const { fundRequest, isPending: fundIsPending, isSuccess: fundSuccess } = useFundLoanRequest();
+  const { fundRequestAsync, isPending: fundIsPending, isSuccess: fundSuccess, error: fundError } = useFundLoanRequest();
 
   // Handle approval success
   useEffect(() => {
@@ -164,20 +187,79 @@ export default function LoanDetailPage() {
     }
   }, [fundSuccess, router, refetch]);
 
+  // Handle funding error
+  useEffect(() => {
+    if (fundError) {
+      console.error('Fund error:', fundError);
+      const errorMessage = fundError.message || 'Failed to fund loan request';
+      setSimulationError(errorMessage);
+      toast.error(errorMessage);
+      setIsFunding(false);
+    }
+  }, [fundError]);
+
+  // Handler to open fund modal with validation
+  const openFundModal = () => {
+    if (!request) {
+      toast.error('Loan request data not available. Please refresh the page.');
+      return;
+    }
+    if (requestId === undefined) {
+      toast.error('Invalid loan request ID.');
+      return;
+    }
+    console.log('Opening fund modal with data:', {
+      requestId: requestId.toString(),
+      borrower: request.borrower,
+      borrowAmount: request.borrowAmount.toString(),
+      borrowAsset: request.borrowAsset,
+    });
+    setShowFundModal(true);
+  };
+
   // Reset step when opening modal
   useEffect(() => {
     if (showFundModal) {
+      console.log('Fund modal opened - checking approval status:', {
+        hasApproval,
+        lenderAllowance: lenderAllowance ? lenderAllowance.toString() : 'undefined',
+        borrowAmount: request?.borrowAmount ? request.borrowAmount.toString() : 'undefined',
+        lenderBalance: lenderBalance ? lenderBalance.toString() : 'undefined',
+        hasZeroBalance,
+        hasInsufficientBalance,
+        isPriceStale,
+        fundingStep: hasApproval ? 'fund' : 'approve',
+      });
       setFundingStep(hasApproval ? 'fund' : 'approve');
       setSimulationError('');
     }
-  }, [showFundModal, hasApproval]);
+  }, [showFundModal, hasApproval, lenderAllowance, request?.borrowAmount, lenderBalance, hasZeroBalance, hasInsufficientBalance, isPriceStale]);
 
   const handleApprove = async () => {
-    if (!request) return;
+    console.log('handleApprove called', { request, address });
+
+    if (!request) {
+      console.error('handleApprove: Missing request');
+      toast.error('Unable to approve: Missing loan request data');
+      return;
+    }
+
+    if (!address) {
+      console.error('handleApprove: No wallet connected');
+      toast.error('Please connect your wallet first');
+      return;
+    }
+
     setSimulationError('');
 
     try {
-      // Simulate approval first
+      console.log('Simulating approve...', {
+        token: request.borrowAsset,
+        spender: CONTRACT_ADDRESSES.loanMarketPlace,
+        amount: request.borrowAmount.toString()
+      });
+
+      // Simulate approval first with explicit account
       const simulation = await simulateContractWrite({
         address: request.borrowAsset,
         abi: [
@@ -194,17 +276,25 @@ export default function LoanDetailPage() {
         ],
         functionName: 'approve',
         args: [CONTRACT_ADDRESSES.loanMarketPlace, request.borrowAmount],
+        account: address,
       });
 
+      console.log('Approval simulation result:', simulation);
+
       if (!simulation.success) {
-        setSimulationError(simulation.errorMessage || 'Simulation failed');
-        toast.error(simulation.errorMessage || 'Transaction will fail');
+        const errorMsg = simulation.errorMessage || 'Simulation failed';
+        console.error('Approval simulation failed:', errorMsg);
+        setSimulationError(errorMsg);
+        toast.error(errorMsg);
         return;
       }
 
+      console.log('Calling approveAsync...');
       await approveAsync(request.borrowAsset, CONTRACT_ADDRESSES.loanMarketPlace, request.borrowAmount);
+      console.log('approveAsync completed, waiting for confirmation...');
       // Transaction submitted - useEffect will handle success
     } catch (error: unknown) {
+      console.error('handleApprove error:', error);
       const errorMsg = formatSimulationError(error);
       setSimulationError(errorMsg);
       toast.error(errorMsg);
@@ -212,28 +302,53 @@ export default function LoanDetailPage() {
   };
 
   const handleFund = async () => {
-    if (!request || !requestId) return;
+    console.log('handleFund called', { request, requestId: requestId?.toString(), address });
+
+    if (!request || requestId === undefined) {
+      console.error('handleFund: Missing request or requestId', { request, requestId: requestId?.toString() });
+      toast.error('Unable to fund: Missing loan request data');
+      return;
+    }
+
+    if (!address) {
+      console.error('handleFund: No wallet connected');
+      toast.error('Please connect your wallet first');
+      return;
+    }
+
     setIsFunding(true);
     setSimulationError('');
 
     try {
-      // Simulate first
+      console.log('Simulating fundLoanRequest...', { requestId: requestId.toString() });
+
+      // Simulate first with explicit account
       const simulation = await simulateContractWrite({
         address: CONTRACT_ADDRESSES.loanMarketPlace,
         abi: LoanMarketPlaceABI,
         functionName: 'fundLoanRequest',
         args: [requestId],
+        account: address,
       });
 
+      console.log('Simulation result:', simulation);
+
       if (!simulation.success) {
-        setSimulationError(simulation.errorMessage || 'Transaction would fail');
-        toast.error(simulation.errorMessage || 'Transaction would fail');
+        const errorMsg = simulation.errorMessage || 'Transaction would fail';
+        console.error('Simulation failed:', errorMsg);
+        setSimulationError(errorMsg);
+        toast.error(errorMsg);
         setIsFunding(false);
         return;
       }
 
-      fundRequest(requestId);
+      console.log('Calling fundRequestAsync...');
+      // Use async version and await it
+      await fundRequestAsync(requestId);
+      console.log('fundRequestAsync completed, waiting for confirmation...');
+      // Success will be handled by the useEffect watching fundSuccess
     } catch (error: unknown) {
+      console.error('handleFund error:', error);
       const errorMsg = formatSimulationError(error);
       setSimulationError(errorMsg);
       toast.error(errorMsg);
@@ -246,8 +361,8 @@ export default function LoanDetailPage() {
     toast.success('Address copied!');
   };
 
-  // Check if fund button should be disabled
-  const isFundDisabled =
+  // Check if the main "Fund This Request" button (that opens modal) should be disabled
+  const isOpenModalDisabled =
     !request ||
     hasZeroBalance ||
     hasInsufficientBalance ||
@@ -257,6 +372,24 @@ export default function LoanDetailPage() {
     approveIsPending ||
     isApprovalConfirming;
 
+  // Check if approve button in modal should be disabled
+  const isApproveDisabled =
+    !request ||
+    hasZeroBalance ||
+    hasInsufficientBalance ||
+    isPriceStale ||
+    approveIsPending ||
+    isApprovalConfirming;
+
+  // Check if fund button in modal should be disabled (separate from approve)
+  const isFundDisabled =
+    !request ||
+    hasZeroBalance ||
+    hasInsufficientBalance ||
+    isPriceStale ||
+    isFunding ||
+    fundIsPending;
+
   if (requestLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -265,8 +398,8 @@ export default function LoanDetailPage() {
     );
   }
 
-  // Status 0 from an unfilled/invalid slot will have empty borrower
-  if (!request || !request.borrower || request.borrower === '0x0000000000000000000000000000000000000000') {
+  // Status 0 from an unfilled/invalid slot will have empty borrower or zero borrow amount
+  if (!request || !request.borrower || request.borrower === '0x0000000000000000000000000000000000000000' || request.borrowAmount === BigInt(0)) {
     return (
       <div className="min-h-screen flex items-center justify-center py-12 px-4">
         <Card className="max-w-md w-full text-center py-12">
@@ -316,10 +449,10 @@ export default function LoanDetailPage() {
 
           {canFund && (
             <Button
-              onClick={() => setShowFundModal(true)}
+              onClick={openFundModal}
               icon={<DollarSign className="w-4 h-4" />}
               size="lg"
-              disabled={isFundDisabled}
+              disabled={isOpenModalDisabled}
             >
               Fund This Request
             </Button>
@@ -531,11 +664,20 @@ export default function LoanDetailPage() {
                 <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
                   <div className="flex gap-3">
                     <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-                    <div className="space-y-1 text-sm">
+                    <div className="flex-1 space-y-2 text-sm">
                       <p className="text-red-400 font-medium">Price Data is Stale</p>
                       <p className="text-gray-400">
                         The price feed data is outdated. Transactions will fail until prices are refreshed.
                       </p>
+                      <Button
+                        onClick={handleRefreshPrices}
+                        loading={isRefreshingPrice}
+                        size="sm"
+                        variant="secondary"
+                        icon={<RefreshCw className="w-4 h-4" />}
+                      >
+                        Refresh Price Feeds
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -588,10 +730,10 @@ export default function LoanDetailPage() {
                     <>
                       {isConnected ? (
                         <Button
-                          onClick={() => setShowFundModal(true)}
+                          onClick={openFundModal}
                           className="w-full"
                           icon={<DollarSign className="w-4 h-4" />}
-                          disabled={isFundDisabled}
+                          disabled={isOpenModalDisabled}
                         >
                           Fund This Request
                         </Button>
@@ -769,11 +911,20 @@ export default function LoanDetailPage() {
             <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
               <div className="flex gap-2 items-start">
                 <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-                <div className="text-sm">
+                <div className="flex-1 text-sm space-y-2">
                   <p className="text-red-400 font-medium">Price Data is Stale</p>
-                  <p className="text-gray-400 mt-1">
+                  <p className="text-gray-400">
                     Transaction will fail until price feeds are refreshed.
                   </p>
+                  <Button
+                    onClick={handleRefreshPrices}
+                    loading={isRefreshingPrice}
+                    size="sm"
+                    variant="secondary"
+                    icon={<RefreshCw className="w-4 h-4" />}
+                  >
+                    Refresh Price Feeds
+                  </Button>
                 </div>
               </div>
             </div>
@@ -818,7 +969,7 @@ export default function LoanDetailPage() {
                   onClick={handleApprove}
                   loading={approveIsPending || isApprovalConfirming}
                   className="w-full"
-                  disabled={isFundDisabled}
+                  disabled={isApproveDisabled}
                 >
                   {approveIsPending ? 'Approving...' : isApprovalConfirming ? 'Confirming...' : `Approve ${borrowSymbol}`}
                 </Button>

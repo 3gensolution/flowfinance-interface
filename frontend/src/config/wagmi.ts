@@ -24,7 +24,7 @@ function createConfig() {
   }
 
   configInstance = getDefaultConfig({
-    appName: 'FlowFinance',
+    appName: 'Flow Lending',
     projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || 'YOUR_PROJECT_ID',
     // Testnet chains (for development)
     chains: [

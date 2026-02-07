@@ -16,6 +16,7 @@ import {
   useLiquidationThreshold,
   useMaxInterestRate,
   useSupportedAssets,
+  useRefreshMockPrice,
 } from '@/hooks/useContracts';
 import { useCreateFiatLoanRequest } from '@/hooks/useFiatLoan';
 import {
@@ -68,10 +69,14 @@ export function CreateFiatLoanRequestForm() {
   const [currency, setCurrency] = useState('USD');
   const [interestRate, setInterestRate] = useState('12');
   const [duration, setDuration] = useState('30');
+  const [selectedLTV, setSelectedLTV] = useState<number>(0); // User-selected LTV percentage
   const [step, setStep] = useState<'form' | 'approve' | 'confirm'>('form');
   const [simulationError, setSimulationError] = useState<string>('');
   const [isCalculating, setIsCalculating] = useState(false);
   const [isSimulating, setIsSimulating] = useState(false);
+
+  // Minimum LTV percentage (10%)
+  const MIN_LTV_PERCENT = 10;
 
   // Ref to track if we've already handled approval success (prevents multiple toasts)
   const approvalHandledRef = useRef(false);
@@ -98,6 +103,23 @@ export function CreateFiatLoanRequestForm() {
   const collateralPriceHook = useTokenPrice(collateralToken);
   const collateralPrice = collateralPriceHook.price;
   const isPriceStale = collateralPriceHook.isStale;
+
+  // Price refresh hook
+  const { refreshPrice, isPending: isRefreshingPrice } = useRefreshMockPrice();
+
+  // Handle price refresh
+  const handleRefreshPrice = async () => {
+    try {
+      if (collateralPriceHook.priceFeedAddress && collateralPrice) {
+        await refreshPrice(collateralPriceHook.priceFeedAddress as Address, BigInt(collateralPrice), collateralToken);
+        toast.success('Price feed refreshed!');
+        collateralPriceHook.refetch();
+      }
+    } catch (error) {
+      console.error('Failed to refresh price:', error);
+      toast.error('Failed to refresh price feed');
+    }
+  };
 
   // Fetch LTV and configuration
   const durationDays = parseInt(duration);
@@ -157,7 +179,24 @@ export function CreateFiatLoanRequestForm() {
   // Track if we're calculating (waiting for prices, LTV, and exchange rate)
   // const isDataLoading = collateralPriceHook.isLoading || isLoadingLTV || isLoadingExchangeRate;
 
-  // Calculate maximum loan in USD cents based on collateral value and LTV
+  // Max LTV percentage from contract
+  const maxLTVPercent = ltvBps ? Number(ltvBps) / 100 : 0;
+
+  // Initialize selectedLTV to max when max LTV loads
+  useEffect(() => {
+    if (maxLTVPercent > 0 && selectedLTV === 0) {
+      setSelectedLTV(maxLTVPercent);
+    }
+  }, [maxLTVPercent, selectedLTV]);
+
+  // Reset selectedLTV when collateral token or duration changes
+  useEffect(() => {
+    if (maxLTVPercent > 0) {
+      setSelectedLTV(maxLTVPercent);
+    }
+  }, [collateralToken, duration, maxLTVPercent]);
+
+  // Calculate loan in USD cents based on collateral value and selected LTV
   useEffect(() => {
     if (!collateralAmount || parseFloat(collateralAmount) <= 0) {
       setMaxLoanUSDCents(BigInt(0));
@@ -172,7 +211,7 @@ export function CreateFiatLoanRequestForm() {
       return;
     }
 
-    if (collateralAmount && collateralPrice && ltvBps) {
+    if (collateralAmount && collateralPrice && ltvBps && selectedLTV > 0) {
       setIsCalculating(true);
       setSimulationError('');
 
@@ -182,11 +221,12 @@ export function CreateFiatLoanRequestForm() {
         // Calculate collateral value in USD (8 decimals from Chainlink)
         const collateralValueUSD = (collateralAmountBigInt * (collateralPrice as bigint)) / BigInt(10 ** collateralDecimals);
 
-        // Apply LTV (ltvBps is in basis points, 10000 = 100%)
-        const maxLoanUSD = (collateralValueUSD * (ltvBps as bigint)) / BigInt(10000);
+        // Apply selected LTV (convert percentage to basis points)
+        const selectedLTVBps = BigInt(Math.floor(selectedLTV * 100));
+        const loanUSD = (collateralValueUSD * selectedLTVBps) / BigInt(10000);
 
         // Convert to cents (multiply by 100, divide by 1e8 for Chainlink decimals)
-        const usdCents = (maxLoanUSD * BigInt(100)) / BigInt(1e8);
+        const usdCents = (loanUSD * BigInt(100)) / BigInt(1e8);
 
         // Set the USD cents value - this will trigger the contract conversion hook
         setMaxLoanUSDCents(usdCents);
@@ -206,7 +246,7 @@ export function CreateFiatLoanRequestForm() {
       setMaxLoanUSDCents(BigInt(0));
       setIsCalculating(false);
     }
-  }, [collateralAmount, collateralPrice, ltvBps, collateralDecimals, collateralPriceHook.isLoading, isLoadingLTV, ltvError, duration]);
+  }, [collateralAmount, collateralPrice, ltvBps, selectedLTV, collateralDecimals, collateralPriceHook.isLoading, isLoadingLTV, ltvError, duration]);
 
   // Update fiat amount when contract conversion completes
   useEffect(() => {
@@ -613,10 +653,36 @@ export function CreateFiatLoanRequestForm() {
                 )}
               </div>
 
+              {/* LTV Slider */}
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-300">
+                  Loan-to-Value (LTV) Ratio
+                </label>
+                <input
+                  type="range"
+                  min={MIN_LTV_PERCENT}
+                  max={maxLTVPercent || 80}
+                  step="1"
+                  value={selectedLTV}
+                  onChange={(e) => setSelectedLTV(Number(e.target.value))}
+                  disabled={!maxLTVPercent || maxLTVPercent === 0}
+                  className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-green-500"
+                />
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-gray-400">{MIN_LTV_PERCENT}%</span>
+                  <span className="text-lg font-semibold text-green-400">{selectedLTV.toFixed(0)}%</span>
+                  <span className="text-gray-400">{maxLTVPercent.toFixed(0)}% max</span>
+                </div>
+                <p className="text-xs text-gray-400">
+                  Lower LTV = safer position, less borrowing power. Higher LTV = more borrowing, higher liquidation risk.
+                </p>
+              </div>
+
               <div className="glass-card p-3 space-y-1 border-green-500/20">
                 <p className="text-xs text-gray-400 flex items-center gap-1">
                   <TrendingUp className="w-3 h-3" />
-                  Max LTV for {duration} days: <span className="text-green-400 font-medium">{ltvPercentage}%</span>
+                  Selected LTV: <span className="text-green-400 font-medium">{selectedLTV.toFixed(0)}%</span>
+                  <span className="text-gray-500">(Max: {ltvPercentage}%)</span>
                 </p>
                 <p className="text-xs text-gray-400 flex items-center gap-1">
                   <Shield className="w-3 h-3" />
@@ -661,6 +727,30 @@ export function CreateFiatLoanRequestForm() {
 
           {/* Price Feed */}
           <PriceFeedDisplay tokenAddress={collateralToken} variant="compact" />
+
+          {/* Price Stale Warning */}
+          {isPriceStale && (
+            <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
+              <div className="flex gap-3">
+                <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                <div className="flex-1 space-y-2 text-sm">
+                  <p className="text-red-400 font-medium">Price Data is Stale</p>
+                  <p className="text-gray-400">
+                    The price feed data is outdated. Transactions will fail until prices are refreshed.
+                  </p>
+                  <Button
+                    onClick={handleRefreshPrice}
+                    loading={isRefreshingPrice}
+                    size="sm"
+                    variant="secondary"
+                    icon={<RefreshCw className="w-4 h-4" />}
+                  >
+                    Refresh Price Feed
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Info Banner */}
           <div className="glass-card p-4 border border-green-500/20">

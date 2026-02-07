@@ -11,9 +11,11 @@ interface ModalProps {
   title?: string;
   children: React.ReactNode;
   size?: 'sm' | 'md' | 'lg' | 'xl';
+  /** Maximum height as percentage of viewport height (default: 85) */
+  maxHeightVh?: number;
 }
 
-export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalProps) {
+export function Modal({ isOpen, onClose, title, children, size = 'md', maxHeightVh = 85 }: ModalProps) {
   const sizeClasses = {
     sm: 'max-w-sm',
     md: 'max-w-md',
@@ -48,18 +50,24 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalPr
             onClick={onClose}
             className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
           />
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto overscroll-contain"
+            onWheel={(e) => e.stopPropagation()}
+            onTouchMove={(e) => e.stopPropagation()}
+          >
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              style={{ maxHeight: `${maxHeightVh}vh` }}
               className={cn(
-                'w-full glass-card p-6 shadow-2xl',
+                'w-full glass-card shadow-2xl flex flex-col my-auto',
                 sizeClasses[size]
               )}
+              onClick={(e) => e.stopPropagation()}
             >
               {title && (
-                <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center justify-between p-6 pb-4 border-b border-white/10 flex-shrink-0">
                   <h2 className="text-xl font-bold">{title}</h2>
                   <button
                     onClick={onClose}
@@ -69,7 +77,9 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalPr
                   </button>
                 </div>
               )}
-              {children}
+              <div className="p-6 pt-4 overflow-y-auto flex-1 overscroll-contain">
+                {children}
+              </div>
             </motion.div>
           </div>
         </>

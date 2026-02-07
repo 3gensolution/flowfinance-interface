@@ -196,7 +196,7 @@ export default function FaucetPage() {
             Test Token <span className="gradient-text">Faucet</span>
           </h1>
           <p className="text-gray-400 max-w-2xl mx-auto">
-            Mint free test tokens to use on FlowFinance. These tokens have no real value
+            Mint free test tokens to use on the platform. These tokens have no real value
             and are only for testing purposes on testnets.
           </p>
         </motion.div>

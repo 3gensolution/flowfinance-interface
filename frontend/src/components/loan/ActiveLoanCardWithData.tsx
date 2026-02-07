@@ -2,7 +2,7 @@
 
 import { Address } from 'viem';
 import { LoanStatus } from '@/types';
-import { useLoanHealthFactor, useRepaymentAmount } from '@/hooks/useContracts';
+import { useLoanHealthFactor, useOutstandingDebt } from '@/hooks/useContracts';
 import { ActiveLoanCard } from './LoanCard';
 
 export interface LoanData {
@@ -41,7 +41,7 @@ export function ActiveLoanCardWithData({
   onRepay,
 }: ActiveLoanCardWithDataProps) {
   const { data: healthFactor, isLoading: isLoadingHealth } = useLoanHealthFactor(loan.loanId);
-  const { data: repaymentAmount } = useRepaymentAmount(loan.loanId);
+  const { data: outstandingDebt } = useOutstandingDebt(loan.loanId);
 
   const loanData = {
     ...loan,
@@ -55,7 +55,7 @@ export function ActiveLoanCardWithData({
       loan={loanData}
       healthFactor={healthFactorValue}
       isLoadingHealth={isLoadingHealth}
-      repaymentAmount={repaymentAmount ? repaymentAmount as bigint : undefined}
+      repaymentAmount={outstandingDebt ? outstandingDebt as bigint : undefined}
       isBorrower={isBorrower}
       onRepay={onRepay}
     />

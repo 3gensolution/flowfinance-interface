@@ -194,9 +194,9 @@ export function CreateLenderOfferForm() {
   const handleCreateOffer = async () => {
     setSimulationError('');
 
-    // Hardcode collateral to address(0) - borrower chooses collateral when accepting
+    // Always use address(0) - borrower chooses collateral from supported assets
     const requiredCollateral = zeroAddress;
-    // Hardcode minCollateralAmount to 1 (smallest unit)
+    // Minimum collateral amount of 1 (borrower will provide based on LTV)
     const minCollateralAmount = BigInt(1);
     const interestRateBps = BigInt(Math.floor(parseFloat(interestRate) * 100));
     const durationSeconds = daysToSeconds(parseInt(duration));
@@ -267,7 +267,8 @@ export function CreateLenderOfferForm() {
                 <p className="text-primary-400 font-medium">How Lender Offers Work</p>
                 <p className="text-gray-400 text-sm mt-1">
                   You provide liquidity and set your terms. When a borrower accepts your offer,
-                  they choose which collateral to deposit based on the platform&apos;s supported assets and LTV ratios.
+                  they choose which collateral to deposit from the platform&apos;s supported assets.
+                  The required collateral amount is calculated based on LTV ratios.
                 </p>
               </div>
             </div>
@@ -360,6 +361,14 @@ export function CreateLenderOfferForm() {
                 )}
               </div>
             )}
+          </div>
+
+          {/* Collateral Info */}
+          <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+            <p className="text-sm text-blue-400">
+              <strong>Collateral:</strong> Borrowers can use any supported collateral token.
+              The required amount will be calculated based on platform LTV ratios when they accept your offer.
+            </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

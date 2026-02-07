@@ -94,7 +94,6 @@ const CUSTOM_ERROR_NAMES: Record<string, string> = {
     'NotACrossChainLoan': 'This is not a cross-chain loan.',
     'NotTheBorrower': 'Only the borrower can perform this action.',
     'NotTheLender': 'Only the lender can perform this action.',
-    'OfferExpired': 'This offer has expired.',
     'OfferNotAvailable': 'This offer is no longer available.',
     'OfferNotExpiredYet': 'This offer has not expired yet.',
     'OfferNotPending': 'This offer is not in pending status.',
@@ -108,6 +107,46 @@ const CUSTOM_ERROR_NAMES: Record<string, string> = {
     'RequestNotFunded': 'This request has not been funded.',
     'RequestNotPending': 'This request is not pending.',
     'ReentrancyGuardReentrantCall': 'Transaction blocked due to reentrancy protection.',
+    'LoanTooNew': 'This loan was recently created. Please wait before performing this action.',
+    'OnlyCrossChainManager': 'Only the cross-chain manager can perform this action.',
+    'CannotLiquidate': 'This loan cannot be liquidated at this time.',
+    'SourceChainNotSupported': 'The source chain is not supported for cross-chain operations.',
+
+    // FiatLoanBridge specific errors
+    'AssetNotSupported': 'This collateral asset is not supported. Please select a different token.',
+    'OfferNotActive': 'This offer is no longer active.',
+    'OfferExpired': 'This offer has expired and can no longer be accepted.',
+    'CannotAcceptOwn': 'You cannot accept your own offer.',
+    'OfferFullyUtilized': 'This offer has been fully utilized. No remaining funds available.',
+    'InsufficientOfferBalance': 'The requested borrow amount exceeds the remaining offer balance.',
+    'LTVTooHigh': 'The loan-to-value ratio is too high. Please provide more collateral.',
+    'NotKYCVerified': 'Your account has not been KYC verified. Please complete verification first.',
+    'InsufficientSupplierBalance': 'Insufficient supplier balance for this loan amount.',
+    'DisbursementNotConfirmed': 'The fiat disbursement has not been confirmed yet.',
+    'LoanNotPendingOrActive': 'This loan is not in a pending or active state.',
+    'NotSupplier': 'Only the supplier can perform this action.',
+    'NotBorrower': 'Only the borrower can perform this action.',
+    'LoanAlreadyRepaid': 'This loan has already been fully repaid.',
+    'RepaymentNotConfirmed': 'The fiat repayment has not been confirmed yet.',
+    'InvalidAddress': 'Invalid address provided.',
+    'InvalidRate': 'Interest rate is outside the allowed range.',
+    'CannotCancel': 'This loan request cannot be cancelled in its current state.',
+    'InsufficientBalance': 'Insufficient balance to complete this operation.',
+    'FundsAlreadyWithdrawn': 'The funds have already been withdrawn from this loan.',
+    'NoClaimableFunds': 'There are no funds available to claim for this loan.',
+    'GraceNotExpired': 'The grace period has not expired yet. Cannot liquidate.',
+    'LoanHealthy': 'The loan is healthy and cannot be liquidated.',
+    'InvalidLoanStatus': 'The loan is not in the required status for this operation.',
+    'NotPending': 'This loan is not in pending status.',
+    'HasSupplier': 'This loan already has a supplier assigned.',
+    'OnlyIncrease': 'The new value must be greater than the current value.',
+    'OffersOnlyOnSupplierChain': 'Offers can only be created on the supplier chain (Base).',
+    'OnlyRelayService': 'Only the relay service can perform this action.',
+    'NotCrossChainLoan': 'This operation is only valid for cross-chain loans.',
+    'RelayTimeoutNotReached': 'The relay timeout has not been reached yet.',
+    'CannotModifyOwnChain': 'Cannot modify chain settings for the current chain.',
+    'CannotFundOwnLoan': 'You cannot fund your own loan request.',
+    'CurrencyNotSupported': 'The selected currency is not supported.',
 };
 
 /**
@@ -228,6 +267,9 @@ export const formatSimulationError = (error: unknown): string => {
         if (err.message.includes('Insufficient collateral')) {
             return 'The escrow does not have enough collateral to release. This may indicate a data inconsistency with the loan. Please contact support.';
         }
+        if (err.message.includes('Collateral already deposited')) {
+            return 'Collateral has already been deposited for this offer. You may have already accepted this offer previously. Please check your dashboard for existing loans or refresh the page.';
+        }
         if (err.message.includes('Price data is stale')) {
             return 'Price data is stale. Please refresh the price feed before proceeding.';
         }
@@ -236,6 +278,13 @@ export const formatSimulationError = (error: unknown): string => {
         }
         if (err.message.includes('Price feed not updated')) {
             return 'Price feed has not been updated yet.';
+        }
+    }
+
+    // Also check shortMessage directly for these common require strings
+    if (err.shortMessage) {
+        if (err.shortMessage.includes('Collateral already deposited')) {
+            return 'Collateral has already been deposited for this offer. You may have already accepted this offer previously. Please check your dashboard for existing loans or refresh the page.';
         }
     }
 
@@ -308,6 +357,7 @@ const REQUIRE_REASON_MESSAGES: Record<string, string> = {
     'Insufficient collateral value for liquidation': 'The collateral value is insufficient for liquidation.',
     'Profit below minimum threshold': 'The liquidation profit is below the minimum required threshold.',
     'Insufficient collateral value': 'The collateral value is insufficient for this operation.',
+    'Collateral already deposited': 'Collateral has already been deposited for this offer. You may have already accepted this offer previously. Please check your dashboard for existing loans or refresh the page.',
 };
 
 function mapRevertReason(reason: string): string {

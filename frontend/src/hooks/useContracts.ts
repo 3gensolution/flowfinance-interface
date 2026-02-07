@@ -69,12 +69,26 @@ export function useLoanHealthFactor(loanId: bigint | undefined) {
   });
 }
 
-// Calculate repayment amount
+// Calculate repayment amount (total debt = principal + interest)
 export function useRepaymentAmount(loanId: bigint | undefined) {
   return useReadContract({
     address: CONTRACT_ADDRESSES.loanMarketPlace,
     abi: LoanMarketPlaceABI,
     functionName: 'calculateRepaymentAmount',
+    args: loanId !== undefined ? [loanId] : undefined,
+    query: {
+      enabled: loanId !== undefined,
+    },
+  });
+}
+
+// Get outstanding debt (remaining debt = total debt - amount already repaid)
+// Use this for repayment UI to show what's actually owed
+export function useOutstandingDebt(loanId: bigint | undefined) {
+  return useReadContract({
+    address: CONTRACT_ADDRESSES.loanMarketPlace,
+    abi: LoanMarketPlaceABI,
+    functionName: 'getOutstandingDebt',
     args: loanId !== undefined ? [loanId] : undefined,
     query: {
       enabled: loanId !== undefined,
@@ -173,6 +187,15 @@ export function useMaxInterestRate() {
   });
 }
 
+// Get minimum repayment amount (in USD with 8 decimals, e.g., 1e8 = $1)
+export function useMinRepaymentAmount() {
+  return useReadContract({
+    address: CONTRACT_ADDRESSES.configuration,
+    abi: ConfigurationABI,
+    functionName: 'minRepaymentAmount',
+  });
+}
+
 // Get platform fee rate (in basis points, e.g., 100 = 1%)
 export function usePlatformFeeRate() {
   const result = useReadContract({
@@ -189,6 +212,67 @@ export function usePlatformFeeRate() {
     ...result,
     feeRateBps,
     feeRatePercent,
+  };
+}
+
+// Get minimum loan duration (in seconds)
+export function useMinLoanDuration() {
+  return useReadContract({
+    address: CONTRACT_ADDRESSES.configuration,
+    abi: ConfigurationABI,
+    functionName: 'minLoanDuration',
+  });
+}
+
+// Get maximum loan duration (in seconds)
+export function useMaxLoanDuration() {
+  return useReadContract({
+    address: CONTRACT_ADDRESSES.configuration,
+    abi: ConfigurationABI,
+    functionName: 'maxLoanDuration',
+  });
+}
+
+// Combined hook for loan configuration limits
+// Returns interest rate and duration constraints from the Configuration contract
+export function useLoanConfigLimits() {
+  const { data: maxInterestRateData, isLoading: loadingInterest } = useMaxInterestRate();
+  const { data: minDurationData, isLoading: loadingMinDuration } = useMinLoanDuration();
+  const { data: maxDurationData, isLoading: loadingMaxDuration } = useMaxLoanDuration();
+
+  const isLoading = loadingInterest || loadingMinDuration || loadingMaxDuration;
+
+  // Interest rate is in basis points (100 = 1%, 10000 = 100%)
+  // Minimum is > 0, so effectively 1 bps (0.01%)
+  const minInterestRate = 1; // 0.01% - contract requires > 0
+  const maxInterestRate = maxInterestRateData ? Number(maxInterestRateData) : 10000; // Default 100%
+
+  // Duration is in seconds
+  const minDurationSeconds = minDurationData ? Number(minDurationData) : 86400; // Default 1 day
+  const maxDurationSeconds = maxDurationData ? Number(maxDurationData) : 31536000; // Default 365 days
+
+  // Convert to days for easier use
+  const minDurationDays = Math.ceil(minDurationSeconds / 86400);
+  const maxDurationDays = Math.floor(maxDurationSeconds / 86400);
+
+  // Convert to percentage for display
+  const minInterestPercent = minInterestRate / 100; // 0.01%
+  const maxInterestPercent = maxInterestRate / 100; // 100%
+
+  return {
+    isLoading,
+    // Interest rate in basis points
+    minInterestRate,
+    maxInterestRate,
+    // Interest rate as percentage
+    minInterestPercent,
+    maxInterestPercent,
+    // Duration in seconds
+    minDurationSeconds,
+    maxDurationSeconds,
+    // Duration in days
+    minDurationDays,
+    maxDurationDays,
   };
 }
 
@@ -618,7 +702,7 @@ export function useCreateLoanRequest() {
 }
 
 export function useFundLoanRequest() {
-  const { writeContract, data: hash, isPending, error } = useWriteContract();
+  const { writeContract, writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
   const fundRequest = (requestId: bigint) => {
@@ -630,7 +714,16 @@ export function useFundLoanRequest() {
     });
   };
 
-  return { fundRequest, hash, isPending, isConfirming, isSuccess, error };
+  const fundRequestAsync = async (requestId: bigint) => {
+    return writeContractAsync({
+      address: CONTRACT_ADDRESSES.loanMarketPlace,
+      abi: LoanMarketPlaceABI,
+      functionName: 'fundLoanRequest',
+      args: [requestId],
+    });
+  };
+
+  return { fundRequest, fundRequestAsync, hash, isPending, isConfirming, isSuccess, error };
 }
 
 export function useCreateLenderOffer() {
@@ -661,22 +754,22 @@ export function useAcceptLenderOffer() {
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
   // Fire-and-forget version (for backward compatibility)
-  const acceptOffer = (offerId: bigint, collateralAsset: `0x${string}`, collateralAmount: bigint) => {
+  const acceptOffer = (offerId: bigint, collateralAsset: `0x${string}`, collateralAmount: bigint, borrowAmount: bigint) => {
     writeContract({
       address: CONTRACT_ADDRESSES.loanMarketPlace,
       abi: LoanMarketPlaceABI,
       functionName: 'acceptLenderOffer',
-      args: [offerId, collateralAsset, collateralAmount],
+      args: [offerId, collateralAsset, collateralAmount, borrowAmount],
     });
   };
 
   // Async version that returns the transaction hash
-  const acceptOfferAsync = async (offerId: bigint, collateralAsset: `0x${string}`, collateralAmount: bigint) => {
+  const acceptOfferAsync = async (offerId: bigint, collateralAsset: `0x${string}`, collateralAmount: bigint, borrowAmount: bigint) => {
     return await writeContractAsync({
       address: CONTRACT_ADDRESSES.loanMarketPlace,
       abi: LoanMarketPlaceABI,
       functionName: 'acceptLenderOffer',
-      args: [offerId, collateralAsset, collateralAmount],
+      args: [offerId, collateralAsset, collateralAmount, borrowAmount],
     });
   };
 

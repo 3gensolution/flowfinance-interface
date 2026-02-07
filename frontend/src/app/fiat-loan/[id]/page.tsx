@@ -17,6 +17,7 @@ import {
   FiatLoanStatus,
 } from '@/hooks/useFiatLoan';
 import { useTokenPrice } from '@/hooks/useContracts';
+import { useSupplierDetails } from '@/hooks/useSupplier';
 import { formatCurrency } from '@/hooks/useFiatOracle';
 import {
   formatTokenAmount,
@@ -46,8 +47,13 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
-import { DEFAULT_CHAIN } from '@/config/contracts';
+import { DEFAULT_CHAIN, CONTRACT_ADDRESSES } from '@/config/contracts';
 import { Address } from 'viem';
+import { simulateContractWrite, formatSimulationError } from '@/lib/contractSimulation';
+import FiatLoanBridgeABIJson from '@/contracts/FiatLoanBridgeABI.json';
+import { Abi } from 'viem';
+
+const FiatLoanBridgeABI = FiatLoanBridgeABIJson as Abi;
 
 // Status badge component
 function FiatLoanStatusBadge({ status }: { status: FiatLoanStatus }) {
@@ -77,31 +83,34 @@ export default function FiatLoanDetailPage() {
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [isFunding, setIsFunding] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [simulationError, setSimulationError] = useState<string>('');
 
   // Fetch fiat loan data
   const { data: loanData, isLoading: loanLoading, refetch } = useFiatLoan(loanId);
 
-  // Parse loan data from contract
-  const loanTuple = loanData as readonly unknown[];
+  // Parse loan data from contract - handle both object and tuple formats
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rawLoan = loanData as any;
   const loan = loanData ? {
-    loanId: loanTuple[0] as bigint,
-    borrower: loanTuple[1] as Address,
-    supplier: loanTuple[2] as Address,
-    collateralAsset: loanTuple[3] as Address,
-    collateralAmount: loanTuple[4] as bigint,
-    fiatAmountCents: loanTuple[5] as bigint,
-    currency: loanTuple[6] as string,
-    interestRate: loanTuple[7] as bigint,
-    duration: loanTuple[8] as bigint,
-    status: Number(loanTuple[9]) as FiatLoanStatus,
-    createdAt: loanTuple[10] as bigint,
-    activatedAt: loanTuple[11] as bigint,
-    dueDate: loanTuple[12] as bigint,
-    gracePeriodEnd: loanTuple[13] as bigint,
-    claimableAmountCents: loanTuple[14] as bigint,
-    fundsWithdrawn: loanTuple[15] as boolean,
-    repaymentDepositId: loanTuple[16] as `0x${string}`,
-    exchangeRateAtCreation: (loanTuple[17] as bigint) || BigInt(0),
+    loanId: (rawLoan.loanId ?? rawLoan[0]) as bigint,
+    borrower: (rawLoan.borrower ?? rawLoan[1]) as Address,
+    supplier: (rawLoan.supplier ?? rawLoan[2]) as Address,
+    collateralAsset: (rawLoan.collateralAsset ?? rawLoan[3]) as Address,
+    collateralAmount: (rawLoan.collateralAmount ?? rawLoan[4]) as bigint,
+    fiatAmountCents: (rawLoan.fiatAmountCents ?? rawLoan[5]) as bigint,
+    currency: (rawLoan.currency ?? rawLoan[6]) as string,
+    interestRate: (rawLoan.interestRate ?? rawLoan[7]) as bigint,
+    duration: (rawLoan.duration ?? rawLoan[8]) as bigint,
+    status: Number(rawLoan.status ?? rawLoan[9]) as FiatLoanStatus,
+    createdAt: (rawLoan.createdAt ?? rawLoan[10]) as bigint,
+    activatedAt: (rawLoan.activatedAt ?? rawLoan[11]) as bigint,
+    dueDate: (rawLoan.dueDate ?? rawLoan[12]) as bigint,
+    gracePeriodEnd: (rawLoan.gracePeriodEnd ?? rawLoan[13]) as bigint,
+    claimableAmountCents: (rawLoan.claimableAmountCents ?? rawLoan[14]) as bigint,
+    fundsWithdrawn: (rawLoan.fundsWithdrawn ?? rawLoan[15]) as boolean,
+    repaymentDepositId: (rawLoan.repaymentDepositId ?? rawLoan[16]) as `0x${string}`,
+    exchangeRateAtCreation: ((rawLoan.exchangeRateAtCreation ?? rawLoan[17]) as bigint) || BigInt(0),
+    chainId: ((rawLoan.chainId ?? rawLoan[18]) as bigint) || BigInt(0),
   } : null;
 
   // Get total debt and health factor for active loans
@@ -120,6 +129,10 @@ export default function FiatLoanDetailPage() {
   const isBorrower = loan && address?.toLowerCase() === loan.borrower.toLowerCase();
   const isSupplier = loan && address?.toLowerCase() === loan.supplier.toLowerCase();
 
+  // Check if user is a verified supplier (for fiat loans)
+  const { isVerified: isVerifiedSupplier, isActive: isSupplierActive } = useSupplierDetails(address);
+  const canActAsSupplier = isVerifiedSupplier && isSupplierActive;
+
   // Price data for USD values
   const collateralPriceHook = useTokenPrice(loan?.collateralAsset);
   const collateralPrice = collateralPriceHook.price;
@@ -133,8 +146,8 @@ export default function FiatLoanDetailPage() {
   // const fiatAmount = loan ? Number(loan.fiatAmountCents) / 100 : 0;
 
   // Write hooks
-  const { acceptFiatLoanRequest, isPending: acceptIsPending, isSuccess: acceptSuccess } = useAcceptFiatLoanRequest();
-  const { cancelFiatLoanRequest, isPending: cancelIsPending, isSuccess: cancelSuccess } = useCancelFiatLoanRequest();
+  const { acceptFiatLoanRequest, isPending: acceptIsPending, isSuccess: acceptSuccess, error: acceptError } = useAcceptFiatLoanRequest();
+  const { cancelFiatLoanRequest, isPending: cancelIsPending, isSuccess: cancelSuccess, error: cancelError } = useCancelFiatLoanRequest();
 
   // Handle accept success
   useEffect(() => {
@@ -157,14 +170,60 @@ export default function FiatLoanDetailPage() {
     }
   }, [cancelSuccess, router, refetch]);
 
+  // Handle accept/fund error
+  useEffect(() => {
+    if (acceptError) {
+      console.error('Accept fiat loan error:', acceptError);
+      const errorMessage = acceptError.message || 'Failed to fund fiat loan';
+      setSimulationError(errorMessage);
+      toast.error(errorMessage);
+      setIsFunding(false);
+    }
+  }, [acceptError]);
+
+  // Handle cancel error
+  useEffect(() => {
+    if (cancelError) {
+      console.error('Cancel fiat loan error:', cancelError);
+      toast.error(cancelError.message || 'Failed to cancel fiat loan');
+      setIsCancelling(false);
+    }
+  }, [cancelError]);
+
+  // Reset simulation error when modal opens
+  useEffect(() => {
+    if (showFundModal) {
+      setSimulationError('');
+    }
+  }, [showFundModal]);
+
   const handleFund = async () => {
     if (!loan || !loanId) return;
     setIsFunding(true);
+    setSimulationError('');
 
     try {
+      // Simulate the transaction first
+      const simulation = await simulateContractWrite({
+        address: CONTRACT_ADDRESSES.fiatLoanBridge,
+        abi: FiatLoanBridgeABI,
+        functionName: 'acceptFiatLoanRequest',
+        args: [loanId],
+      });
+
+      if (!simulation.success) {
+        setSimulationError(simulation.errorMessage || 'Transaction would fail');
+        toast.error(simulation.errorMessage || 'Transaction would fail');
+        setIsFunding(false);
+        return;
+      }
+
+      // Simulation passed, execute the transaction
       await acceptFiatLoanRequest(loanId);
+      // Success will be handled by the useEffect watching acceptSuccess
     } catch (error: unknown) {
-      const errorMsg = error instanceof Error ? error.message : 'Failed to fund fiat loan';
+      const errorMsg = formatSimulationError(error);
+      setSimulationError(errorMsg);
       toast.error(errorMsg);
       setIsFunding(false);
     }
@@ -225,7 +284,8 @@ export default function FiatLoanDetailPage() {
   // Expiration for pending loans (7 days from creation)
   const expiresAt = Number(loan.createdAt) + (7 * 24 * 60 * 60);
   const isExpired = loan.status === FiatLoanStatus.PENDING_SUPPLIER && Date.now() / 1000 > expiresAt;
-  const canFund = loan.status === FiatLoanStatus.PENDING_SUPPLIER && !isBorrower && !isExpired && isConnected;
+  const canFund = loan.status === FiatLoanStatus.PENDING_SUPPLIER && !isBorrower && !isExpired && isConnected && canActAsSupplier;
+  const showSupplierNotice = loan.status === FiatLoanStatus.PENDING_SUPPLIER && !isBorrower && !isExpired && isConnected && !canActAsSupplier;
   const canCancel = loan.status === FiatLoanStatus.PENDING_SUPPLIER && isBorrower;
 
   return (
@@ -267,6 +327,18 @@ export default function FiatLoanDetailPage() {
               >
                 Fund This Loan
               </Button>
+            )}
+            {showSupplierNotice && (
+              <Link href="/dashboard#supplier">
+                <Button
+                  icon={<AlertCircle className="w-4 h-4" />}
+                  size="lg"
+                  variant="secondary"
+                  className="border-yellow-500/50 text-yellow-400 hover:bg-yellow-500/10"
+                >
+                  Register as Supplier
+                </Button>
+              </Link>
             )}
             {canCancel && (
               <Button
@@ -489,12 +561,34 @@ export default function FiatLoanDetailPage() {
                     </div>
                   </div>
 
-                  <div className="mt-4 p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
-                    <p className="text-sm text-gray-400">
-                      As a supplier, you will provide fiat currency to the borrower off-chain.
-                      The borrower&apos;s crypto collateral is locked in the smart contract as security.
-                    </p>
-                  </div>
+                  {canActAsSupplier ? (
+                    <div className="mt-4 p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
+                      <p className="text-sm text-gray-400">
+                        As a supplier, you will provide fiat currency to the borrower off-chain.
+                        The borrower&apos;s crypto collateral is locked in the smart contract as security.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="mt-4 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                      <div className="flex gap-3">
+                        <AlertCircle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
+                        <div className="flex-1">
+                          <p className="text-sm text-yellow-400 font-medium mb-2">
+                            Supplier Registration Required
+                          </p>
+                          <p className="text-sm text-gray-400 mb-3">
+                            To fund fiat loan requests, you need to register and get verified as a supplier.
+                            This ensures trust and security for all parties.
+                          </p>
+                          <Link href="/dashboard#supplier">
+                            <Button size="sm" className="bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-400 border border-yellow-500/50">
+                              Register as Supplier
+                            </Button>
+                          </Link>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </Card>
               </motion.div>
             )}
@@ -688,6 +782,19 @@ export default function FiatLoanDetailPage() {
               </div>
             </div>
           </div>
+
+          {/* Simulation Error */}
+          {simulationError && (
+            <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
+              <div className="flex gap-2 items-start">
+                <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                <div className="text-sm">
+                  <p className="text-red-400 font-medium">Transaction Error</p>
+                  <p className="text-gray-400 mt-1">{simulationError}</p>
+                </div>
+              </div>
+            </div>
+          )}
 
           <Button
             onClick={handleFund}

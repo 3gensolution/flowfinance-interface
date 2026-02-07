@@ -141,14 +141,12 @@ function MarketplaceContent() {
                 <FiatRequestsTab
                   isLoading={isLoadingFiat}
                   isVerifiedSupplier={isVerifiedSupplier}
-                  onRefresh={refetch}
                 />
               )}
               {fiatTab === 'offers' && (
                 <FiatOffersTab
                   isLoading={isLoadingFiat}
                   isVerifiedSupplier={isVerifiedSupplier}
-                  onRefresh={refetch}
                 />
               )}
             </motion.div>

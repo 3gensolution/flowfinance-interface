@@ -657,13 +657,14 @@ export function useAcceptFiatLenderOffer() {
   const acceptFiatLenderOffer = async (
     offerId: bigint,
     collateralAsset: Address,
-    collateralAmount: bigint
+    collateralAmount: bigint,
+    borrowAmountCents: bigint
   ) => {
     return await writeContractAsync({
       address: CONTRACT_ADDRESSES.fiatLoanBridge,
       abi: FiatLoanBridgeABI,
       functionName: 'acceptFiatLenderOffer',
-      args: [offerId, collateralAsset, collateralAmount],
+      args: [offerId, collateralAsset, collateralAmount, borrowAmountCents],
     });
   };
 

@@ -49,10 +49,17 @@ export function CryptoTabButtons({
   const { data: allRequests } = useBatchLoanRequests(0, Math.min(requestCount, 50));
   const { data: allOffers } = useBatchLenderOffers(0, Math.min(offerCount, 50));
 
-  const counts = useMemo(() => ({
-    requests: (allRequests || []).filter(r => r.status === LoanRequestStatus.PENDING).length,
-    offers: (allOffers || []).filter(o => o.status === LoanRequestStatus.PENDING).length,
-  }), [allRequests, allOffers]);
+  const counts = useMemo(() => {
+    const now = BigInt(Math.floor(Date.now() / 1000));
+    return {
+      requests: (allRequests || []).filter(r =>
+        r.status === LoanRequestStatus.PENDING && r.expireAt > now
+      ).length,
+      offers: (allOffers || []).filter(o =>
+        o.status === LoanRequestStatus.PENDING && o.expireAt > now
+      ).length,
+    };
+  }, [allRequests, allOffers]);
 
   return (
     <motion.div
@@ -122,10 +129,20 @@ export function FiatTabButtons({
   const { data: pendingFiatLoans } = usePendingFiatLoansWithDetails();
   const { data: fiatLenderOffers } = useActiveFiatLenderOffersWithDetails();
 
-  const counts = useMemo(() => ({
-    requests: (pendingFiatLoans || []).filter(l => l.status === FiatLoanStatus.PENDING_SUPPLIER).length,
-    offers: (fiatLenderOffers || []).filter(o => o.status === FiatLenderOfferStatus.ACTIVE).length,
-  }), [pendingFiatLoans, fiatLenderOffers]);
+  const counts = useMemo(() => {
+    const now = BigInt(Math.floor(Date.now() / 1000));
+    return {
+      requests: (pendingFiatLoans || []).filter(l => {
+        if (l.status !== FiatLoanStatus.PENDING_SUPPLIER) return false;
+        // Calculate expiration (7 days from creation)
+        const expiresAt = BigInt(Number(l.createdAt) + (7 * 24 * 60 * 60));
+        return expiresAt > now;
+      }).length,
+      offers: (fiatLenderOffers || []).filter(o =>
+        o.status === FiatLenderOfferStatus.ACTIVE && o.expireAt > now
+      ).length,
+    };
+  }, [pendingFiatLoans, fiatLenderOffers]);
 
   return (
     <motion.div

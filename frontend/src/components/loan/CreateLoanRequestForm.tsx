@@ -19,13 +19,14 @@ import {
   useMaxInterestRate,
   useSupportedAssets,
   usePlatformFeeRate,
+  useRefreshMockPrice,
 } from '@/hooks/useContracts';
 import { PriceFeedDisplay } from '@/components/loan/PriceFeedDisplay';
 import { formatTokenAmount, daysToSeconds, getTokenDecimals } from '@/lib/utils';
 import { simulateContractWrite, formatSimulationError } from '@/lib/contractSimulation';
 import LoanMarketPlaceABIJson from '@/contracts/LoanMarketPlaceABI.json';
 import { Abi } from 'viem';
-import { ArrowRight, AlertCircle, CheckCircle, Info, TrendingUp, Shield, Loader2 } from 'lucide-react';
+import { ArrowRight, AlertCircle, CheckCircle, Info, TrendingUp, Shield, Loader2, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const LoanMarketPlaceABI = LoanMarketPlaceABIJson as Abi;
@@ -50,9 +51,13 @@ export function CreateLoanRequestForm() {
   const [borrowAmount, setBorrowAmount] = useState('');
   const [interestRate, setInterestRate] = useState('12');
   const [duration, setDuration] = useState('30');
+  const [selectedLTV, setSelectedLTV] = useState<number>(0); // User-selected LTV percentage
   const [step, setStep] = useState<'form' | 'approve' | 'confirm'>('form');
   const [simulationError, setSimulationError] = useState<string>('');
   const [isCalculating, setIsCalculating] = useState(false);
+
+  // Minimum LTV percentage (10%)
+  const MIN_LTV_PERCENT = 10;
 
   // Get max interest rate from configuration
   const { data: maxInterestRateData } = useMaxInterestRate();
@@ -106,6 +111,27 @@ export function CreateLoanRequestForm() {
   // Check if any price data is stale
   const isPriceStale = collateralPriceHook.isStale || borrowPriceHook.isStale;
 
+  // Price refresh hook
+  const { refreshPrice, isPending: isRefreshingPrice } = useRefreshMockPrice();
+
+  // Handle price refresh
+  const handleRefreshPrices = async () => {
+    try {
+      if (collateralPriceHook.isStale && collateralPriceHook.priceFeedAddress && collateralPrice) {
+        await refreshPrice(collateralPriceHook.priceFeedAddress as Address, BigInt(collateralPrice), collateralToken);
+      }
+      if (borrowPriceHook.isStale && borrowPriceHook.priceFeedAddress && borrowPrice) {
+        await refreshPrice(borrowPriceHook.priceFeedAddress as Address, BigInt(borrowPrice), borrowToken);
+      }
+      toast.success('Price feeds refreshed!');
+      collateralPriceHook.refetch();
+      borrowPriceHook.refetch();
+    } catch (error) {
+      console.error('Failed to refresh prices:', error);
+      toast.error('Failed to refresh price feeds');
+    }
+  };
+
   // Fetch LTV and configuration
   const durationDays = parseInt(duration);
   const { data: ltvBps, isLoading: isLoadingLTV, error: ltvError } = useLTV(collateralToken, durationDays);
@@ -140,7 +166,24 @@ export function CreateLoanRequestForm() {
     durationDays
   );
 
-  // Calculate maximum borrow amount based on LTV
+  // Max LTV percentage from contract
+  const maxLTVPercent = ltvBps ? Number(ltvBps) / 100 : 0;
+
+  // Initialize selectedLTV to max when max LTV loads
+  useEffect(() => {
+    if (maxLTVPercent > 0 && selectedLTV === 0) {
+      setSelectedLTV(maxLTVPercent);
+    }
+  }, [maxLTVPercent, selectedLTV]);
+
+  // Reset selectedLTV when collateral token or duration changes
+  useEffect(() => {
+    if (maxLTVPercent > 0) {
+      setSelectedLTV(maxLTVPercent);
+    }
+  }, [collateralToken, duration, maxLTVPercent]);
+
+  // Calculate borrow amount based on selected LTV
   useEffect(() => {
     // Reset borrow amount if no collateral amount
     if (!collateralAmount || parseFloat(collateralAmount) <= 0) {
@@ -157,7 +200,7 @@ export function CreateLoanRequestForm() {
     }
 
     // Calculate if we have all required data
-    if (collateralAmount && collateralPrice && borrowPrice && ltvBps) {
+    if (collateralAmount && collateralPrice && borrowPrice && ltvBps && selectedLTV > 0) {
       setIsCalculating(true);
       setSimulationError('');
 
@@ -168,16 +211,17 @@ export function CreateLoanRequestForm() {
         // collateralAmount (18 decimals) * price (8 decimals) / 10^18 = value in USD with 8 decimals
         const collateralValueUSD = (collateralAmountBigInt * (collateralPrice as bigint)) / BigInt(10 ** collateralDecimals);
 
-        // Apply LTV (ltvBps is in basis points, 10000 = 100%)
-        const maxLoanUSD = (collateralValueUSD * (ltvBps as bigint)) / BigInt(10000);
+        // Apply selected LTV (convert percentage to basis points)
+        const selectedLTVBps = BigInt(Math.floor(selectedLTV * 100));
+        const loanUSD = (collateralValueUSD * selectedLTVBps) / BigInt(10000);
 
         // Convert to borrow token amount
-        // maxLoanUSD (8 decimals) * 10^borrowDecimals / price (8 decimals) = borrow amount
-        const maxBorrowAmount = (maxLoanUSD * BigInt(10 ** borrowDecimals)) / (borrowPrice as bigint);
+        // loanUSD (8 decimals) * 10^borrowDecimals / price (8 decimals) = borrow amount
+        const borrowAmountCalc = (loanUSD * BigInt(10 ** borrowDecimals)) / (borrowPrice as bigint);
 
-        // Set the borrow amount (read-only)
-        const maxBorrowFormatted = formatUnits(maxBorrowAmount, borrowDecimals);
-        const finalAmount = parseFloat(maxBorrowFormatted).toFixed(6);
+        // Set the borrow amount
+        const borrowFormatted = formatUnits(borrowAmountCalc, borrowDecimals);
+        const finalAmount = parseFloat(borrowFormatted).toFixed(6);
 
         setBorrowAmount(finalAmount);
       } catch (error) {
@@ -197,7 +241,7 @@ export function CreateLoanRequestForm() {
 
       setIsCalculating(false);
     }
-  }, [collateralAmount, collateralPrice, borrowPrice, ltvBps, collateralDecimals, borrowDecimals, isDataLoading, ltvError, duration]);
+  }, [collateralAmount, collateralPrice, borrowPrice, ltvBps, selectedLTV, collateralDecimals, borrowDecimals, isDataLoading, ltvError, duration]);
 
 
   useEffect(() => {
@@ -416,10 +460,8 @@ export function CreateLoanRequestForm() {
   }));
 
   // Calculate LTV percentage and liquidation threshold for display
-  const ltvPercentage = ltvBps ? (Number(ltvBps) / 100).toFixed(2) : '0';
+  const ltvPercentage = maxLTVPercent.toFixed(2);
   const liquidationPercentage = liquidationThresholdBps ? (Number(liquidationThresholdBps) / 100).toFixed(2) : '0';
-  console.log('ltvPercentage', ltvPercentage, 'ltvBps', ltvBps);
-  console.log('liquidationPercentage', liquidationPercentage)
 
   // Calculate USD values
   const collateralUSD = collateralAmount && collateralPrice
@@ -682,10 +724,36 @@ export function CreateLoanRequestForm() {
                   </p>
                 )}
               </div>
+              {/* LTV Slider */}
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-300">
+                  Loan-to-Value (LTV) Ratio
+                </label>
+                <input
+                  type="range"
+                  min={MIN_LTV_PERCENT}
+                  max={maxLTVPercent || 80}
+                  step="1"
+                  value={selectedLTV}
+                  onChange={(e) => setSelectedLTV(Number(e.target.value))}
+                  disabled={!maxLTVPercent || maxLTVPercent === 0}
+                  className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-accent-500"
+                />
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-gray-400">{MIN_LTV_PERCENT}%</span>
+                  <span className="text-lg font-semibold text-accent-400">{selectedLTV.toFixed(0)}%</span>
+                  <span className="text-gray-400">{maxLTVPercent.toFixed(0)}% max</span>
+                </div>
+                <p className="text-xs text-gray-400">
+                  Lower LTV = safer position, less borrowing power. Higher LTV = more borrowing, higher liquidation risk.
+                </p>
+              </div>
+
               <div className="glass-card p-3 space-y-1">
                 <p className="text-xs text-gray-400 flex items-center gap-1">
                   <TrendingUp className="w-3 h-3" />
-                  Max LTV for {duration} days: <span className="text-primary-400 font-medium">{ltvPercentage}%</span>
+                  Selected LTV: <span className="text-accent-400 font-medium">{selectedLTV.toFixed(0)}%</span>
+                  <span className="text-gray-500">(Max: {ltvPercentage}%)</span>
                 </p>
                 <p className="text-xs text-gray-400 flex items-center gap-1">
                   <Shield className="w-3 h-3" />
@@ -733,6 +801,31 @@ export function CreateLoanRequestForm() {
             <PriceFeedDisplay tokenAddress={collateralToken} variant="compact" />
             <PriceFeedDisplay tokenAddress={borrowToken} variant="compact" />
           </div>
+
+          {/* Price Stale Warning */}
+          {isPriceStale && (
+            <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
+              <div className="flex gap-3">
+                <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                <div className="flex-1 space-y-2 text-sm">
+                  <p className="text-red-400 font-medium">Price Data is Stale</p>
+                  <p className="text-gray-400">
+                    The price feed data is outdated. Transactions will fail until prices are refreshed.
+                    Click the refresh icon on the price display above, or use the button below.
+                  </p>
+                  <Button
+                    onClick={handleRefreshPrices}
+                    loading={isRefreshingPrice}
+                    size="sm"
+                    variant="secondary"
+                    icon={<RefreshCw className="w-4 h-4" />}
+                  >
+                    Refresh All Price Feeds
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Info Banner */}
           <div className="glass-card p-4 border border-blue-500/20">

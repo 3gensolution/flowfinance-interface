@@ -1,18 +1,18 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useAccount } from 'wagmi';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { LoanRequestCard, LenderOfferCard, FiatLoanRequestCard, FiatLenderOfferCard } from '@/components/loan/LoanCard';
-import { AcceptFiatLenderOfferModal } from '@/components/loan/AcceptFiatLenderOfferModal';
 import {
   usePendingLoanRequests,
   useActiveLenderOffers,
   usePendingFiatLoansFromStore,
   useActiveFiatLenderOffersFromStore,
 } from '@/stores/contractStore';
-import { useAcceptFiatLoanRequest, FiatLenderOffer } from '@/hooks/useFiatLoan';
+import { LoanRequestStatus } from '@/types';
+import { FiatLoanStatus, FiatLenderOfferStatus } from '@/hooks/useFiatLoan';
 import { FileText, TrendingUp, Banknote, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -26,8 +26,13 @@ export function CryptoRequestsTab({ isLoading }: CryptoRequestsTabProps) {
   const storeLoanRequests = usePendingLoanRequests();
 
   const loanRequests = useMemo(() => {
+    const now = BigInt(Math.floor(Date.now() / 1000));
     return storeLoanRequests.filter((r) => {
+      // Filter out user's own requests
       if (address && r.borrower.toLowerCase() === address.toLowerCase()) return false;
+      // Only show pending and not expired
+      if (r.status !== LoanRequestStatus.PENDING) return false;
+      if (r.expireAt <= now) return false;
       return true;
     });
   }, [storeLoanRequests, address]);
@@ -78,8 +83,13 @@ export function CryptoOffersTab({ isLoading }: CryptoOffersTabProps) {
   const storeLenderOffers = useActiveLenderOffers();
 
   const lenderOffers = useMemo(() => {
+    const now = BigInt(Math.floor(Date.now() / 1000));
     return storeLenderOffers.filter((o) => {
+      // Filter out user's own offers
       if (address && o.lender.toLowerCase() === address.toLowerCase()) return false;
+      // Only show pending and not expired
+      if (o.status !== LoanRequestStatus.PENDING) return false;
+      if (o.expireAt <= now) return false;
       return true;
     });
   }, [storeLenderOffers, address]);
@@ -124,17 +134,22 @@ export function CryptoOffersTab({ isLoading }: CryptoOffersTabProps) {
 interface FiatRequestsTabProps {
   isLoading: boolean;
   isVerifiedSupplier: boolean;
-  onRefresh: () => void;
 }
 
-export function FiatRequestsTab({ isLoading, isVerifiedSupplier, onRefresh }: FiatRequestsTabProps) {
+export function FiatRequestsTab({ isLoading, isVerifiedSupplier }: FiatRequestsTabProps) {
   const { address } = useAccount();
   const storeFiatLoans = usePendingFiatLoansFromStore();
-  const { acceptFiatLoanRequest, isPending: isAcceptingFiat } = useAcceptFiatLoanRequest();
 
   const displayPendingFiatLoans = useMemo(() => {
+    const now = BigInt(Math.floor(Date.now() / 1000));
     return storeFiatLoans.filter((loan) => {
+      // Filter out user's own loans
       if (address && loan.borrower.toLowerCase() === address.toLowerCase()) return false;
+      // Only show pending
+      if (loan.status !== FiatLoanStatus.PENDING_SUPPLIER) return false;
+      // Calculate expiration (7 days from creation)
+      const expiresAt = BigInt(Number(loan.createdAt) + (7 * 24 * 60 * 60));
+      if (expiresAt <= now) return false;
       return true;
     });
   }, [storeFiatLoans, address]);
@@ -163,24 +178,39 @@ export function FiatRequestsTab({ isLoading, isVerifiedSupplier, onRefresh }: Fi
   }
 
   return (
-    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-      {displayPendingFiatLoans.map((loan) => (
-        <FiatLoanRequestCard
-          key={loan.loanId.toString()}
-          loan={loan}
-          isOwner={false}
-          isSupplier={isVerifiedSupplier}
-          onFund={isVerifiedSupplier ? async () => {
-            try {
-              await acceptFiatLoanRequest(loan.loanId);
-              onRefresh();
-            } catch (error) {
-              console.error('Failed to fund fiat loan:', error);
-            }
-          } : undefined}
-          loading={isAcceptingFiat}
-        />
-      ))}
+    <div className="space-y-6">
+      {/* Supplier Notice for non-suppliers */}
+      {!isVerifiedSupplier && displayPendingFiatLoans.length > 0 && (
+        <Card className="border-yellow-500/30 bg-yellow-500/5">
+          <div className="flex items-center gap-4 p-4">
+            <div className="w-10 h-10 rounded-full bg-yellow-500/20 flex items-center justify-center flex-shrink-0">
+              <Banknote className="w-5 h-5 text-yellow-400" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm text-yellow-400 font-medium">Supplier Registration Required</p>
+              <p className="text-sm text-gray-400">
+                To fund fiat loan requests, you need to register and get verified as a supplier.
+              </p>
+            </div>
+            <Link href="/dashboard#supplier">
+              <Button size="sm" className="bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-400 border border-yellow-500/50">
+                Register
+              </Button>
+            </Link>
+          </div>
+        </Card>
+      )}
+
+      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {displayPendingFiatLoans.map((loan) => (
+          <FiatLoanRequestCard
+            key={loan.loanId.toString()}
+            loan={loan}
+            isOwner={false}
+            isSupplier={isVerifiedSupplier}
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -189,18 +219,20 @@ export function FiatRequestsTab({ isLoading, isVerifiedSupplier, onRefresh }: Fi
 interface FiatOffersTabProps {
   isLoading: boolean;
   isVerifiedSupplier: boolean;
-  onRefresh: () => void;
 }
 
-export function FiatOffersTab({ isLoading, isVerifiedSupplier, onRefresh }: FiatOffersTabProps) {
+export function FiatOffersTab({ isLoading, isVerifiedSupplier }: FiatOffersTabProps) {
   const { address } = useAccount();
   const storeFiatLenderOffers = useActiveFiatLenderOffersFromStore();
-  const [selectedFiatOffer, setSelectedFiatOffer] = useState<FiatLenderOffer | null>(null);
-  const [isAcceptModalOpen, setIsAcceptModalOpen] = useState(false);
 
   const displayFiatLenderOffers = useMemo(() => {
+    const now = BigInt(Math.floor(Date.now() / 1000));
     return storeFiatLenderOffers.filter((offer) => {
+      // Filter out user's own offers
       if (address && offer.lender.toLowerCase() === address.toLowerCase()) return false;
+      // Only show active and not expired
+      if (offer.status !== FiatLenderOfferStatus.ACTIVE) return false;
+      if (offer.expireAt <= now) return false;
       return true;
     });
   }, [storeFiatLenderOffers, address]);
@@ -235,32 +267,14 @@ export function FiatOffersTab({ isLoading, isVerifiedSupplier, onRefresh }: Fiat
   }
 
   return (
-    <>
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {displayFiatLenderOffers.map((offer) => (
-          <FiatLenderOfferCard
-            key={offer.offerId.toString()}
-            offer={offer}
-            isOwner={false}
-            onAccept={() => {
-              setSelectedFiatOffer(offer);
-              setIsAcceptModalOpen(true);
-            }}
-          />
-        ))}
-      </div>
-
-      <AcceptFiatLenderOfferModal
-        offer={selectedFiatOffer}
-        isOpen={isAcceptModalOpen}
-        onClose={() => {
-          setIsAcceptModalOpen(false);
-          setSelectedFiatOffer(null);
-        }}
-        onSuccess={() => {
-          onRefresh();
-        }}
-      />
-    </>
+    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {displayFiatLenderOffers.map((offer) => (
+        <FiatLenderOfferCard
+          key={offer.offerId.toString()}
+          offer={offer}
+          isOwner={false}
+        />
+      ))}
+    </div>
   );
 }

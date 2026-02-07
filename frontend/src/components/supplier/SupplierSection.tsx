@@ -30,7 +30,10 @@ import {
   Loader2,
   ExternalLink,
   Wallet,
+  ChevronRight,
+  Banknote,
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 
 export function SupplierSection() {
@@ -38,6 +41,9 @@ export function SupplierSection() {
   const publicClient = usePublicClient();
   const { supplier, isRegistered, isVerified, isLoading: isLoadingSupplier } = useSupplierDetails(address);
   const { registerSupplier, isPending: isRegistering, isSimulating } = useRegisterSupplier();
+
+  // Collapsed state - default to collapsed
+  const [isExpanded, setIsExpanded] = useState(false);
 
   // Modal states
   const [registerModalOpen, setRegisterModalOpen] = useState(false);
@@ -155,52 +161,119 @@ export function SupplierSection() {
     setSupplierType(SupplierType.INDIVIDUAL);
   };
 
+  // Collapsed toggle bar
+  const CollapsedHeader = () => (
+    <button
+      onClick={() => setIsExpanded(!isExpanded)}
+      className="w-full glass-card p-4 flex items-center justify-between hover:bg-white/5 transition-colors cursor-pointer group"
+    >
+      <div className="flex items-center gap-3">
+        <div className={`p-2 rounded-lg ${isVerified ? 'bg-green-500/10' : isRegistered ? 'bg-yellow-500/10' : 'bg-primary-500/10'}`}>
+          <Banknote className={`w-5 h-5 ${isVerified ? 'text-green-400' : isRegistered ? 'text-yellow-400' : 'text-primary-400'}`} />
+        </div>
+        <div className="text-left">
+          <h3 className="font-semibold text-white">Fiat Supplier</h3>
+          <p className="text-xs text-gray-400">
+            {isLoadingSupplier ? 'Loading...' : isVerified ? 'Verified - Manage funds' : isRegistered ? 'Pending verification' : 'Become a liquidity provider'}
+          </p>
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        {isVerified && (
+          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/20 text-green-400">
+            Verified
+          </span>
+        )}
+        {isRegistered && !isVerified && (
+          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-500/20 text-yellow-400">
+            Pending
+          </span>
+        )}
+        <motion.div
+          animate={{ rotate: isExpanded ? 90 : 0 }}
+          transition={{ duration: 0.2 }}
+        >
+          <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-white transition-colors" />
+        </motion.div>
+      </div>
+    </button>
+  );
+
+  // Loading state inside expanded content
   if (isLoadingSupplier) {
     return (
-      <Card className="text-center py-8">
-        <Loader2 className="w-6 h-6 animate-spin text-primary-400 mx-auto" />
-      </Card>
+      <div className="space-y-0">
+        <CollapsedHeader />
+        <AnimatePresence>
+          {isExpanded && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="overflow-hidden"
+            >
+              <Card className="text-center py-8 rounded-t-none border-t-0">
+                <Loader2 className="w-6 h-6 animate-spin text-primary-400 mx-auto" />
+              </Card>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
     );
   }
 
   // Not registered - show registration CTA
   if (!isRegistered) {
     return (
-      <>
-        <Card className="border-primary-500/20">
-          <div className="flex items-start gap-4">
-            <div className="p-3 rounded-xl bg-primary-500/10">
-              <UserPlus className="w-6 h-6 text-primary-400" />
-            </div>
-            <div className="flex-1">
-              <h3 className="text-lg font-semibold mb-1">Become a Fiat Liquidity Supplier</h3>
-              <p className="text-sm text-gray-400 mb-4">
-                Register as a supplier to provide fiat liquidity to borrowers.
-                Earn interest on your fiat capital while helping bridge crypto and traditional finance.
-              </p>
-              <div className="flex flex-wrap gap-3 mb-4">
-                <div className="flex items-center gap-2 text-xs text-gray-400">
-                  <Shield className="w-3.5 h-3.5 text-green-400" />
-                  <span>Collateral Protected</span>
+      <div className="space-y-0">
+        <CollapsedHeader />
+        <AnimatePresence>
+          {isExpanded && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="overflow-hidden"
+            >
+              <Card className="border-primary-500/20 rounded-t-none border-t-0">
+                <div className="flex items-start gap-4">
+                  <div className="p-3 rounded-xl bg-primary-500/10">
+                    <UserPlus className="w-6 h-6 text-primary-400" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-lg font-semibold mb-1">Become a Fiat Liquidity Supplier</h3>
+                    <p className="text-sm text-gray-400 mb-4">
+                      Register as a supplier to provide fiat liquidity to borrowers.
+                      Earn interest on your fiat capital while helping bridge crypto and traditional finance.
+                    </p>
+                    <div className="flex flex-wrap gap-3 mb-4">
+                      <div className="flex items-center gap-2 text-xs text-gray-400">
+                        <Shield className="w-3.5 h-3.5 text-green-400" />
+                        <span>Collateral Protected</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-gray-400">
+                        <DollarSign className="w-3.5 h-3.5 text-yellow-400" />
+                        <span>Earn Interest</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-gray-400">
+                        <CheckCircle className="w-3.5 h-3.5 text-primary-400" />
+                        <span>KYC Verified</span>
+                      </div>
+                    </div>
+                    <Button
+                      onClick={() => setRegisterModalOpen(true)}
+                      icon={<UserPlus className="w-4 h-4" />}
+                    >
+                      Register as Supplier
+                    </Button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 text-xs text-gray-400">
-                  <DollarSign className="w-3.5 h-3.5 text-yellow-400" />
-                  <span>Earn Interest</span>
-                </div>
-                <div className="flex items-center gap-2 text-xs text-gray-400">
-                  <CheckCircle className="w-3.5 h-3.5 text-primary-400" />
-                  <span>KYC Verified</span>
-                </div>
-              </div>
-              <Button
-                onClick={() => setRegisterModalOpen(true)}
-                icon={<UserPlus className="w-4 h-4" />}
-              >
-                Register as Supplier
-              </Button>
-            </div>
-          </div>
-        </Card>
+              </Card>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Registration Modal */}
         <Modal
@@ -299,40 +372,50 @@ export function SupplierSection() {
             </div>
           </div>
         </Modal>
-      </>
+      </div>
     );
   }
 
   // Registered - show supplier status
   return (
-    <>
-      <Card className={isVerified ? 'border-green-500/20' : 'border-yellow-500/20'}>
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <div className={`p-2.5 rounded-xl ${isVerified ? 'bg-green-500/10' : 'bg-yellow-500/10'}`}>
-              {isVerified ? (
-                <CheckCircle className="w-5 h-5 text-green-400" />
-              ) : (
-                <AlertCircle className="w-5 h-5 text-yellow-400" />
-              )}
-            </div>
-            <div>
-              <h3 className="font-semibold">{supplier?.name || 'Supplier'}</h3>
-              <p className="text-xs text-gray-400">
-                {isVerified ? 'Verified Supplier' : 'Pending Verification'}
-                {' '}&middot;{' '}
-                {supplier?.supplierType === 1 ? 'Business' : 'Individual'}
-              </p>
-            </div>
-          </div>
-          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-            isVerified
-              ? 'bg-green-500/20 text-green-400'
-              : 'bg-yellow-500/20 text-yellow-400'
-          }`}>
-            {isVerified ? 'Verified' : 'Pending'}
-          </span>
-        </div>
+    <div className="space-y-0">
+      <CollapsedHeader />
+      <AnimatePresence>
+        {isExpanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <Card className={`rounded-t-none border-t-0 ${isVerified ? 'border-green-500/20' : 'border-yellow-500/20'}`}>
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className={`p-2.5 rounded-xl ${isVerified ? 'bg-green-500/10' : 'bg-yellow-500/10'}`}>
+                    {isVerified ? (
+                      <CheckCircle className="w-5 h-5 text-green-400" />
+                    ) : (
+                      <AlertCircle className="w-5 h-5 text-yellow-400" />
+                    )}
+                  </div>
+                  <div>
+                    <h3 className="font-semibold">{supplier?.name || 'Supplier'}</h3>
+                    <p className="text-xs text-gray-400">
+                      {isVerified ? 'Verified Supplier' : 'Pending Verification'}
+                      {' '}&middot;{' '}
+                      {supplier?.supplierType === 1 ? 'Business' : 'Individual'}
+                    </p>
+                  </div>
+                </div>
+                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                  isVerified
+                    ? 'bg-green-500/20 text-green-400'
+                    : 'bg-yellow-500/20 text-yellow-400'
+                }`}>
+                  {isVerified ? 'Verified' : 'Pending'}
+                </span>
+              </div>
 
         {/* Stats */}
         <div className="grid grid-cols-3 gap-3 mb-4">
@@ -457,14 +540,16 @@ export function SupplierSection() {
           </Button>
         )}
 
-        {/* Additional info for unverified suppliers */}
-        {!isVerified && !generatedLink && (
-          <p className="text-xs text-gray-500 text-center mt-3">
-            KYC verification is required before you can deposit or withdraw fiat.
-          </p>
+              {/* Additional info for unverified suppliers */}
+              {!isVerified && !generatedLink && (
+                <p className="text-xs text-gray-500 text-center mt-3">
+                  KYC verification is required before you can deposit or withdraw fiat.
+                </p>
+              )}
+            </Card>
+          </motion.div>
         )}
-      </Card>
-
-    </>
+      </AnimatePresence>
+    </div>
   );
 }

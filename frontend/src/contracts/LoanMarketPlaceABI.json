@@ -433,6 +433,25 @@
   },
   {
     "type": "function",
+    "name": "getOutstandingDebt",
+    "inputs": [
+      {
+        "name": "loanId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "initialize",
     "inputs": [
       {
@@ -1970,6 +1989,11 @@
   {
     "type": "error",
     "name": "LTVExceedsMaximum",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "LoanAlreadyRepaid",
     "inputs": []
   },
   {

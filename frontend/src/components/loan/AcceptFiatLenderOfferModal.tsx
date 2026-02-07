@@ -14,6 +14,11 @@ import { formatCurrency, convertToUSDCents, useBatchExchangeRates } from '@/hook
 import { formatTokenAmount, getTokenDecimals } from '@/lib/utils';
 import { Shield, AlertCircle, CheckCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { simulateContractWrite, formatSimulationError } from '@/lib/contractSimulation';
+import FiatLoanBridgeABIJson from '@/contracts/FiatLoanBridgeABI.json';
+import { Abi } from 'viem';
+
+const FiatLoanBridgeABI = FiatLoanBridgeABIJson as Abi;
 
 interface AcceptFiatLenderOfferModalProps {
   offer: FiatLenderOffer | null;
@@ -27,6 +32,10 @@ export function AcceptFiatLenderOfferModal({ offer, isOpen, onClose, onSuccess }
   const [collateralToken, setCollateralToken] = useState<Address>(TOKEN_LIST[0].address);
   const [collateralAmount, setCollateralAmount] = useState('');
   const [step, setStep] = useState<'form' | 'approve' | 'confirm'>('form');
+  const [simulationError, setSimulationError] = useState<string>('');
+
+  // State for partial borrowing - how much user wants to borrow (in currency, e.g., "500.00")
+  const [borrowAmountInput, setBorrowAmountInput] = useState<string>('');
 
   // Get supported assets from Configuration contract
   const { supportedTokens } = useSupportedAssets();
@@ -37,6 +46,24 @@ export function AcceptFiatLenderOfferModal({ offer, isOpen, onClose, onSuccess }
   // Get exchange rates
   const { data: exchangeRates } = useBatchExchangeRates();
   const offerCurrencyRate = offer ? exchangeRates?.[offer.currency] : undefined;
+
+  // Get remaining amount (for partial borrowing)
+  const remainingAmountCents = offer?.remainingAmountCents || offer?.fiatAmountCents || BigInt(0);
+
+  // Parse borrow amount input to cents
+  const parsedBorrowAmountCents = borrowAmountInput
+    ? BigInt(Math.floor(parseFloat(borrowAmountInput) * 100))
+    : remainingAmountCents; // Default to full remaining amount
+
+  // Validate borrow amount
+  const isBorrowAmountValid = parsedBorrowAmountCents > BigInt(0) && parsedBorrowAmountCents <= remainingAmountCents;
+
+  // Initialize borrow amount when offer loads
+  useEffect(() => {
+    if (offer && remainingAmountCents > BigInt(0) && !borrowAmountInput) {
+      setBorrowAmountInput((Number(remainingAmountCents) / 100).toFixed(2));
+    }
+  }, [offer, remainingAmountCents, borrowAmountInput]);
 
   // Get collateral token data
   const { data: collateralBalance } = useTokenBalance(collateralToken, address);
@@ -62,13 +89,18 @@ export function AcceptFiatLenderOfferModal({ offer, isOpen, onClose, onSuccess }
   const collateralAmountNumber = parseFloat(collateralAmount) || 0;
   const collateralUSD = collateralAmountNumber * collateralPricePerToken;
 
-  // Check if collateral meets minimum requirement
-  const meetsMinimum = offer ? collateralUSD >= Number(offer.minCollateralValueUSD) : false;
-
-  // Calculate fiat amount in USD
-  const fiatAmountUSD = offer && offerCurrencyRate
-    ? Number(convertToUSDCents(offer.fiatAmountCents, offerCurrencyRate)) / 100
+  // Calculate fiat amount in USD (using selected borrow amount)
+  const fiatAmountUSD = offerCurrencyRate
+    ? Number(convertToUSDCents(parsedBorrowAmountCents, offerCurrencyRate)) / 100
     : 0;
+
+  // Calculate min collateral proportional to borrow amount
+  const proportionalMinCollateralUSD = offer && offer.fiatAmountCents > BigInt(0)
+    ? (Number(offer.minCollateralValueUSD) * Number(parsedBorrowAmountCents)) / Number(offer.fiatAmountCents)
+    : 0;
+
+  // Check if collateral meets minimum requirement (proportional to selected borrow amount)
+  const meetsMinimum = collateralUSD >= proportionalMinCollateralUSD && proportionalMinCollateralUSD > 0;
 
   // Calculate LTV
   const ltv = collateralUSD > 0 && fiatAmountUSD > 0
@@ -83,13 +115,15 @@ export function AcceptFiatLenderOfferModal({ offer, isOpen, onClose, onSuccess }
     ? BigInt(collateralBalance as bigint) >= parsedCollateralAmount
     : true;
 
-  const isFormValid = offer && collateralAmount && meetsMinimum && hasEnoughBalance;
+  const isFormValid = offer && collateralAmount && meetsMinimum && hasEnoughBalance && isBorrowAmountValid;
 
   // Reset on modal open/close
   useEffect(() => {
     if (isOpen) {
       setStep('form');
       setCollateralAmount('');
+      setBorrowAmountInput('');
+      setSimulationError('');
     }
   }, [isOpen]);
 
@@ -135,12 +169,30 @@ export function AcceptFiatLenderOfferModal({ offer, isOpen, onClose, onSuccess }
 
   const handleConfirm = async () => {
     if (!offer) return;
+    setSimulationError('');
 
     try {
-      await acceptFiatLenderOffer(offer.offerId, collateralToken, parsedCollateralAmount);
+      // Simulate the transaction first
+      const simulation = await simulateContractWrite({
+        address: CONTRACT_ADDRESSES.fiatLoanBridge,
+        abi: FiatLoanBridgeABI,
+        functionName: 'acceptFiatLenderOffer',
+        args: [offer.offerId, collateralToken, parsedCollateralAmount, parsedBorrowAmountCents],
+      });
+
+      if (!simulation.success) {
+        setSimulationError(simulation.errorMessage || 'Transaction would fail');
+        toast.error(simulation.errorMessage || 'Transaction would fail');
+        return;
+      }
+
+      // Simulation passed, execute the transaction
+      await acceptFiatLenderOffer(offer.offerId, collateralToken, parsedCollateralAmount, parsedBorrowAmountCents);
     } catch (error) {
+      const errorMsg = formatSimulationError(error);
+      setSimulationError(errorMsg);
       console.error('Failed to accept offer:', error);
-      toast.error('Failed to accept offer');
+      toast.error(errorMsg);
     }
   };
 
@@ -180,6 +232,49 @@ export function AcceptFiatLenderOfferModal({ offer, isOpen, onClose, onSuccess }
 
         {step === 'form' && (
           <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Borrow Amount Input for Partial Borrowing */}
+            <div>
+              <label className="block text-sm font-medium mb-2">Amount to Borrow</label>
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={borrowAmountInput}
+                    onChange={(e) => setBorrowAmountInput(e.target.value)}
+                    placeholder="0.00"
+                    className="input-field w-full pr-16"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">
+                    {offer?.currency || 'USD'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setBorrowAmountInput((Number(remainingAmountCents) / 100).toFixed(2))}
+                  className="px-3 py-2 text-xs font-semibold text-green-400 hover:text-green-300 bg-green-400/10 hover:bg-green-400/20 rounded-lg transition-colors"
+                >
+                  MAX
+                </button>
+              </div>
+              <div className="flex justify-between mt-1 text-xs">
+                <span className="text-gray-400">
+                  Available: {formatCurrency(remainingAmountCents, offer?.currency || 'USD')}
+                </span>
+                {fiatAmountUSD > 0 && (
+                  <span className="text-green-400">≈ ${fiatAmountUSD.toFixed(2)} USD</span>
+                )}
+              </div>
+              {!isBorrowAmountValid && borrowAmountInput && (
+                <p className="text-xs text-red-400 mt-1">
+                  {parsedBorrowAmountCents > remainingAmountCents
+                    ? 'Amount exceeds available'
+                    : 'Enter a valid amount'}
+                </p>
+              )}
+            </div>
+
             {/* Collateral Token Selection */}
             <div>
               <label className="block text-sm font-medium mb-2">Collateral Token</label>
@@ -230,11 +325,11 @@ export function AcceptFiatLenderOfferModal({ offer, isOpen, onClose, onSuccess }
             </div>
 
             {/* Validation Messages */}
-            {collateralAmount && !meetsMinimum && (
+            {collateralAmount && !meetsMinimum && proportionalMinCollateralUSD > 0 && (
               <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
                 <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
                 <p className="text-sm text-red-400">
-                  Collateral value (${collateralUSD.toFixed(2)}) is below minimum requirement (${Number(offer.minCollateralValueUSD).toLocaleString()})
+                  Collateral value (${collateralUSD.toFixed(2)}) is below minimum requirement (${proportionalMinCollateralUSD.toFixed(2)})
                 </p>
               </div>
             )}
@@ -309,15 +404,36 @@ export function AcceptFiatLenderOfferModal({ offer, isOpen, onClose, onSuccess }
 
         {step === 'confirm' && (
           <div className="space-y-4">
+            {/* Simulation Error */}
+            {simulationError && (
+              <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
+                <div className="flex gap-2 items-start">
+                  <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                  <div className="text-sm">
+                    <p className="text-red-400 font-medium">Transaction Error</p>
+                    <p className="text-gray-400 mt-1">{simulationError}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="glass-card p-4">
               <h4 className="text-sm font-semibold mb-3">Transaction Summary</h4>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-400">You Will Receive:</span>
                   <span className="font-medium text-green-400">
-                    {formatCurrency(offer.fiatAmountCents, offer.currency)}
+                    {formatCurrency(parsedBorrowAmountCents, offer.currency)}
                   </span>
                 </div>
+                {parsedBorrowAmountCents < remainingAmountCents && (
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-500">Remaining in Offer:</span>
+                    <span className="text-gray-400">
+                      {formatCurrency(remainingAmountCents - parsedBorrowAmountCents, offer.currency)}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-gray-400">Your Collateral:</span>
                   <span className="font-medium">
