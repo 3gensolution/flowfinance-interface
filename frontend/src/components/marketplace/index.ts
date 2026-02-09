@@ -1,3 +1,12 @@
+// V2 Components
+export { FilterBar } from './FilterBar';
+export type { FilterState } from './FilterBar';
+
+export { CryptoBorrowRequestCard, FiatBorrowRequestCard } from './BorrowRequestCard';
+export { CryptoLendingOfferCard, FiatLendingOfferCard } from './LendingOfferCard';
+export { ListingsGrid, Pagination } from './ListingsGrid';
+
+// Legacy components (kept for compatibility)
 export { MarketTypeSelector } from './MarketTypeSelector';
 export type { MarketType } from './MarketTypeSelector';
 

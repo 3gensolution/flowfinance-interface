@@ -6,9 +6,9 @@ import {
   arbitrumSepolia,
   optimismSepolia,
   foundry,
-  // Mainnets (uncomment for production)
+  // Mainnets
+  base,
   // mainnet,
-  // base,
   // arbitrum,
   // optimism,
   // polygon,
@@ -26,8 +26,10 @@ function createConfig() {
   configInstance = getDefaultConfig({
     appName: 'Flow Lending',
     projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || 'YOUR_PROJECT_ID',
-    // Testnet chains (for development)
     chains: [
+      // Mainnets
+      base,
+      // Testnets
       baseSepolia,
       sepolia,
       arbitrumSepolia,
@@ -35,18 +37,14 @@ function createConfig() {
       foundry,
     ],
     transports: {
+      // Mainnet transports
+      [base.id]: http('https://mainnet.base.org'),
       // Testnet transports
       [baseSepolia.id]: http('https://sepolia.base.org'),
       [sepolia.id]: http('https://rpc.sepolia.org'),
       [arbitrumSepolia.id]: http('https://sepolia-rollup.arbitrum.io/rpc'),
       [optimismSepolia.id]: http('https://sepolia.optimism.io'),
       [foundry.id]: http('http://127.0.0.1:8545'),
-      // Mainnet transports (uncomment for production)
-      // [mainnet.id]: http('https://eth.llamarpc.com'),
-      // [base.id]: http('https://mainnet.base.org'),
-      // [arbitrum.id]: http('https://arb1.arbitrum.io/rpc'),
-      // [optimism.id]: http('https://mainnet.optimism.io'),
-      // [polygon.id]: http('https://polygon-rpc.com'),
     },
     ssr: true,
   });

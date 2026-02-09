@@ -36,6 +36,11 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 
+interface GeneratedLinkInfo {
+  url: string;
+  expiresAt: string;
+}
+
 export function SupplierSection() {
   const { address } = useAccount();
   const publicClient = usePublicClient();
@@ -56,14 +61,11 @@ export function SupplierSection() {
   // Generate link API hook
   const {
     mutate: generateLinkMutation,
-    data: linkData,
     isPending: isGeneratingLink
   } = useGenerateLinkApi();
 
-  // Extract link data from response
-  const linkResponse = linkData?.data as GenerateLinkResponse | undefined;
-  const generatedLink = linkResponse?.data?.url;
-  const linkExpiresAt = linkResponse?.data?.expiresAt;
+  // Track generated link
+  const [generatedLink, setGeneratedLink] = useState<GeneratedLinkInfo | null>(null);
 
   // Fiat Oracle data - supported currencies and balances
   const { data: supportedCurrencies, isLoading: isLoadingCurrencies } = useGetSupportedCurrencies();
@@ -128,7 +130,7 @@ export function SupplierSection() {
     }
   };
 
-  // Handle generate link for deposit/withdraw
+  // Handle generate link
   const handleGenerateLink = () => {
     if (!address) {
       toast.error('Please connect your wallet first');
@@ -137,8 +139,15 @@ export function SupplierSection() {
     generateLinkMutation(
       { walletAddress: address },
       {
-        onSuccess: () => {
-          toast.success('Link generated successfully!');
+        onSuccess: (data) => {
+          const response = data?.data as GenerateLinkResponse | undefined;
+          if (response?.data?.url) {
+            setGeneratedLink({
+              url: response.data.url,
+              expiresAt: response.data.expiresAt,
+            });
+            toast.success('Link generated successfully!');
+          }
         },
         onError: (error) => {
           console.error('Failed to generate link:', error);
@@ -150,8 +159,8 @@ export function SupplierSection() {
 
   // Handle continue to external link
   const handleContinueToLink = () => {
-    if (generatedLink) {
-      window.open(generatedLink, '_blank', 'noopener,noreferrer');
+    if (generatedLink?.url) {
+      window.open(generatedLink.url, '_blank', 'noopener,noreferrer');
     }
   };
 
@@ -523,9 +532,9 @@ export function SupplierSection() {
             >
               Continue
             </Button>
-            {linkExpiresAt && (
+            {generatedLink.expiresAt && (
               <p className="text-xs text-gray-400 text-center">
-                {formatExpirationTime(linkExpiresAt)}
+                {formatExpirationTime(generatedLink.expiresAt)}
               </p>
             )}
           </div>

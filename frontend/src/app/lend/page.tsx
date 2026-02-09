@@ -1,260 +1,276 @@
 'use client';
 
 import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { CreateLenderOfferForm } from '@/components/loan/CreateLenderOfferForm';
-import { CreateFiatLenderOfferForm } from '@/components/loan/CreateFiatLenderOfferForm';
-import { Card } from '@/components/ui/Card';
-import { Wallet, TrendingUp, Shield, CheckCircle, Coins, Banknote } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ArrowLeft, ArrowRight } from 'lucide-react';
+import { Button } from '@/components/ui/Button';
+import {
+  AssetTypeSelector,
+  AssetSelector,
+  AmountInput,
+  InterestSlider,
+  SummaryPanel,
+  SubmitCTA,
+  type AssetType,
+  type Asset,
+} from '@/components/lender';
+import { useIsVerifiedSupplier } from '@/hooks/useSupplyAssets';
+import { useLoanConfigLimits } from '@/hooks/useContracts';
 
-const cryptoBenefits = [
-  {
-    icon: TrendingUp,
-    title: 'Earn Interest',
-    description: 'Set your own rates and earn yield on your crypto',
-    color: 'text-green-400',
-  },
-  {
-    icon: Shield,
-    title: 'Collateral Protected',
-    description: 'All loans are over-collateralized for your safety',
-    color: 'text-primary-400',
-  },
-  {
-    icon: Wallet,
-    title: 'Non-Custodial',
-    description: 'Your funds are secured by smart contracts',
-    color: 'text-accent-400',
-  },
-  {
-    icon: CheckCircle,
-    title: 'Liquidation Safety',
-    description: 'If borrower defaults, you receive their collateral',
-    color: 'text-yellow-400',
-  },
-];
-
-const fiatBenefits = [
-  {
-    icon: TrendingUp,
-    title: 'Earn Interest',
-    description: 'Fixed 12% APY on fiat loans backed by crypto',
-    color: 'text-green-400',
-  },
-  {
-    icon: Shield,
-    title: 'Crypto Collateral',
-    description: 'All fiat loans secured by over-collateralized crypto',
-    color: 'text-green-400',
-  },
-  {
-    icon: Wallet,
-    title: 'Supplier Verified',
-    description: 'Only verified suppliers can create fiat offers',
-    color: 'text-green-400',
-  },
-  {
-    icon: CheckCircle,
-    title: 'Multiple Currencies',
-    description: 'Support for USD, NGN, EUR, GBP, KES, GHS, ZAR',
-    color: 'text-green-400',
-  },
+// Define wizard steps
+const STEPS = [
+  { id: 1, title: 'Type', description: 'Choose whether to lend crypto or cash' },
+  { id: 2, title: 'Asset', description: 'Select the specific asset you want to lend' },
+  { id: 3, title: 'Amount', description: 'Enter how much you want to lend' },
+  { id: 4, title: 'Rate', description: 'Set your interest rate for borrowers' },
+  { id: 5, title: 'Review', description: 'Confirm your lending details' },
 ];
 
 export default function LendPage() {
-  const [offerType, setOfferType] = useState<'crypto' | 'fiat'>('crypto');
+  // Wizard state
+  const [currentStep, setCurrentStep] = useState(1);
+
+  // Form state
+  const [assetType, setAssetType] = useState<AssetType>(null);
+  const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
+  const [amount, setAmount] = useState('');
+  const [interestRate, setInterestRate] = useState(10);
+
+  // Check if user is verified supplier (for cash/fiat)
+  const { isVerified, isLoading: isVerificationLoading } = useIsVerifiedSupplier();
+
+  // Get interest rate limits from contract configuration
+  const { minInterestPercent, maxInterestPercent, isLoading: isConfigLoading } = useLoanConfigLimits();
+
+  // Use contract values or fallback defaults
+  const minRate = Math.max(minInterestPercent || 0.01, 1);
+  const maxRate = Math.min(maxInterestPercent || 100, 50);
+
+  // Calculate minimum amount based on token decimals
+  const getMinAmount = () => {
+    if (!selectedAsset) return '0.0001';
+    const decimals = selectedAsset.decimals || 18;
+    const minDecimals = Math.min(4, decimals);
+    return (1 / Math.pow(10, minDecimals)).toString();
+  };
+
+  const minAmount = getMinAmount();
+
+  // Determine if continue button should be hidden (cash flow and not verified)
+  const isCashFlowUnverified = assetType === 'cash' && !isVerified && !isVerificationLoading;
+
+  // Handle asset type change - reset dependent selections
+  const handleAssetTypeChange = (type: AssetType) => {
+    setAssetType(type);
+    setSelectedAsset(null);
+    setAmount('');
+  };
+
+  // Check if current step is complete
+  const isStepComplete = () => {
+    switch (currentStep) {
+      case 1:
+        return assetType !== null;
+      case 2:
+        return selectedAsset !== null;
+      case 3:
+        return amount !== '' && parseFloat(amount) >= parseFloat(minAmount);
+      case 4:
+        return interestRate >= minRate && interestRate <= maxRate;
+      case 5:
+        return true;
+      default:
+        return false;
+    }
+  };
+
+  // Navigation handlers
+  const handleNext = () => {
+    if (currentStep < STEPS.length && isStepComplete()) {
+      setCurrentStep((prev) => prev + 1);
+    }
+  };
+
+  const handleBack = () => {
+    if (currentStep > 1) {
+      setCurrentStep((prev) => prev - 1);
+    }
+  };
+
+  const handleSubmit = () => {
+    // Reset form after successful submission
+    setCurrentStep(1);
+    setAssetType(null);
+    setSelectedAsset(null);
+    setAmount('');
+    setInterestRate(10);
+  };
+
+  // Render current step content
+  const renderStepContent = () => {
+    switch (currentStep) {
+      case 1:
+        return (
+          <AssetTypeSelector
+            selected={assetType}
+            onSelect={handleAssetTypeChange}
+          />
+        );
+      case 2:
+        return (
+          <AssetSelector
+            assetType={assetType}
+            selected={selectedAsset}
+            onSelect={setSelectedAsset}
+          />
+        );
+      case 3:
+        return (
+          <AmountInput
+            assetType={assetType}
+            asset={selectedAsset}
+            amount={amount}
+            onAmountChange={setAmount}
+            minAmount={minAmount}
+          />
+        );
+      case 4:
+        return (
+          <InterestSlider
+            asset={selectedAsset}
+            rate={interestRate}
+            onRateChange={setInterestRate}
+            minRate={minRate}
+            maxRate={maxRate}
+            isLoading={isConfigLoading}
+          />
+        );
+      case 5:
+        return (
+          <SummaryPanel
+            assetType={assetType}
+            asset={selectedAsset}
+            amount={amount}
+            rate={interestRate}
+          />
+        );
+      default:
+        return null;
+    }
+  };
 
   return (
-    <div className="min-h-screen py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-[1920px] mx-auto">
-        {/* Header */}
+    <div className="min-h-screen bg-navy-900 pt-20 pb-8 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-4xl mx-auto">
+        {/* Header with Step Counter */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-center mb-8"
+          className="text-center mb-6"
         >
-          <h1 className="text-3xl sm:text-4xl font-bold mb-4">
-            Lend <span className="gradient-text">{offerType === 'crypto' ? 'Crypto' : 'Fiat'}</span>
+          {/* Step Counter Badge */}
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 mb-4">
+            <span className="text-orange-400 font-semibold">Step {currentStep}</span>
+            <span className="text-white/40">of {STEPS.length}</span>
+          </div>
+
+          {/* Main Title */}
+          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-white mb-2">
+            Earn by lending{' '}
+            <span className="text-orange-400">crypto</span> or{' '}
+            <span className="text-blue-400">cash</span>
           </h1>
-          <p className="text-gray-400 max-w-2xl mx-auto">
-            {offerType === 'crypto'
-              ? 'Earn yield by providing liquidity to borrowers. Create an offer with your terms or fund existing loan requests in the marketplace.'
-              : 'Provide fiat liquidity to borrowers backed by crypto collateral. Create offers for verified supplier lending.'}
+
+          {/* Subtitle */}
+          <p className="text-base text-white/60 max-w-2xl mx-auto">
+            Supply funds and set your own interest rate.
           </p>
         </motion.div>
 
-        {/* Offer Type Toggle */}
+        {/* Step Content */}
+        <div className="min-h-[320px] flex items-center justify-center py-4">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={currentStep}
+              initial={{ opacity: 0, x: 20, filter: 'blur(4px)' }}
+              animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
+              exit={{ opacity: 0, x: -20, filter: 'blur(4px)' }}
+              transition={{ duration: 0.3 }}
+              className="w-full"
+            >
+              {renderStepContent()}
+            </motion.div>
+          </AnimatePresence>
+        </div>
+
+        {/* Navigation Buttons */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.05 }}
-          className="flex justify-center gap-2 mb-8"
+          transition={{ delay: 0.2 }}
+          className="flex items-center justify-between max-w-xl mx-auto mt-4"
         >
-          <button
-            onClick={() => setOfferType('crypto')}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-sm transition-all ${
-              offerType === 'crypto'
-                ? 'bg-primary-500/20 text-primary-400 border border-primary-500/30'
-                : 'bg-white/5 text-gray-400 border border-gray-700 hover:border-gray-600'
-            }`}
-          >
-            <Coins className="w-4 h-4" />
-            Crypto Lending
-          </button>
-          <button
-            onClick={() => setOfferType('fiat')}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-sm transition-all ${
-              offerType === 'fiat'
-                ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-                : 'bg-white/5 text-gray-400 border border-gray-700 hover:border-gray-600'
-            }`}
-          >
-            <Banknote className="w-4 h-4" />
-            Fiat Lending
-          </button>
+          {/* Back Button */}
+          <div className="w-28">
+            {currentStep > 1 && (
+              <motion.div
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+              >
+                <Button
+                  variant="ghost"
+                  size="md"
+                  onClick={handleBack}
+                  icon={<ArrowLeft className="w-4 h-4" />}
+                  className="text-white/60 hover:text-white hover:bg-white/10"
+                >
+                  Back
+                </Button>
+              </motion.div>
+            )}
+          </div>
+
+          {/* Continue / Submit Button */}
+          <div className="flex-1 max-w-xs">
+            {isCashFlowUnverified ? (
+              <div className="h-12" />
+            ) : currentStep < STEPS.length ? (
+              <Button
+                variant="primary"
+                size="lg"
+                fullWidth
+                disabled={!isStepComplete()}
+                onClick={handleNext}
+                icon={<ArrowRight className="w-5 h-5" />}
+                iconPosition="right"
+              >
+                Continue
+              </Button>
+            ) : (
+              <SubmitCTA
+                asset={selectedAsset}
+                amount={amount}
+                rate={interestRate}
+                isValid={isStepComplete()}
+                assetType={assetType}
+                onSubmit={handleSubmit}
+              />
+            )}
+          </div>
+
+          {/* Spacer for alignment */}
+          <div className="w-28" />
         </motion.div>
 
-        <div className="grid lg:grid-cols-3 gap-8">
-          {/* Main Form */}
-          <div className="lg:col-span-2">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-            >
-              {offerType === 'crypto' ? (
-                <CreateLenderOfferForm />
-              ) : (
-                <CreateFiatLenderOfferForm />
-              )}
-            </motion.div>
-          </div>
-
-          {/* Sidebar */}
-          <div className="space-y-6">
-            {/* Benefits */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-            >
-              <Card className={offerType === 'fiat' ? 'border-green-500/20' : ''}>
-                <h3 className="text-lg font-semibold mb-4">Why Lend in AwinFi?</h3>
-                <div className="space-y-4">
-                  {(offerType === 'crypto' ? cryptoBenefits : fiatBenefits).map((benefit) => (
-                    <div key={benefit.title} className="flex items-start gap-3">
-                      <div className={`p-2 rounded-lg bg-white/5 ${benefit.color}`}>
-                        <benefit.icon className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <h4 className="font-medium">{benefit.title}</h4>
-                        <p className="text-sm text-gray-400">{benefit.description}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </Card>
-            </motion.div>
-
-            {/* How It Works */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3 }}
-            >
-              <Card className={offerType === 'fiat' ? 'border-green-500/20' : ''}>
-                <h3 className="text-lg font-semibold mb-4">How It Works</h3>
-                {offerType === 'crypto' ? (
-                  <ol className="space-y-3">
-                    <li className="flex gap-3">
-                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-accent-500/20 text-accent-400 text-sm flex items-center justify-center">
-                        1
-                      </span>
-                      <p className="text-sm text-gray-300">
-                        Create an offer specifying amount, collateral requirements, and terms
-                      </p>
-                    </li>
-                    <li className="flex gap-3">
-                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-accent-500/20 text-accent-400 text-sm flex items-center justify-center">
-                        2
-                      </span>
-                      <p className="text-sm text-gray-300">
-                        A borrower accepts your offer with the required collateral
-                      </p>
-                    </li>
-                    <li className="flex gap-3">
-                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-accent-500/20 text-accent-400 text-sm flex items-center justify-center">
-                        3
-                      </span>
-                      <p className="text-sm text-gray-300">
-                        Earn interest as the borrower repays the loan
-                      </p>
-                    </li>
-                    <li className="flex gap-3">
-                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-accent-500/20 text-accent-400 text-sm flex items-center justify-center">
-                        4
-                      </span>
-                      <p className="text-sm text-gray-300">
-                        If default occurs, you can claim the borrower&apos;s collateral
-                      </p>
-                    </li>
-                  </ol>
-                ) : (
-                  <ol className="space-y-3">
-                    <li className="flex gap-3">
-                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-green-500/20 text-green-400 text-sm flex items-center justify-center">
-                        1
-                      </span>
-                      <p className="text-sm text-gray-300">
-                        Create a fiat offer specifying currency, amount, and minimum collateral
-                      </p>
-                    </li>
-                    <li className="flex gap-3">
-                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-green-500/20 text-green-400 text-sm flex items-center justify-center">
-                        2
-                      </span>
-                      <p className="text-sm text-gray-300">
-                        Borrower accepts with crypto collateral locked on-chain
-                      </p>
-                    </li>
-                    <li className="flex gap-3">
-                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-green-500/20 text-green-400 text-sm flex items-center justify-center">
-                        3
-                      </span>
-                      <p className="text-sm text-gray-300">
-                        Disburse fiat to borrower off-chain via traditional banking
-                      </p>
-                    </li>
-                    <li className="flex gap-3">
-                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-green-500/20 text-green-400 text-sm flex items-center justify-center">
-                        4
-                      </span>
-                      <p className="text-sm text-gray-300">
-                        Receive fiat repayment with interest or claim collateral if default
-                      </p>
-                    </li>
-                  </ol>
-                )}
-              </Card>
-            </motion.div>
-
-            {/* Risk Warning */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4 }}
-            >
-              <Card className="border-yellow-500/20">
-                <h3 className="text-lg font-semibold mb-2 text-yellow-400">Risk Warning</h3>
-                <p className="text-sm text-gray-400">
-                  While loans are over-collateralized, rapid market movements could affect
-                  collateral value. DeFi lending involves smart contract risks.
-                </p>
-              </Card>
-            </motion.div>
-          </div>
-        </div>
-
+        {/* Microcopy */}
+        <motion.p
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.3 }}
+          className="text-center text-white/30 text-xs mt-4"
+        >
+          Borrowers can take any amount from your supply. You earn interest on what they use.
+        </motion.p>
       </div>
     </div>
   );

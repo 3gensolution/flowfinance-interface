@@ -6,7 +6,7 @@ import { Twitter, Github, MessageCircle } from 'lucide-react';
 
 export function Footer() {
   return (
-    <footer className="border-t border-white/10 bg-black/20 backdrop-blur-xl">
+    <footer className="border-t border-white/10 bg-[#080F2B]">
       <div className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           {/* Brand */}
@@ -75,19 +75,19 @@ export function Footer() {
             <div className="flex gap-4">
               <a
                 href="#"
-                className="w-10 h-10 glass-card flex items-center justify-center hover:bg-white/10 transition-colors"
+                className="w-10 h-10 bg-white/5 border border-white/10 rounded-lg flex items-center justify-center hover:bg-white/10 transition-colors text-gray-400 hover:text-white"
               >
                 <Twitter className="w-5 h-5" />
               </a>
               <a
                 href="#"
-                className="w-10 h-10 glass-card flex items-center justify-center hover:bg-white/10 transition-colors"
+                className="w-10 h-10 bg-white/5 border border-white/10 rounded-lg flex items-center justify-center hover:bg-white/10 transition-colors text-gray-400 hover:text-white"
               >
                 <Github className="w-5 h-5" />
               </a>
               <a
                 href="#"
-                className="w-10 h-10 glass-card flex items-center justify-center hover:bg-white/10 transition-colors"
+                className="w-10 h-10 bg-white/5 border border-white/10 rounded-lg flex items-center justify-center hover:bg-white/10 transition-colors text-gray-400 hover:text-white"
               >
                 <MessageCircle className="w-5 h-5" />
               </a>

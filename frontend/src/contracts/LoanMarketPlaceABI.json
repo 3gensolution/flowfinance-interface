@@ -433,6 +433,25 @@
   },
   {
     "type": "function",
+    "name": "getMinRepaymentInTokens",
+    "inputs": [
+      {
+        "name": "loanId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "getOutstandingDebt",
     "inputs": [
       {
@@ -444,6 +463,55 @@
     "outputs": [
       {
         "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getRepaymentInfo",
+    "inputs": [
+      {
+        "name": "loanId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "outstandingDebt",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "amountRepaid",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "minRepaymentUSD",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "remainingCollateral",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "collateralReleased",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "canFullyRepay",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "timeUntilFullRepay",
         "type": "uint256",
         "internalType": "uint256"
       }

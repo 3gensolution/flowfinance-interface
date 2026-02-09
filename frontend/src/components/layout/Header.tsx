@@ -7,7 +7,7 @@ import { ConnectButton } from '@/components/wallet/ConnectButton';
 import { cn } from '@/lib/utils';
 import { motion } from 'framer-motion';
 import { Menu, X } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 const navLinks = [
   { href: '/marketplace', label: 'Marketplace' },
@@ -20,9 +20,44 @@ const navLinks = [
 export function Header() {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+  const isLandingPage = pathname === '/';
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 20);
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const isSupplyPage = pathname === '/supply';
+
+  // Determine header styling based on page and scroll state
+  const headerClasses = isLandingPage
+    ? scrolled
+      ? 'bg-[#080F2B]/95 backdrop-blur-xl border-b border-white/10 shadow-lg'
+      : 'bg-transparent backdrop-blur-sm border-b border-white/5'
+    : isSupplyPage
+    ? 'bg-navy-900/95 backdrop-blur-xl border-b border-white/10'
+    : 'bg-black/20 backdrop-blur-xl border-b border-white/10';
+
+  const linkClasses = isLandingPage
+    ? {
+        active: 'bg-orange-500/20 text-orange-400 border border-orange-500/30',
+        inactive: 'text-white hover:text-orange-400 hover:bg-white/10',
+      }
+    : {
+        active: 'bg-accent-500/10 text-accent-500 border border-accent-500/20',
+        inactive: 'text-gray-400 hover:text-white hover:bg-white/5',
+      };
+
+  const mobileButtonClasses = isLandingPage
+    ? 'text-white hover:bg-white/10'
+    : 'text-white hover:bg-white/10';
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-40 bg-black/20 backdrop-blur-xl border-b border-white/10">
+    <header className={cn('fixed top-0 left-0 right-0 z-40 transition-all duration-300', headerClasses)}>
       <nav className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
@@ -44,9 +79,7 @@ export function Header() {
                 href={link.href}
                 className={cn(
                   'px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200',
-                  pathname === link.href
-                    ? 'bg-accent-500/10 text-accent-500 border border-accent-500/20'
-                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                  pathname === link.href ? linkClasses.active : linkClasses.inactive
                 )}
               >
                 {link.label}
@@ -63,7 +96,7 @@ export function Header() {
             {/* Mobile menu button */}
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="md:hidden p-2 hover:bg-white/10 rounded-lg transition-colors"
+              className={cn('md:hidden p-2 rounded-lg transition-colors', mobileButtonClasses)}
             >
               {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
             </button>
@@ -84,9 +117,7 @@ export function Header() {
                 onClick={() => setMobileMenuOpen(false)}
                 className={cn(
                   'block px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200',
-                  pathname === link.href
-                    ? 'bg-accent-500/10 text-accent-500 border border-accent-500/20'
-                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                  pathname === link.href ? linkClasses.active : linkClasses.inactive
                 )}
               >
                 {link.label}

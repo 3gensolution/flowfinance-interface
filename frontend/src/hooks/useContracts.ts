@@ -727,9 +727,48 @@ export function useFundLoanRequest() {
 }
 
 export function useCreateLenderOffer() {
-  const { writeContract, data: hash, isPending, error } = useWriteContract();
+  const { writeContract, writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const publicClient = usePublicClient();
 
+  // Simulate before executing to catch errors early
+  const simulateCreateOffer = async (
+    lendAsset: Address,
+    lendAmount: bigint,
+    requiredCollateralAsset: Address,
+    minCollateralAmount: bigint,
+    interestRate: bigint,
+    duration: bigint,
+    account: Address
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!publicClient) {
+      return { success: false, error: 'Public client not available' };
+    }
+
+    try {
+      await publicClient.simulateContract({
+        address: CONTRACT_ADDRESSES.loanMarketPlace,
+        abi: LoanMarketPlaceABI,
+        functionName: 'createLenderOffer',
+        args: [lendAsset, lendAmount, requiredCollateralAsset, minCollateralAmount, interestRate, duration],
+        account,
+      });
+      return { success: true };
+    } catch (err: unknown) {
+      const error = err as Error & { shortMessage?: string; cause?: { reason?: string } };
+      let errorMessage = 'Transaction simulation failed';
+      if (error.shortMessage) {
+        errorMessage = error.shortMessage;
+      } else if (error.cause?.reason) {
+        errorMessage = error.cause.reason;
+      } else if (error.message) {
+        errorMessage = error.message.slice(0, 200);
+      }
+      return { success: false, error: errorMessage };
+    }
+  };
+
+  // Fire-and-forget version
   const createOffer = (
     lendAsset: Address,
     lendAmount: bigint,
@@ -746,7 +785,24 @@ export function useCreateLenderOffer() {
     });
   };
 
-  return { createOffer, hash, isPending, isConfirming, isSuccess, error };
+  // Async version that returns the transaction hash
+  const createOfferAsync = async (
+    lendAsset: Address,
+    lendAmount: bigint,
+    requiredCollateralAsset: Address,
+    minCollateralAmount: bigint,
+    interestRate: bigint,
+    duration: bigint
+  ) => {
+    return await writeContractAsync({
+      address: CONTRACT_ADDRESSES.loanMarketPlace,
+      abi: LoanMarketPlaceABI,
+      functionName: 'createLenderOffer',
+      args: [lendAsset, lendAmount, requiredCollateralAsset, minCollateralAmount, interestRate, duration],
+    });
+  };
+
+  return { createOffer, createOfferAsync, simulateCreateOffer, hash, isPending, isConfirming, isSuccess, error };
 }
 
 export function useAcceptLenderOffer() {

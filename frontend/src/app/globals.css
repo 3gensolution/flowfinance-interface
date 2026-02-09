@@ -3,14 +3,25 @@
 @tailwind utilities;
 
 :root {
-  --foreground-rgb: 240, 240, 240;
-  --background-rgb: 0, 0, 32;
+  --foreground-rgb: 255, 255, 255;
+  --background-rgb: 8, 15, 43;
+
+  /* AwinFi Color System (Navy Blue-First) */
+  --color-background: #080F2B;
+  --color-background-light: #0D1638;
+  --color-background-card: #111B45;
+  --color-orange: #EE7C1D;
+  --color-teal: #2FB9BB;
+  --color-blue: #1361A8;
+  --color-text: #FFFFFF;
+  --color-text-muted: #9CA3AF;
 }
 
 body {
   color: rgb(var(--foreground-rgb));
   background-color: rgb(var(--background-rgb));
   min-height: 100vh;
+  font-family: 'Inter', system-ui, sans-serif;
 }
 
 @layer utilities {
@@ -20,6 +31,16 @@ body {
 }
 
 @layer components {
+  /* Navy Cards (Dark Background) */
+  .card-light {
+    @apply bg-navy-800/50 border border-white/10 rounded-2xl shadow-lg backdrop-blur-sm;
+  }
+
+  .card-light-hover {
+    @apply card-light hover:bg-navy-700/50 hover:border-white/20 transition-all duration-300;
+  }
+
+  /* Glass Morphism Cards */
   .glass-card {
     @apply bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl;
   }
@@ -28,81 +49,250 @@ body {
     @apply glass-card hover:bg-white/10 hover:border-white/20 transition-all duration-300;
   }
 
+  /* Gradient Text */
   .gradient-text {
-    @apply text-accent-500;
+    @apply text-orange-500;
   }
 
-  .gradient-border {
-    @apply relative border border-primary-500/50;
+  .gradient-text-blue {
+    @apply text-blue-400;
   }
 
+  .gradient-text-teal {
+    @apply text-teal-400;
+  }
+
+  /* Primary Button Styles (Orange - Action Only) */
   .btn-primary {
-    @apply px-6 py-3 bg-primary-500 rounded-xl font-semibold
-           hover:bg-primary-400 transition-all duration-300
-           shadow-lg shadow-primary-500/25 hover:shadow-primary-500/40
+    @apply px-6 py-3 bg-orange-500 rounded-xl font-semibold text-white
+           hover:bg-orange-400 transition-all duration-300
+           shadow-lg shadow-orange-500/25 hover:shadow-orange-500/40
            active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
+  /* Secondary Button (Blue Outline for dark bg) */
   .btn-secondary {
-    @apply px-6 py-3 glass-card hover:bg-white/10 rounded-xl font-semibold transition-all duration-300;
+    @apply px-6 py-3 bg-transparent border-2 border-blue-400 text-blue-400
+           rounded-xl font-semibold transition-all duration-300
+           hover:bg-blue-500/20 hover:border-blue-300;
   }
 
+  .btn-ghost {
+    @apply px-6 py-3 hover:bg-white/10 rounded-xl font-semibold
+           transition-all duration-300 text-white/70 hover:text-white;
+  }
+
+  /* Input Fields */
   .input-field {
-    @apply w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl
-           focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20
-           placeholder-gray-500 transition-all duration-300;
+    @apply w-full px-4 py-3 bg-navy-800/50 border border-white/10 rounded-xl
+           focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20
+           placeholder-white/40 text-white transition-all duration-300;
   }
 
+  /* Stat Cards */
   .stat-card {
-    @apply glass-card p-6 text-center;
+    @apply card-light p-6 text-center;
   }
 
+  /* Navigation */
   .nav-link {
-    @apply px-4 py-2 text-gray-300 hover:text-white transition-colors duration-200;
+    @apply px-4 py-2 text-white/70 hover:text-orange-400 transition-colors duration-200;
   }
 
   .nav-link-active {
-    @apply px-4 py-2 text-white bg-white/10 rounded-lg;
+    @apply px-4 py-2 text-orange-400 font-medium;
+  }
+
+  /* Section Container */
+  .section-container {
+    @apply relative py-20 px-4 sm:px-6 lg:px-8;
+  }
+
+  .section-inner {
+    @apply max-w-7xl mx-auto;
+  }
+
+  /* Step Cards (Uniform Height) */
+  .step-card {
+    @apply card-light p-6 rounded-2xl transition-all duration-300
+           hover:translate-y-[-6px] hover:shadow-xl hover:border-white/20
+           min-h-[280px] flex flex-col;
+  }
+
+  /* Feature Cards */
+  .feature-card {
+    @apply card-light-hover p-6 rounded-2xl cursor-pointer;
+  }
+
+  /* Trust Badge */
+  .trust-badge {
+    @apply inline-flex items-center gap-2 px-4 py-2 bg-white/5 border border-white/10 rounded-full
+           text-sm text-white/70;
+  }
+
+  /* Dark Section (Footer, CTA) - Now just navy variant */
+  .section-dark {
+    @apply bg-navy-950 text-white;
   }
 }
 
-/* Custom scrollbar */
+/* Custom Scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.05);
+  background: #0D1638;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
+  background: #3B4F7E;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: #596992;
 }
 
-/* Animations */
-@keyframes shimmer {
-  0% {
-    background-position: -200% 0;
-  }
-  100% {
-    background-position: 200% 0;
-  }
-}
-
+/* Shimmer Animation */
 .animate-shimmer {
   background: linear-gradient(
     90deg,
     rgba(255, 255, 255, 0) 0%,
-    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0.05) 50%,
     rgba(255, 255, 255, 0) 100%
   );
   background-size: 200% 100%;
   animation: shimmer 2s infinite;
+}
+
+/* Reveal Animation Classes */
+.reveal {
+  opacity: 0;
+  transform: translateY(20px);
+  filter: blur(4px);
+  transition: all 0.6s cubic-bezier(0.33, 1, 0.68, 1);
+}
+
+.reveal.revealed {
+  opacity: 1;
+  transform: translateY(0);
+  filter: blur(0);
+}
+
+/* Stagger Children Reveal */
+.stagger-reveal > * {
+  opacity: 0;
+  transform: translateY(30px);
+}
+
+.stagger-reveal.revealed > *:nth-child(1) { animation: fadeInUp 0.5s ease-out 0s forwards; }
+.stagger-reveal.revealed > *:nth-child(2) { animation: fadeInUp 0.5s ease-out 0.15s forwards; }
+.stagger-reveal.revealed > *:nth-child(3) { animation: fadeInUp 0.5s ease-out 0.3s forwards; }
+.stagger-reveal.revealed > *:nth-child(4) { animation: fadeInUp 0.5s ease-out 0.45s forwards; }
+.stagger-reveal.revealed > *:nth-child(5) { animation: fadeInUp 0.5s ease-out 0.6s forwards; }
+.stagger-reveal.revealed > *:nth-child(6) { animation: fadeInUp 0.5s ease-out 0.75s forwards; }
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+/* Number Count Animation */
+.count-number {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Glow Effects */
+.glow-orange {
+  box-shadow: 0 0 20px rgba(238, 124, 29, 0.3);
+}
+
+.glow-orange:hover {
+  box-shadow: 0 0 40px rgba(238, 124, 29, 0.5);
+}
+
+.glow-blue {
+  box-shadow: 0 0 20px rgba(19, 97, 168, 0.3);
+}
+
+/* Magnetic Hover Effect (for cards) */
+.magnetic-hover {
+  transition: transform 0.2s ease-out;
+}
+
+/* Hero Background (Navy) */
+.hero-bg {
+  background: linear-gradient(180deg, #080F2B 0%, #0D1638 100%);
+  position: relative;
+}
+
+.hero-bg::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(ellipse at 30% 20%, rgba(19, 97, 168, 0.15) 0%, transparent 50%),
+              radial-gradient(ellipse at 70% 80%, rgba(238, 124, 29, 0.1) 0%, transparent 50%);
+  pointer-events: none;
+}
+
+/* Dark Hero Background (alternative) */
+.hero-bg-dark {
+  background: linear-gradient(135deg, #080F2B 0%, #0D1638 50%, #080F2B 100%);
+  position: relative;
+}
+
+/* Smooth Section Transitions */
+section {
+  scroll-margin-top: 80px;
+}
+
+/* Focus Styles */
+:focus-visible {
+  outline: 2px solid #60A5FA;
+  outline-offset: 2px;
+}
+
+/* Selection Styles */
+::selection {
+  background: rgba(238, 124, 29, 0.3);
+  color: #FFFFFF;
+}
+
+/* Loading States */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.03) 0%,
+    rgba(255, 255, 255, 0.08) 50%,
+    rgba(255, 255, 255, 0.03) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* Interest Rate Slider Mock */
+.rate-slider {
+  @apply relative h-2 bg-white/10 rounded-full;
+}
+
+.rate-slider-fill {
+  @apply absolute left-0 top-0 h-full bg-gradient-to-r from-blue-500 to-orange-500 rounded-full;
+}
+
+.rate-slider-thumb {
+  @apply absolute top-1/2 -translate-y-1/2 w-5 h-5 bg-navy-800 border-2 border-orange-500 rounded-full shadow-md;
 }
