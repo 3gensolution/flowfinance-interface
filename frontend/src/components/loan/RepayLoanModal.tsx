@@ -10,14 +10,13 @@ import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import {
   useRepayLoan,
-  useOutstandingDebt,
   useApproveToken,
   useTokenAllowance,
   useTokenBalance,
   useTokenPrice,
   useRefreshMockPrice,
-  useMinRepaymentAmount,
-  // useEscrowCollateralInfo,
+  useRepaymentInfo,
+  useMinRepaymentInTokens,
 } from '@/hooks/useContracts';
 import { CONTRACT_ADDRESSES, getTokenByAddress } from '@/config/contracts';
 import { simulateContractWrite, formatSimulationError } from '@/lib/contractSimulation';
@@ -58,17 +57,23 @@ export function RepayLoanModal() {
   const { repayAsync, isPending: isRepayPending } = useRepayLoan();
   const { approveAsync } = useApproveToken();
 
-  // Get outstanding debt from contract - this is the remaining debt after partial repayments
+  // Get comprehensive repayment info from contract
   const {
-    data: outstandingDebtData,
-    isLoading: isLoadingOutstandingDebt,
-    refetch: refetchOutstandingDebt
-  } = useOutstandingDebt(repayLoanId || undefined);
-  const outstandingDebt = outstandingDebtData ? outstandingDebtData as bigint : BigInt(0);
+    data: repaymentInfoData,
+    isLoading: isLoadingRepaymentInfo,
+    refetch: refetchRepaymentInfo
+  } = useRepaymentInfo(repayLoanId || undefined);
 
-  // Get minimum repayment amount from config (in USD with 8 decimals)
-  const { data: minRepaymentAmountUSD, isLoading: isLoadingMinRepayment } = useMinRepaymentAmount();
-  const minRepaymentUSD = minRepaymentAmountUSD ? Number(minRepaymentAmountUSD) / 1e8 : 1; // Default $1
+  // Parse repayment info tuple
+  const repaymentInfo = repaymentInfoData as readonly [bigint, bigint, bigint, bigint, bigint, boolean, bigint] | undefined;
+  const outstandingDebt = repaymentInfo ? repaymentInfo[0] : BigInt(0);
+  const minRepaymentUSD = repaymentInfo ? Number(repaymentInfo[2]) / 1e8 : 1; // minRepaymentUSD in 8 decimals
+  const canFullyRepay = repaymentInfo ? repaymentInfo[5] : true;
+  const timeUntilFullRepay = repaymentInfo ? Number(repaymentInfo[6]) : 0;
+
+  // Get minimum repayment in tokens directly from contract (handles conversion properly)
+  const { data: minRepaymentTokensData, isLoading: isLoadingMinTokens } = useMinRepaymentInTokens(repayLoanId || undefined);
+  const minRepaymentTokens = minRepaymentTokensData ? minRepaymentTokensData as bigint : BigInt(0);
 
   const { refetch: refetchAllowance } = useTokenAllowance(
     selectedLoan?.borrowAsset,
@@ -125,15 +130,6 @@ export function RepayLoanModal() {
   const isCloseToFull = repayAmountBigInt >= remainingToRepay - tolerance;
   const isPartialRepayment = remainingToRepay > BigInt(0) && repayAmountBigInt > BigInt(0) && !isCloseToFull;
 
-  // Calculate minimum repayment in token terms (from USD)
-  // minRepaymentUSD is in USD, currentPrice is in 8 decimals (e.g., 1e8 = $1)
-  const minRepaymentTokens = useMemo(() => {
-    if (!currentPrice || !selectedTokenInfo) return BigInt(0);
-    // Convert USD to token amount: (minUSD * 10^8 * 10^decimals) / price
-    const minUSDScaled = BigInt(Math.floor(minRepaymentUSD * 1e8));
-    return (minUSDScaled * BigInt(10 ** selectedTokenInfo.decimals)) / BigInt(currentPrice);
-  }, [currentPrice, selectedTokenInfo, minRepaymentUSD]);
-
   const formattedMinRepayment = selectedTokenInfo && minRepaymentTokens > BigInt(0)
     ? formatUnits(minRepaymentTokens, selectedTokenInfo.decimals)
     : '0';
@@ -145,7 +141,10 @@ export function RepayLoanModal() {
   const isBelowMinimum = isPartialRepayment && repayAmountBigInt > BigInt(0) && repayAmountBigInt < minRepaymentTokens;
 
   // Check if calculation is still loading
-  const isCalculationPending = isLoadingOutstandingDebt || isLoadingMinRepayment;
+  const isCalculationPending = isLoadingRepaymentInfo || isLoadingMinTokens;
+
+  // Check if full repayment is blocked (loan too new)
+  const isFullRepayBlocked = !canFullyRepay && isCloseToFull;
 
   // Reset state when modal opens
   const handleClose = useCallback(() => {
@@ -278,9 +277,12 @@ export function RepayLoanModal() {
     const toastId = toast.loading('Verifying repayment amount...');
 
     try {
-      // First, refetch the latest outstanding debt from contract
-      const { data: latestOutstandingData } = await refetchOutstandingDebt();
-      const latestRemainingDebt = latestOutstandingData ? latestOutstandingData as bigint : BigInt(0);
+      // First, refetch the latest repayment info from contract
+      const { data: latestRepaymentData } = await refetchRepaymentInfo();
+      const latestInfo = latestRepaymentData as readonly [bigint, bigint, bigint, bigint, bigint, boolean, bigint] | undefined;
+      const latestRemainingDebt = latestInfo ? latestInfo[0] : BigInt(0);
+      const latestCanFullyRepay = latestInfo ? latestInfo[5] : true;
+      const latestTimeUntilFullRepay = latestInfo ? Number(latestInfo[6]) : 0;
 
       // Handle precision issues: if amount is very close to remaining debt (within 0.1%),
       // treat it as full repayment to avoid the minimum repayment check blocking small remainders
@@ -288,6 +290,12 @@ export function RepayLoanModal() {
       const isCloseToFull = amountToRepay >= latestRemainingDebt - tolerance && amountToRepay <= latestRemainingDebt + tolerance;
 
       if (isCloseToFull || amountToRepay >= latestRemainingDebt) {
+        // Check if full repayment is allowed (minLoanActiveTime has passed)
+        if (!latestCanFullyRepay) {
+          toast.error(`Full repayment not allowed yet. Wait ${latestTimeUntilFullRepay} seconds.`, { id: toastId });
+          setIsRepaying(false);
+          return;
+        }
         // Use exact remaining debt for full repayment to avoid precision issues
         amountToRepay = latestRemainingDebt;
       }
@@ -391,7 +399,7 @@ export function RepayLoanModal() {
     } finally {
       setIsRepaying(false);
     }
-  }, [selectedLoan, repayAmount, address, publicClient, repayAsync, handleClose, refetchOutstandingDebt, minRepaymentTokens, formattedMinRepayment, minRepaymentUSD, selectedTokenInfo]);
+  }, [selectedLoan, repayAmount, address, publicClient, repayAsync, handleClose, refetchRepaymentInfo, minRepaymentTokens, formattedMinRepayment, minRepaymentUSD, selectedTokenInfo]);
 
   if (!selectedLoan) {
     return (
@@ -483,10 +491,10 @@ export function RepayLoanModal() {
           <>
             {/* Loading state for calculation */}
             {isCalculationPending && (
-              <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+              <div className="p-4 bg-primary-500/10 border border-primary-500/30 rounded-lg">
                 <div className="flex items-center gap-3">
                   <div className="w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-                  <p className="text-blue-400 text-sm">
+                  <p className="text-primary-400 text-sm">
                     Calculating repayment amount from contract...
                   </p>
                 </div>
@@ -513,6 +521,18 @@ export function RepayLoanModal() {
                 </p>
                 <p className="text-xs text-gray-400 mt-1">
                   Partial repayments must be at least this amount. Full repayment has no minimum.
+                </p>
+              </div>
+            )}
+
+            {/* Full repayment time restriction warning */}
+            {!isCalculationPending && !canFullyRepay && timeUntilFullRepay > 0 && (
+              <div className="p-3 bg-primary-500/10 border border-primary-500/30 rounded-lg">
+                <p className="text-primary-400 text-sm">
+                  <strong>Full repayment available in:</strong> {Math.ceil(timeUntilFullRepay / 60)} minutes
+                </p>
+                <p className="text-xs text-gray-400 mt-1">
+                  This loan must remain active for a minimum period. You can make partial repayments now.
                 </p>
               </div>
             )}
@@ -623,10 +643,10 @@ export function RepayLoanModal() {
               </Button>
               <Button
                 onClick={handleProceedToApproveOrRepay}
-                disabled={!hasBalance || !repayAmount || repayAmountBigInt === BigInt(0) || isCalculationPending || exceedsDebt || isBelowMinimum || (isPriceStale && isPartialRepayment)}
+                disabled={!hasBalance || !repayAmount || repayAmountBigInt === BigInt(0) || isCalculationPending || exceedsDebt || isBelowMinimum || isFullRepayBlocked || (isPriceStale && isPartialRepayment)}
                 className="flex-1"
               >
-                {isCalculationPending ? 'Calculating...' : !hasBalance ? 'No Balance' : exceedsDebt ? 'Exceeds Debt' : isBelowMinimum ? 'Below Minimum' : (isPriceStale && isPartialRepayment) ? 'Refresh Price First' : 'Continue'}
+                {isCalculationPending ? 'Calculating...' : !hasBalance ? 'No Balance' : exceedsDebt ? 'Exceeds Debt' : isBelowMinimum ? 'Below Minimum' : isFullRepayBlocked ? 'Full Repay Not Allowed Yet' : (isPriceStale && isPartialRepayment) ? 'Refresh Price First' : 'Continue'}
               </Button>
             </div>
           </>

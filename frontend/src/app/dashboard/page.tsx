@@ -1,32 +1,27 @@
 'use client';
 
-import { useState } from 'react';
 import { useAccount } from 'wagmi';
 import { motion } from 'framer-motion';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { DashboardStats } from '@/components/dashboard/DashboardStats';
-import { TabButtons, Tab } from '@/components/dashboard/TabButtons';
-import {
-  BorrowedLoansTab,
-  LentLoansTab,
-  LoanRequestsTab,
-  LenderOffersTab,
-  FiatOffersTab,
-  FiatRequestsTab,
-} from '@/components/dashboard/DashboardTabs';
-import { QuickActions } from '@/components/dashboard/QuickActions';
-import { RepayLoanModal } from '@/components/loan/RepayLoanModal';
 import { ConnectButton } from '@/components/wallet/ConnectButton';
-import { SupplierSection } from '@/components/supplier/SupplierSection';
+import { RepayLoanModal } from '@/components/loan/RepayLoanModal';
 import { useDashboardDataLoader } from '@/hooks/useDashboardDataLoader';
+import {
+  SummaryCards,
+  FiatSupplierPanel,
+  ActiveLoansOffers,
+  PendingActionsAlert,
+  ExpandedStatsAccordion,
+  TransactionHistory,
+} from '@/components/dashboard';
 import { Wallet, RefreshCw, Loader2 } from 'lucide-react';
 
 export default function DashboardPage() {
   const { address, isConnected } = useAccount();
-  const [activeTab, setActiveTab] = useState<Tab>('borrowing');
   const { isLoading, refetch } = useDashboardDataLoader(address);
 
+  // Wallet not connected state
   if (!isConnected) {
     return (
       <div className="min-h-screen flex items-center justify-center py-12 px-4">
@@ -34,7 +29,7 @@ export default function DashboardPage() {
           <Wallet className="w-16 h-16 text-gray-400 mx-auto mb-6" />
           <h2 className="text-2xl font-bold mb-4">Connect Your Wallet</h2>
           <p className="text-gray-400 mb-6">
-            Connect your wallet to view your dashboard and manage your loans.
+            Connect your wallet to view your dashboard and manage your finances.
           </p>
           <ConnectButton />
         </Card>
@@ -44,7 +39,7 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-[1920px] mx-auto">
+      <div className="max-w-[1920px] mx-auto px-4 lg:px-8">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -53,16 +48,15 @@ export default function DashboardPage() {
         >
           <div>
             <h1 className="text-3xl sm:text-4xl font-bold mb-2">
-              Your <span className="gradient-text">Dashboard</span>
+              Your <span className="text-primary-400">Dashboard</span>
             </h1>
             <p className="text-gray-400">
-              Manage your loans, requests, and offers in one place.
+              Manage your loans, track your balances, and view your transaction history.
             </p>
           </div>
           <Button
             variant="secondary"
             icon={isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-            // icon={<RefreshCw className="w-4 h-4" />}
             onClick={() => refetch()}
             disabled={isLoading}
           >
@@ -70,49 +64,26 @@ export default function DashboardPage() {
           </Button>
         </motion.div>
 
-        <DashboardStats />
+        {/* Section 1: Summary Cards */}
+        <SummaryCards />
 
-        {/* Supplier Section */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.15 }}
-          className="mb-8"
-        >
-          <SupplierSection />
-        </motion.div>
+        {/* Section 2: Fiat Supplier Panel (Conditional) */}
+        <FiatSupplierPanel />
 
-        {/* Loading State */}
-        {/* {isLoading && (
-          <div className="flex justify-center py-12">
-            <Loader2 className="w-8 h-8 animate-spin text-primary-400" />
-          </div>
-        )} */}
+        {/* Section 3: Active Loans & Offers */}
+        <ActiveLoansOffers />
 
-        {/* {!isLoading && ( */}
-          <>
-            <TabButtons activeTab={activeTab} onTabChange={setActiveTab} />
+        {/* Section 4: Pending Actions */}
+        <PendingActionsAlert />
 
-            {/* Tab Content */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.3 }}
-            >
-              {activeTab === 'borrowing' && <BorrowedLoansTab />}
-              {activeTab === 'lending' && <LentLoansTab />}
-              {activeTab === 'requests' && <LoanRequestsTab />}
-              {activeTab === 'offers' && <LenderOffersTab />}
-              {activeTab === 'fiatOffers' && <FiatOffersTab />}
-              {activeTab === 'fiatRequests' && <FiatRequestsTab />}
-            </motion.div>
-          </>
-        {/* )} */}
+        {/* Section 5: Expanded Stats (Accordion) */}
+        <ExpandedStatsAccordion />
 
-        <QuickActions />
+        {/* Section 6: Transaction History */}
+        <TransactionHistory />
       </div>
 
-      {/* Repay Modal - fully self-contained */}
+      {/* Repay Modal - Global */}
       <RepayLoanModal />
     </div>
   );

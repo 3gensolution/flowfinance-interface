@@ -78,7 +78,7 @@ function TransactionRow({
   };
 
   const colors = {
-    deposit: 'text-blue-400 bg-blue-500/20',
+    deposit: 'text-primary-400 bg-primary-500/20',
     earn: 'text-teal-400 bg-teal-500/20',
     withdraw: 'text-orange-400 bg-orange-500/20',
   };
@@ -124,10 +124,10 @@ export function ProductPreview() {
   const opacity = useTransform(scrollYProgress, [0, 0.3, 0.7, 1], [0, 1, 1, 0]);
 
   return (
-    <section ref={sectionRef} className="py-24 bg-[#0A1628] relative overflow-hidden">
+    <section ref={sectionRef} className="py-24 bg-[#0A0A0A] relative overflow-hidden">
       {/* Background elements */}
       <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-blue-500/5 rounded-full blur-3xl" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary-500/5 rounded-full blur-3xl" />
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
@@ -139,7 +139,7 @@ export function ProductPreview() {
           transition={{ duration: 0.6, ease: [0.33, 1, 0.68, 1] }}
         >
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white mb-4">
-            See Your <span className="text-blue-400">Growth</span>
+            See Your <span className="text-primary-400">Growth</span>
           </h2>
           <p className="text-gray-400 max-w-2xl mx-auto text-lg">
             A dashboard designed for clarity, not complexity
@@ -151,7 +151,7 @@ export function ProductPreview() {
           <motion.div className="relative" style={{ y, opacity }}>
             <div className="relative">
               {/* Soft shadow */}
-              <div className="absolute -inset-4 bg-gradient-to-br from-blue-500/10 to-orange-500/10 rounded-3xl blur-2xl opacity-50" />
+              <div className="absolute -inset-4 bg-gradient-to-br from-primary-500/10 to-orange-500/10 rounded-3xl blur-2xl opacity-50" />
 
               {/* Dashboard card */}
               <div className="relative bg-white/5 backdrop-blur-sm p-6 rounded-2xl border border-white/10">
@@ -210,8 +210,8 @@ export function ProductPreview() {
                   ease: [0.33, 1, 0.68, 1],
                 }}
               >
-                <div className="flex-shrink-0 w-12 h-12 bg-blue-500/20 rounded-xl flex items-center justify-center">
-                  <feature.icon className="w-6 h-6 text-blue-400" />
+                <div className="flex-shrink-0 w-12 h-12 bg-primary-500/20 rounded-xl flex items-center justify-center">
+                  <feature.icon className="w-6 h-6 text-primary-400" />
                 </div>
                 <div>
                   <h3 className="text-lg font-semibold text-white mb-1">{feature.title}</h3>

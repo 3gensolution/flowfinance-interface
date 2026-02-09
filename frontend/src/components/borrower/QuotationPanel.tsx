@@ -100,7 +100,7 @@ export function QuotationPanel({
         Review your loan details before submitting
       </p>
 
-      <div className="p-6 rounded-2xl bg-gradient-to-br from-blue-500/10 to-purple-500/10 border border-white/10">
+      <div className="p-6 rounded-2xl bg-gradient-to-br from-primary-500/10 to-purple-500/10 border border-white/10">
         {/* Summary Items */}
         <div className="space-y-4">
           {/* Collateral */}

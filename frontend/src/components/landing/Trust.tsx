@@ -52,8 +52,8 @@ function TrustBadge({
       animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
       transition={{ duration: 0.5, delay: index * 0.1, ease: [0.33, 1, 0.68, 1] }}
     >
-      <div className="flex-shrink-0 w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center">
-        <feature.icon className="w-5 h-5 text-blue-400" />
+      <div className="flex-shrink-0 w-10 h-10 bg-primary-500/20 rounded-lg flex items-center justify-center">
+        <feature.icon className="w-5 h-5 text-primary-400" />
       </div>
       <div>
         <h4 className="text-white font-semibold mb-1">{feature.title}</h4>
@@ -81,7 +81,7 @@ function StatCard({
       animate={isInView ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 0.9 }}
       transition={{ duration: 0.5, delay: index * 0.1, ease: [0.33, 1, 0.68, 1] }}
     >
-      <div className="text-3xl sm:text-4xl font-bold text-blue-400 mb-2">{stat.value}</div>
+      <div className="text-3xl sm:text-4xl font-bold text-primary-400 mb-2">{stat.value}</div>
       <div className="text-sm text-gray-400">{stat.label}</div>
     </motion.div>
   );
@@ -92,10 +92,10 @@ export function Trust() {
   const isInView = useInView(sectionRef, { once: true, margin: '-100px' });
 
   return (
-    <section ref={sectionRef} className="py-24 bg-[#0A1628] relative overflow-hidden">
+    <section ref={sectionRef} className="py-24 bg-[#0A0A0A] relative overflow-hidden">
       {/* Background decoration */}
       <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl" />
+        <div className="absolute top-0 right-0 w-96 h-96 bg-primary-500/5 rounded-full blur-3xl" />
         <div className="absolute bottom-0 left-0 w-96 h-96 bg-orange-500/5 rounded-full blur-3xl" />
       </div>
 
@@ -108,7 +108,7 @@ export function Trust() {
           transition={{ duration: 0.6, ease: [0.33, 1, 0.68, 1] }}
         >
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white mb-4">
-            Security You Can <span className="text-blue-400">Trust</span>
+            Security You Can <span className="text-primary-400">Trust</span>
           </h2>
           <p className="text-gray-400 max-w-2xl mx-auto text-lg">
             Built by experienced engineers with your security as the top priority

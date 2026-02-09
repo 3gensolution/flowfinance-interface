@@ -9,21 +9,22 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // AwinFi Design System Colors (Navy Blue-First Design)
+        // AwinFi Design System Colors (Black + Orange Theme)
 
-        // Primary Background - White
+        // Primary Background - Black
         background: {
-          DEFAULT: '#FFFFFF',
-          light: '#F9FAFB',
-          dark: '#080F2B',
+          DEFAULT: '#000000',
+          light: '#0A0A0A',
+          dark: '#000000',
+          card: '#111111',
         },
 
         // Text Colors
         text: {
-          DEFAULT: '#0B1B2B',
-          dark: '#0B1B2B',
-          muted: '#6B7280',
-          light: '#9CA3AF',
+          DEFAULT: '#FFFFFF',
+          dark: '#FFFFFF',
+          muted: '#9CA3AF',
+          light: '#6B7280',
         },
 
         // Primary Brand Accent - Awin Orange (#EE7C1D)
@@ -93,19 +94,19 @@ const config: Config = {
           950: '#241516',
         },
 
-        // Legacy color aliases for backward compatibility
+        // Primary color - Orange (used for buttons, highlights, CTAs)
         primary: {
-          50: '#F0FDFD',
-          100: '#CCFBFB',
-          200: '#99F6F6',
-          300: '#5EEAEC',
-          400: '#2DD4D6',
-          500: '#2FB9BB',
-          600: '#0D9496',
-          700: '#0F7577',
-          800: '#115E5F',
-          900: '#134E4F',
-          950: '#042F30',
+          50: '#FFF7ED',
+          100: '#FFEDD5',
+          200: '#FED7AA',
+          300: '#FDBA74',
+          400: '#FB923C',
+          500: '#EE7C1D',
+          600: '#DC6A14',
+          700: '#C2570C',
+          800: '#9A4509',
+          900: '#7C3907',
+          950: '#431C03',
         },
         accent: {
           50: '#FFF7ED',
@@ -134,17 +135,17 @@ const config: Config = {
           950: '#041B36',
         },
         navy: {
-          50: '#E8EAF0',
-          100: '#C5CAD9',
-          200: '#9EA7BF',
-          300: '#7784A5',
-          400: '#596992',
-          500: '#3B4F7E',
-          600: '#354876',
-          700: '#2D3F6B',
-          800: '#263661',
-          900: '#080F2B',
-          950: '#050A1A',
+          50: '#F5F5F5',
+          100: '#E5E5E5',
+          200: '#D4D4D4',
+          300: '#A3A3A3',
+          400: '#737373',
+          500: '#525252',
+          600: '#404040',
+          700: '#262626',
+          800: '#171717',
+          900: '#0A0A0A',
+          950: '#000000',
         },
       },
       fontFamily: {
@@ -157,7 +158,7 @@ const config: Config = {
       backgroundImage: {
         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
         'gradient-conic': 'conic-gradient(from 180deg at 50% 50%, var(--tw-gradient-stops))',
-        'hero-gradient': 'linear-gradient(135deg, #080F2B 0%, #0D1638 50%, #080F2B 100%)',
+        'hero-gradient': 'linear-gradient(135deg, #000000 0%, #0A0A0A 50%, #000000 100%)',
       },
       animation: {
         'float': 'float 6s ease-in-out infinite',

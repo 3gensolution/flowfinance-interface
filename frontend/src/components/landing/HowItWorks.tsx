@@ -81,8 +81,8 @@ function StepCard({
       {/* Card content wrapper */}
       <div className="flex flex-col h-full">
         {/* Icon */}
-        <div className="w-14 h-14 bg-blue-500/20 rounded-xl flex items-center justify-center mb-5">
-          <step.icon className="w-7 h-7 text-blue-400" />
+        <div className="w-14 h-14 bg-primary-500/20 rounded-xl flex items-center justify-center mb-5">
+          <step.icon className="w-7 h-7 text-primary-400" />
         </div>
 
         {/* Content */}
@@ -104,11 +104,11 @@ export function HowItWorks() {
     <section
       ref={sectionRef}
       id="how-it-works"
-      className="py-24 bg-[#080F2B] relative overflow-hidden"
+      className="py-24 bg-black relative overflow-hidden"
     >
       {/* Background decoration */}
       <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl" />
+        <div className="absolute top-0 left-1/4 w-96 h-96 bg-primary-500/5 rounded-full blur-3xl" />
         <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-orange-500/5 rounded-full blur-3xl" />
       </div>
 
@@ -121,7 +121,7 @@ export function HowItWorks() {
           transition={{ duration: 0.6, ease: [0.33, 1, 0.68, 1] }}
         >
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white mb-4">
-            How It <span className="text-blue-400">Works</span>
+            How It <span className="text-primary-400">Works</span>
           </h2>
           <p className="text-gray-400 max-w-2xl mx-auto text-lg">
             Three simple steps to start earning

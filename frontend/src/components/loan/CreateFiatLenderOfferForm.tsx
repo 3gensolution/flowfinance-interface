@@ -385,11 +385,11 @@ export function CreateFiatLenderOfferForm() {
       </div>
 
       {/* Info Box */}
-      <Card className="bg-blue-500/10 border-blue-500/30">
+      <Card className="bg-primary-500/10 border-primary-500/30">
         <div className="flex gap-3">
-          <AlertCircle className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
+          <AlertCircle className="w-5 h-5 text-primary-400 flex-shrink-0 mt-0.5" />
           <div className="text-sm text-gray-300">
-            <p className="font-medium text-blue-400 mb-1">How Fiat Lender Offers Work</p>
+            <p className="font-medium text-primary-400 mb-1">How Fiat Lender Offers Work</p>
             <ul className="space-y-1 text-xs">
               <li>• Your offer will be visible to all borrowers in the marketplace</li>
               <li>• Borrowers can accept your offer by providing crypto collateral</li>

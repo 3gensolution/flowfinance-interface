@@ -473,8 +473,8 @@ export function AcceptFiatLenderOfferModal({ offer, isOpen, onClose, onSuccess }
         )}
 
         {/* Info */}
-        <div className="flex gap-2 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-          <AlertCircle className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
+        <div className="flex gap-2 p-3 bg-primary-500/10 border border-primary-500/30 rounded-lg">
+          <AlertCircle className="w-4 h-4 text-primary-400 flex-shrink-0 mt-0.5" />
           <p className="text-xs text-gray-300">
             Your collateral will be locked until the loan is repaid. The supplier will disburse the fiat amount to you off-chain after accepting.
           </p>

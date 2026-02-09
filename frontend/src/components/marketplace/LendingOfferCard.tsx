@@ -179,7 +179,7 @@ export function FiatLendingOfferCard({ offer, index = 0 }: FiatLendingOfferCardP
       case FiatLenderOfferStatus.ACTIVE:
         return <span className="px-2 py-0.5 rounded-full text-xs bg-green-500/20 text-green-400">Active</span>;
       case FiatLenderOfferStatus.ACCEPTED:
-        return <span className="px-2 py-0.5 rounded-full text-xs bg-blue-500/20 text-blue-400">Accepted</span>;
+        return <span className="px-2 py-0.5 rounded-full text-xs bg-primary-500/20 text-primary-400">Accepted</span>;
       case FiatLenderOfferStatus.CANCELLED:
         return <span className="px-2 py-0.5 rounded-full text-xs bg-gray-500/20 text-gray-400">Cancelled</span>;
       default:

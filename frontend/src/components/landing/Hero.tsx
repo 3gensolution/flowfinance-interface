@@ -7,13 +7,13 @@ import { Button } from '@/components/ui/Button';
 
 export function Hero() {
   return (
-    <section className="relative min-h-screen flex items-center overflow-hidden bg-[#080F2B]">
+    <section className="relative min-h-screen flex items-center overflow-hidden bg-black">
       {/* Canvas decorative background elements */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         {/* Large gradient orbs */}
-        <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-gradient-to-br from-blue-500/20 to-blue-600/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/4" />
+        <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-gradient-to-br from-primary-500/20 to-primary-600/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/4" />
         <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-gradient-to-tr from-orange-500/15 to-orange-600/5 rounded-full blur-3xl translate-y-1/3 -translate-x-1/4" />
-        <div className="absolute top-1/2 left-1/2 w-[400px] h-[400px] bg-gradient-to-r from-teal-500/10 to-blue-500/10 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2" />
+        <div className="absolute top-1/2 left-1/2 w-[400px] h-[400px] bg-gradient-to-r from-primary-500/10 to-orange-500/10 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2" />
 
         {/* Grid pattern overlay */}
         <div
@@ -29,7 +29,7 @@ export function Hero() {
 
         {/* Floating geometric shapes */}
         <motion.div
-          className="absolute top-32 left-[15%] w-4 h-4 bg-blue-400/30 rounded-full"
+          className="absolute top-32 left-[15%] w-4 h-4 bg-primary-400/30 rounded-full"
           animate={{ y: [0, -20, 0], opacity: [0.5, 1, 0.5] }}
           transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
         />
@@ -39,12 +39,12 @@ export function Hero() {
           transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
         />
         <motion.div
-          className="absolute bottom-40 left-[25%] w-2 h-2 bg-teal-400/35 rounded-full"
+          className="absolute bottom-40 left-[25%] w-2 h-2 bg-primary-400/35 rounded-full"
           animate={{ y: [0, -10, 0], opacity: [0.3, 0.7, 0.3] }}
           transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut', delay: 0.5 }}
         />
         <motion.div
-          className="absolute top-1/3 right-[10%] w-6 h-6 border border-blue-400/30 rounded-lg rotate-45"
+          className="absolute top-1/3 right-[10%] w-6 h-6 border border-primary-400/30 rounded-lg rotate-45"
           animate={{ rotate: [45, 55, 45], scale: [1, 1.1, 1] }}
           transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
         />
@@ -55,7 +55,7 @@ export function Hero() {
         />
 
         {/* Decorative lines */}
-        <div className="absolute top-1/4 left-0 w-32 h-[1px] bg-gradient-to-r from-transparent via-blue-400/30 to-transparent" />
+        <div className="absolute top-1/4 left-0 w-32 h-[1px] bg-gradient-to-r from-transparent via-primary-400/30 to-transparent" />
         <div className="absolute bottom-1/4 right-0 w-40 h-[1px] bg-gradient-to-r from-transparent via-orange-400/30 to-transparent" />
       </div>
 
@@ -145,7 +145,7 @@ export function Hero() {
               transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
             >
               {/* Soft glow behind dashboard */}
-              <div className="absolute -inset-4 bg-gradient-to-r from-blue-500/20 to-orange-500/20 rounded-3xl blur-2xl" />
+              <div className="absolute -inset-4 bg-gradient-to-r from-primary-500/20 to-orange-500/20 rounded-3xl blur-2xl" />
 
               {/* Dashboard image */}
               <div className="relative bg-white/5 backdrop-blur-sm p-2 rounded-2xl overflow-hidden shadow-2xl border border-white/10">

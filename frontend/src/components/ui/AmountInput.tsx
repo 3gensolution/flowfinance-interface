@@ -88,7 +88,7 @@ export function AmountInput({
       <div
         className={`
           p-6 rounded-2xl border-2 bg-white/5
-          ${isCrypto ? 'border-blue-500/30' : 'border-blue-500/30'}
+          ${isCrypto ? 'border-primary-500/30' : 'border-primary-500/30'}
         `}
       >
         {/* Input Row */}
@@ -103,7 +103,7 @@ export function AmountInput({
             className="
               flex-1 text-4xl sm:text-5xl font-bold text-white
               bg-transparent border-none outline-none focus:outline-none focus:ring-0
-              placeholder:text-white/20 caret-blue-400
+              placeholder:text-white/20 caret-primary-400
             "
           />
 
@@ -111,7 +111,7 @@ export function AmountInput({
           <div
             className={`
               flex items-center gap-2 px-4 py-2 rounded-xl
-              ${isCrypto ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-500/20 text-blue-400'}
+              ${isCrypto ? 'bg-primary-500/20 text-primary-400' : 'bg-primary-500/20 text-primary-400'}
             `}
           >
             <div
@@ -149,7 +149,7 @@ export function AmountInput({
               className={`
                 text-xs font-semibold px-2 py-0.5 rounded
                 transition-colors duration-200
-                text-blue-400 hover:bg-blue-500/20
+                text-primary-400 hover:bg-primary-500/20
               `}
             >
               MAX

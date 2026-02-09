@@ -33,7 +33,7 @@ export function SummaryPanel({ assetType, asset, amount, rate }: SummaryPanelPro
       <div
         className={`
           p-6 rounded-2xl border-2 bg-white/5
-          ${isCrypto ? 'border-orange-500/30' : 'border-blue-500/30'}
+          ${isCrypto ? 'border-orange-500/30' : 'border-primary-500/30'}
         `}
       >
         {/* Summary Items */}
@@ -50,7 +50,7 @@ export function SummaryPanel({ assetType, asset, amount, rate }: SummaryPanelPro
               animate={{ opacity: 1, x: 0 }}
               className={`
                 text-lg font-bold
-                ${isCrypto ? 'text-orange-400' : 'text-blue-400'}
+                ${isCrypto ? 'text-orange-400' : 'text-primary-400'}
               `}
             >
               {parseFloat(amount).toLocaleString()} {asset.symbol}
@@ -93,7 +93,7 @@ export function SummaryPanel({ assetType, asset, amount, rate }: SummaryPanelPro
         {/* Info Box */}
         <div className="mt-6 p-4 rounded-xl bg-white/5 border border-white/10">
           <div className="flex gap-3">
-            <Info className="w-5 h-5 flex-shrink-0 mt-0.5 text-blue-400" />
+            <Info className="w-5 h-5 flex-shrink-0 mt-0.5 text-primary-400" />
             <div className="space-y-2 text-sm">
               <p className="text-white/70">
                 Borrowers can take any amount from your supply.

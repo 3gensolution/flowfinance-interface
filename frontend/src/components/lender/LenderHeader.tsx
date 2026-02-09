@@ -24,7 +24,7 @@ export function LenderHeader({ currentStep, totalSteps }: LenderHeaderProps) {
       <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white mb-4">
         Earn by lending{' '}
         <span className="text-orange-400">crypto</span> or{' '}
-        <span className="text-blue-400">cash</span>
+        <span className="text-primary-400">cash</span>
       </h1>
 
       {/* Subtitle */}

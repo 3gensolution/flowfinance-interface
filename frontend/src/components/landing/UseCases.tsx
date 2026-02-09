@@ -43,9 +43,9 @@ const colorClasses = {
     border: 'hover:border-teal-500/30',
   },
   blue: {
-    bg: 'bg-blue-500/20',
-    icon: 'text-blue-400',
-    border: 'hover:border-blue-500/30',
+    bg: 'bg-primary-500/20',
+    icon: 'text-primary-400',
+    border: 'hover:border-primary-500/30',
   },
 };
 
@@ -85,7 +85,7 @@ export function UseCases() {
   const isInView = useInView(sectionRef, { once: true, margin: '-100px' });
 
   return (
-    <section ref={sectionRef} className="py-24 bg-[#080F2B] relative overflow-hidden">
+    <section ref={sectionRef} className="py-24 bg-black relative overflow-hidden">
       {/* Background decoration */}
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute top-1/2 right-0 w-96 h-96 bg-orange-500/5 rounded-full blur-3xl" />

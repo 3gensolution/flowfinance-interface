@@ -14,9 +14,10 @@ export interface BorrowAsset {
   name: string;
   address?: Address;
   decimals?: number;
-  type: 'crypto' | 'fiat';
+  type?: 'crypto' | 'fiat';
   balance?: string;
   hasBalance?: boolean;
+  icon?: string;
 }
 
 interface BorrowAssetSelectorProps {
@@ -194,7 +195,7 @@ export function BorrowAssetSelector({
           className={`
             relative p-6 rounded-2xl border-2 transition-all duration-300
             ${borrowType === 'cash'
-              ? 'border-blue-500 bg-blue-500/10'
+              ? 'border-primary-500 bg-primary-500/10'
               : 'border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/10'
             }
           `}
@@ -203,11 +204,11 @@ export function BorrowAssetSelector({
         >
           <div className={`
             w-12 h-12 mx-auto mb-3 rounded-xl flex items-center justify-center
-            ${borrowType === 'cash' ? 'bg-blue-500/20' : 'bg-white/10'}
+            ${borrowType === 'cash' ? 'bg-primary-500/20' : 'bg-white/10'}
           `}>
-            <Banknote className={`w-6 h-6 ${borrowType === 'cash' ? 'text-blue-400' : 'text-white/60'}`} />
+            <Banknote className={`w-6 h-6 ${borrowType === 'cash' ? 'text-primary-400' : 'text-white/60'}`} />
           </div>
-          <h3 className={`font-semibold text-center ${borrowType === 'cash' ? 'text-blue-400' : 'text-white'}`}>
+          <h3 className={`font-semibold text-center ${borrowType === 'cash' ? 'text-primary-400' : 'text-white'}`}>
             Cash
           </h3>
           <p className="text-xs text-white/40 text-center mt-1">
@@ -339,7 +340,7 @@ export function BorrowAssetSelector({
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="mt-6 p-5 rounded-2xl bg-gradient-to-br from-green-500/10 to-blue-500/10 border border-white/10"
+            className="mt-6 p-5 rounded-2xl bg-gradient-to-br from-green-500/10 to-primary-500/10 border border-white/10"
           >
             {/* Borrow Amount Display (Auto-calculated, disabled) */}
             <div className="mb-4">
@@ -437,7 +438,7 @@ export function BorrowAssetSelector({
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="mt-6 p-5 rounded-2xl bg-gradient-to-br from-blue-500/10 to-green-500/10 border border-white/10"
+            className="mt-6 p-5 rounded-2xl bg-gradient-to-br from-primary-500/10 to-green-500/10 border border-white/10"
           >
             {/* Collateral Value */}
             <div className="mb-4 p-3 rounded-xl bg-white/5">
@@ -469,7 +470,7 @@ export function BorrowAssetSelector({
                   [&::-webkit-slider-thumb]:bg-blue-500
                   [&::-webkit-slider-thumb]:cursor-pointer
                   [&::-webkit-slider-thumb]:shadow-lg
-                  [&::-webkit-slider-thumb]:shadow-blue-500/30
+                  [&::-webkit-slider-thumb]:shadow-primary-500/30
                   [&::-moz-range-thumb]:w-5
                   [&::-moz-range-thumb]:h-5
                   [&::-moz-range-thumb]:rounded-full
@@ -483,7 +484,7 @@ export function BorrowAssetSelector({
               />
               <div className="flex justify-between items-center text-xs">
                 <span className="text-white/50">{minLTV}%</span>
-                <span className="text-lg font-semibold text-blue-400">{selectedLTV.toFixed(0)}%</span>
+                <span className="text-lg font-semibold text-primary-400">{selectedLTV.toFixed(0)}%</span>
                 <span className="text-white/50">{maxLTV.toFixed(0)}% max</span>
               </div>
             </div>
@@ -495,11 +496,11 @@ export function BorrowAssetSelector({
               </label>
               <div className="flex items-center gap-2">
                 <div className="flex-1">
-                  <div className="w-full px-4 py-3 rounded-xl bg-white/5 border border-blue-500/30 text-white font-medium">
+                  <div className="w-full px-4 py-3 rounded-xl bg-white/5 border border-primary-500/30 text-white font-medium">
                     {isLoadingExchangeRate ? (
                       <span className="text-white/50">Calculating...</span>
                     ) : calculatedFiatAmount.amount > 0 ? (
-                      <span className="text-blue-400 text-lg">
+                      <span className="text-primary-400 text-lg">
                         {formatFiatAmount(calculatedFiatAmount.amount, selectedAsset.symbol)}
                       </span>
                     ) : (
@@ -509,7 +510,7 @@ export function BorrowAssetSelector({
                 </div>
                 <div className="flex items-center gap-2 min-w-[60px]">
                   {isLoadingExchangeRate && (
-                    <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />
+                    <Loader2 className="w-4 h-4 text-primary-400 animate-spin" />
                   )}
                   <span className="text-sm text-white/60">{selectedAsset.symbol}</span>
                 </div>
@@ -525,7 +526,7 @@ export function BorrowAssetSelector({
             <div className="p-3 rounded-xl bg-white/5 space-y-2">
               <p className="text-xs text-white/60 flex items-center gap-1">
                 <TrendingUp className="w-3 h-3" />
-                Selected LTV: <span className="text-blue-400 font-medium">{selectedLTV.toFixed(0)}%</span>
+                Selected LTV: <span className="text-primary-400 font-medium">{selectedLTV.toFixed(0)}%</span>
                 <span className="text-white/40">(Max: {maxLTV.toFixed(0)}%)</span>
               </p>
               <p className="text-xs text-white/60 flex items-center gap-1">

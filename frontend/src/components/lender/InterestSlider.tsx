@@ -82,7 +82,7 @@ export function InterestSlider({
         <div className="relative px-2">
           <div className="relative h-3 bg-white/10 rounded-full overflow-hidden">
             <motion.div
-              className="absolute left-0 top-0 h-full bg-gradient-to-r from-blue-500 to-orange-500 rounded-full"
+              className="absolute left-0 top-0 h-full bg-gradient-to-r from-primary-500 to-orange-500 rounded-full"
               style={{ width: `${fillPercentage}%` }}
               initial={false}
               animate={{ width: `${fillPercentage}%` }}

@@ -36,11 +36,11 @@ export function Header() {
   // Determine header styling based on page and scroll state
   const headerClasses = isLandingPage
     ? scrolled
-      ? 'bg-[#080F2B]/95 backdrop-blur-xl border-b border-white/10 shadow-lg'
+      ? 'bg-black/95 backdrop-blur-xl border-b border-white/10 shadow-lg'
       : 'bg-transparent backdrop-blur-sm border-b border-white/5'
     : isSupplyPage
-    ? 'bg-navy-900/95 backdrop-blur-xl border-b border-white/10'
-    : 'bg-black/20 backdrop-blur-xl border-b border-white/10';
+    ? 'bg-black/95 backdrop-blur-xl border-b border-white/10'
+    : 'bg-black/90 backdrop-blur-xl border-b border-white/10';
 
   const linkClasses = isLandingPage
     ? {

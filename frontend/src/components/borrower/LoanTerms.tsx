@@ -169,7 +169,7 @@ export function LoanTerms({
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
-                className="mt-3 p-4 rounded-xl bg-gradient-to-br from-blue-500/10 to-purple-500/10 border border-white/10"
+                className="mt-3 p-4 rounded-xl bg-gradient-to-br from-primary-500/10 to-purple-500/10 border border-white/10"
               >
                 <label className="text-sm text-white/60 block mb-2">Select repayment date</label>
                 <input
@@ -178,7 +178,7 @@ export function LoanTerms({
                   max={getMaxDate()}
                   onChange={handleDateSelect}
                   className="w-full p-3 rounded-xl bg-white/5 border border-white/20 text-white
-                    focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20
+                    focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20
                     hover:border-white/30 transition-all cursor-pointer
                     [&::-webkit-calendar-picker-indicator]:filter
                     [&::-webkit-calendar-picker-indicator]:invert

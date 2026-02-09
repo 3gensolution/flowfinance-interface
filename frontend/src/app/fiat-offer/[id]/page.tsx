@@ -554,7 +554,7 @@ export default function FiatOfferDetailPage() {
                     </div>
                     <div>
                       <p className="text-sm text-gray-400 mb-1">Collateral</p>
-                      <p className="text-lg font-semibold text-blue-400">
+                      <p className="text-lg font-semibold text-primary-400">
                         Dynamic (LTV-based)
                       </p>
                     </div>
@@ -626,7 +626,7 @@ export default function FiatOfferDetailPage() {
                     </div>
                     <div className="flex justify-between items-center py-2 border-b border-white/10">
                       <span className="text-gray-400">Collateral</span>
-                      <span className="font-medium text-blue-400">
+                      <span className="font-medium text-primary-400">
                         Auto-calculated based on LTV
                       </span>
                     </div>
@@ -715,8 +715,8 @@ export default function FiatOfferDetailPage() {
 
                   {offer.status === FiatLenderOfferStatus.ACCEPTED && (
                     <div className="text-center py-4">
-                      <CheckCircle className="w-12 h-12 text-blue-400 mx-auto mb-2" />
-                      <p className="text-blue-400 font-semibold">Offer Accepted</p>
+                      <CheckCircle className="w-12 h-12 text-primary-400 mx-auto mb-2" />
+                      <p className="text-primary-400 font-semibold">Offer Accepted</p>
                       <p className="text-gray-400 text-sm mt-1">
                         Loans have been created from this offer
                       </p>
@@ -758,7 +758,7 @@ export default function FiatOfferDetailPage() {
                   <p>
                     Fiat loans require collateral to be locked in the smart contract. The supplier will disburse fiat funds off-chain after you accept.
                   </p>
-                  <p className="text-blue-400 font-medium">
+                  <p className="text-primary-400 font-medium">
                     Collateral is calculated automatically based on the LTV ratio for your chosen token.
                   </p>
                 </div>
@@ -901,7 +901,7 @@ export default function FiatOfferDetailPage() {
                         : '0'} {collateralSymbol}
                     </span>
                     {ltvValue > 0 && (
-                      <span className="text-blue-400">LTV: {(ltvValue / 100).toFixed(1)}%</span>
+                      <span className="text-primary-400">LTV: {(ltvValue / 100).toFixed(1)}%</span>
                     )}
                   </div>
 
@@ -980,7 +980,7 @@ export default function FiatOfferDetailPage() {
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-400">Collateral value</span>
-                    <span className="text-blue-400">
+                    <span className="text-primary-400">
                       {offer?.currency !== 'USD' ? (
                         <>
                           {formatCurrency(collateralValueInCurrency, offer?.currency || 'USD')}{' '}
@@ -1099,7 +1099,7 @@ export default function FiatOfferDetailPage() {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-400">Collateral Value</span>
-                    <span className="text-blue-400">
+                    <span className="text-primary-400">
                       {offer?.currency !== 'USD' ? (
                         <>
                           {formatCurrency(collateralValueInCurrency, offer?.currency || 'USD')}{' '}
@@ -1149,8 +1149,8 @@ export default function FiatOfferDetailPage() {
               )}
 
               {/* Info */}
-              <div className="flex gap-2 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-                <AlertCircle className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
+              <div className="flex gap-2 p-3 bg-primary-500/10 border border-primary-500/30 rounded-lg">
+                <AlertCircle className="w-4 h-4 text-primary-400 flex-shrink-0 mt-0.5" />
                 <p className="text-xs text-gray-300">
                   Your collateral will be locked until the loan is repaid. The supplier will disburse the fiat amount to you off-chain after accepting.
                 </p>

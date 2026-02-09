@@ -4,15 +4,16 @@
 
 :root {
   --foreground-rgb: 255, 255, 255;
-  --background-rgb: 8, 15, 43;
+  --background-rgb: 0, 0, 0;
 
-  /* AwinFi Color System (Navy Blue-First) */
-  --color-background: #080F2B;
-  --color-background-light: #0D1638;
-  --color-background-card: #111B45;
-  --color-orange: #EE7C1D;
+  /* AwinFi Color System (Black + Orange) */
+  --color-background: #000000;
+  --color-background-light: #0A0A0A;
+  --color-background-card: #111111;
+  --color-primary: #EE7C1D;
+  --color-primary-light: #FB923C;
+  --color-primary-dark: #DC6A14;
   --color-teal: #2FB9BB;
-  --color-blue: #1361A8;
   --color-text: #FFFFFF;
   --color-text-muted: #9CA3AF;
 }
@@ -31,13 +32,13 @@ body {
 }
 
 @layer components {
-  /* Navy Cards (Dark Background) */
+  /* Dark Cards (Black Background) */
   .card-light {
-    @apply bg-navy-800/50 border border-white/10 rounded-2xl shadow-lg backdrop-blur-sm;
+    @apply bg-navy-800/80 border border-white/10 rounded-2xl shadow-lg backdrop-blur-sm;
   }
 
   .card-light-hover {
-    @apply card-light hover:bg-navy-700/50 hover:border-white/20 transition-all duration-300;
+    @apply card-light hover:bg-navy-700/80 hover:border-primary-500/30 transition-all duration-300;
   }
 
   /* Glass Morphism Cards */
@@ -70,11 +71,11 @@ body {
            active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
-  /* Secondary Button (Blue Outline for dark bg) */
+  /* Secondary Button (Orange Outline for dark bg) */
   .btn-secondary {
-    @apply px-6 py-3 bg-transparent border-2 border-blue-400 text-blue-400
+    @apply px-6 py-3 bg-transparent border-2 border-primary-500 text-primary-500
            rounded-xl font-semibold transition-all duration-300
-           hover:bg-blue-500/20 hover:border-blue-300;
+           hover:bg-primary-500/20 hover:border-primary-400;
   }
 
   .btn-ghost {
@@ -84,8 +85,8 @@ body {
 
   /* Input Fields */
   .input-field {
-    @apply w-full px-4 py-3 bg-navy-800/50 border border-white/10 rounded-xl
-           focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20
+    @apply w-full px-4 py-3 bg-navy-800/80 border border-white/10 rounded-xl
+           focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20
            placeholder-white/40 text-white transition-all duration-300;
   }
 
@@ -143,17 +144,17 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #0D1638;
+  background: #0A0A0A;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #3B4F7E;
+  background: #404040;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #596992;
+  background: #525252;
 }
 
 /* Shimmer Animation */
@@ -222,8 +223,8 @@ body {
   box-shadow: 0 0 40px rgba(238, 124, 29, 0.5);
 }
 
-.glow-blue {
-  box-shadow: 0 0 20px rgba(19, 97, 168, 0.3);
+.glow-primary {
+  box-shadow: 0 0 20px rgba(238, 124, 29, 0.3);
 }
 
 /* Magnetic Hover Effect (for cards) */
@@ -231,9 +232,9 @@ body {
   transition: transform 0.2s ease-out;
 }
 
-/* Hero Background (Navy) */
+/* Hero Background (Black) */
 .hero-bg {
-  background: linear-gradient(180deg, #080F2B 0%, #0D1638 100%);
+  background: linear-gradient(180deg, #000000 0%, #0A0A0A 100%);
   position: relative;
 }
 
@@ -244,14 +245,14 @@ body {
   left: 0;
   right: 0;
   bottom: 0;
-  background: radial-gradient(ellipse at 30% 20%, rgba(19, 97, 168, 0.15) 0%, transparent 50%),
-              radial-gradient(ellipse at 70% 80%, rgba(238, 124, 29, 0.1) 0%, transparent 50%);
+  background: radial-gradient(ellipse at 30% 20%, rgba(238, 124, 29, 0.08) 0%, transparent 50%),
+              radial-gradient(ellipse at 70% 80%, rgba(238, 124, 29, 0.05) 0%, transparent 50%);
   pointer-events: none;
 }
 
 /* Dark Hero Background (alternative) */
 .hero-bg-dark {
-  background: linear-gradient(135deg, #080F2B 0%, #0D1638 50%, #080F2B 100%);
+  background: linear-gradient(135deg, #000000 0%, #0A0A0A 50%, #000000 100%);
   position: relative;
 }
 
@@ -262,7 +263,7 @@ section {
 
 /* Focus Styles */
 :focus-visible {
-  outline: 2px solid #60A5FA;
+  outline: 2px solid #EE7C1D;
   outline-offset: 2px;
 }
 
@@ -290,9 +291,9 @@ section {
 }
 
 .rate-slider-fill {
-  @apply absolute left-0 top-0 h-full bg-gradient-to-r from-blue-500 to-orange-500 rounded-full;
+  @apply absolute left-0 top-0 h-full bg-gradient-to-r from-primary-600 to-primary-400 rounded-full;
 }
 
 .rate-slider-thumb {
-  @apply absolute top-1/2 -translate-y-1/2 w-5 h-5 bg-navy-800 border-2 border-orange-500 rounded-full shadow-md;
+  @apply absolute top-1/2 -translate-y-1/2 w-5 h-5 bg-navy-900 border-2 border-primary-500 rounded-full shadow-md;
 }

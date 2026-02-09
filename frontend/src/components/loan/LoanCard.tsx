@@ -385,7 +385,7 @@ export function ActiveLoanCard({
             Liquidate
           </Button>
         )}
-        <Link href={`/loan/${loan.loanId}`} className="flex-1">
+        <Link href={`/loan/active/${loan.loanId}`} className="flex-1">
           <Button variant="secondary" className="w-full" icon={<ExternalLink className="w-4 h-4" />}>
             Details
           </Button>

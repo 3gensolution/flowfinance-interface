@@ -204,11 +204,11 @@ export function LTVCalculator({
         </div>
 
         {/* Liquidation Info */}
-        <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+        <div className="p-3 bg-primary-500/10 border border-primary-500/20 rounded-lg">
           <div className="flex items-start gap-2">
-            <Info className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
+            <Info className="w-4 h-4 text-primary-400 flex-shrink-0 mt-0.5" />
             <div className="text-xs space-y-1">
-              <p className="text-blue-400 font-medium">Liquidation Threshold: {(calculations.liquidationThreshold / 100).toFixed(0)}%</p>
+              <p className="text-primary-400 font-medium">Liquidation Threshold: {(calculations.liquidationThreshold / 100).toFixed(0)}%</p>
               <p className="text-gray-400">
                 Your collateral will be at risk if the LTV ratio reaches the liquidation threshold.
                 A health factor below 100% means your position can be liquidated.

@@ -108,7 +108,7 @@ export function AssetSelector({ assetType, selected, onSelect }: AssetSelectorPr
                         : isSelected
                           ? isCrypto
                             ? 'border-orange-500 bg-orange-500/10 shadow-md shadow-orange-500/20 cursor-pointer'
-                            : 'border-blue-500 bg-blue-500/10 shadow-md shadow-blue-500/20 cursor-pointer'
+                            : 'border-primary-500 bg-primary-500/10 shadow-md shadow-primary-500/20 cursor-pointer'
                           : 'border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/10 cursor-pointer'
                       }
                     `}
@@ -144,7 +144,7 @@ export function AssetSelector({ assetType, selected, onSelect }: AssetSelectorPr
                           : isSelected
                             ? isCrypto
                               ? 'text-orange-400'
-                              : 'text-blue-400'
+                              : 'text-primary-400'
                             : 'text-white'
                         }
                       `}
@@ -203,7 +203,7 @@ export function AssetSelector({ assetType, selected, onSelect }: AssetSelectorPr
                   text-sm font-medium transition-all duration-200
                   ${isCrypto
                     ? 'text-orange-400 hover:bg-orange-500/10'
-                    : 'text-blue-400 hover:bg-blue-500/10'
+                    : 'text-primary-400 hover:bg-primary-500/10'
                   }
                 `}
               >

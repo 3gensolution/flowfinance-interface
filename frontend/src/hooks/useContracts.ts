@@ -196,6 +196,34 @@ export function useMinRepaymentAmount() {
   });
 }
 
+// Get comprehensive repayment info from contract
+// This is the recommended way to get all repayment-related data
+export function useRepaymentInfo(loanId: bigint | undefined) {
+  return useReadContract({
+    address: CONTRACT_ADDRESSES.loanMarketPlace,
+    abi: LoanMarketPlaceABI,
+    functionName: 'getRepaymentInfo',
+    args: loanId !== undefined ? [loanId] : undefined,
+    query: {
+      enabled: loanId !== undefined,
+    },
+  });
+}
+
+// Get minimum repayment in token units from contract
+// This handles the USD to token conversion properly with correct decimals
+export function useMinRepaymentInTokens(loanId: bigint | undefined) {
+  return useReadContract({
+    address: CONTRACT_ADDRESSES.loanMarketPlace,
+    abi: LoanMarketPlaceABI,
+    functionName: 'getMinRepaymentInTokens',
+    args: loanId !== undefined ? [loanId] : undefined,
+    query: {
+      enabled: loanId !== undefined,
+    },
+  });
+}
+
 // Get platform fee rate (in basis points, e.g., 100 = 1%)
 export function usePlatformFeeRate() {
   const result = useReadContract({

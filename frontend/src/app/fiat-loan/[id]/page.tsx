@@ -681,8 +681,8 @@ export default function FiatLoanDetailPage() {
 
                   {loan.status === FiatLoanStatus.REPAID && (
                     <div className="text-center py-4">
-                      <CheckCircle className="w-12 h-12 text-blue-400 mx-auto mb-2" />
-                      <p className="text-blue-400 font-semibold">Loan Repaid</p>
+                      <CheckCircle className="w-12 h-12 text-primary-400 mx-auto mb-2" />
+                      <p className="text-primary-400 font-semibold">Loan Repaid</p>
                       <p className="text-gray-400 text-sm mt-1">
                         This loan has been fully repaid
                       </p>

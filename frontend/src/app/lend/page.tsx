@@ -178,7 +178,7 @@ export default function LendPage() {
           <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-white mb-2">
             Earn by lending{' '}
             <span className="text-orange-400">crypto</span> or{' '}
-            <span className="text-blue-400">cash</span>
+            <span className="text-primary-400">cash</span>
           </h1>
 
           {/* Subtitle */}

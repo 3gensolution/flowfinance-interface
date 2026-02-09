@@ -77,7 +77,7 @@ export function AssetTypeSelector({ selected, onSelect }: AssetTypeSelectorProps
                 ${isSelected
                   ? isOrange
                     ? 'border-orange-500 bg-orange-500/10 shadow-lg shadow-orange-500/20'
-                    : 'border-blue-500 bg-blue-500/10 shadow-lg shadow-blue-500/20'
+                    : 'border-primary-500 bg-primary-500/10 shadow-lg shadow-primary-500/20'
                   : 'border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/10'
                 }
               `}
@@ -107,7 +107,7 @@ export function AssetTypeSelector({ selected, onSelect }: AssetTypeSelectorProps
                   ${isSelected
                     ? isOrange
                       ? 'text-orange-400'
-                      : 'text-blue-400'
+                      : 'text-primary-400'
                     : 'text-white'
                   }
                 `}

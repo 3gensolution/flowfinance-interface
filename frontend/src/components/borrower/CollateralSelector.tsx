@@ -48,7 +48,7 @@ export function CollateralSelector({
 
       {isLoading ? (
         <div className="flex items-center justify-center py-8">
-          <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
+          <Loader2 className="w-8 h-8 text-primary-400 animate-spin" />
         </div>
       ) : assets.length === 0 ? (
         <div className="text-center py-8">
@@ -75,7 +75,7 @@ export function CollateralSelector({
                   ${isDisabled
                     ? 'opacity-40 cursor-not-allowed border-white/5 bg-white/[0.02]'
                     : isSelected
-                      ? 'border-blue-500 bg-blue-500/10 shadow-md shadow-blue-500/20'
+                      ? 'border-primary-500 bg-primary-500/10 shadow-md shadow-primary-500/20'
                       : 'border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/10 cursor-pointer'
                   }
                 `}
@@ -104,7 +104,7 @@ export function CollateralSelector({
                 <p
                   className={`
                     font-semibold text-sm transition-colors duration-300
-                    ${isDisabled ? 'text-white/30' : isSelected ? 'text-blue-400' : 'text-white'}
+                    ${isDisabled ? 'text-white/30' : isSelected ? 'text-primary-400' : 'text-white'}
                   `}
                 >
                   {asset.symbol}

@@ -364,8 +364,8 @@ export function CreateLenderOfferForm() {
           </div>
 
           {/* Collateral Info */}
-          <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-            <p className="text-sm text-blue-400">
+          <div className="p-3 bg-primary-500/10 border border-primary-500/30 rounded-lg">
+            <p className="text-sm text-primary-400">
               <strong>Collateral:</strong> Borrowers can use any supported collateral token.
               The required amount will be calculated based on platform LTV ratios when they accept your offer.
             </p>

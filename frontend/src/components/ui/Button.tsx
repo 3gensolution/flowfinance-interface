@@ -40,15 +40,15 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     const variantClasses = {
       // Primary - Orange CTA (main action)
       primary: cn(
-        'bg-orange-500 text-white',
-        'shadow-lg shadow-orange-500/25',
-        'hover:bg-orange-400 hover:shadow-orange-500/40 hover:shadow-glow-orange',
+        'bg-primary-500 text-white',
+        'shadow-lg shadow-primary-500/25',
+        'hover:bg-primary-400 hover:shadow-primary-500/40',
         'active:scale-[0.98]'
       ),
-      // Secondary - Outlined Blue
+      // Secondary - Outlined Orange
       secondary: cn(
-        'bg-transparent border-2 border-blue-500/50 text-white',
-        'hover:border-blue-400 hover:bg-blue-500/10',
+        'bg-transparent border-2 border-primary-500/50 text-white',
+        'hover:border-primary-400 hover:bg-primary-500/10',
         'active:scale-[0.98]'
       ),
       // Accent - Teal (success/growth actions)

@@ -11,7 +11,8 @@ import {
   CollateralSelector,
   CollateralAsset,
   CollateralAmountInput,
-  BorrowAssetSelector,
+  StablecoinSelector,
+  StablecoinAsset,
   BorrowAsset,
   BorrowType,
   LoanTerms,
@@ -31,11 +32,11 @@ import { Abi } from 'viem';
 
 const ERC20ABI = ERC20ABIJson as Abi;
 
-// Define wizard steps
+// Define wizard steps - Start with borrow asset, then collateral
 const STEPS = [
-  { id: 1, title: 'Collateral', description: 'Choose the crypto asset to lock as security' },
-  { id: 2, title: 'Amount', description: 'Enter how much collateral to provide' },
-  { id: 3, title: 'Borrow', description: 'Choose what you want to borrow' },
+  { id: 1, title: 'Borrow', description: 'Choose the stablecoin you want to borrow' },
+  { id: 2, title: 'Collateral', description: 'Select the crypto asset to lock as security' },
+  { id: 3, title: 'Amount', description: 'Enter collateral amount and set your LTV' },
   { id: 4, title: 'Terms', description: 'Set your interest rate and duration' },
   { id: 5, title: 'Review', description: 'Review and submit your loan request' },
 ];
@@ -47,9 +48,10 @@ export default function BorrowPage() {
   const [currentStep, setCurrentStep] = useState(1);
 
   // Form state
+  const [selectedStablecoin, setSelectedStablecoin] = useState<StablecoinAsset | null>(null);
   const [selectedCollateral, setSelectedCollateral] = useState<CollateralAsset | null>(null);
   const [collateralAmount, setCollateralAmount] = useState('');
-  const [borrowType, setBorrowType] = useState<BorrowType>(null);
+  const [borrowType] = useState<BorrowType>('crypto'); // Default to crypto for now
   const [selectedBorrowAsset, setSelectedBorrowAsset] = useState<BorrowAsset | null>(null);
   const [selectedLTV, setSelectedLTV] = useState(0); // User-selected LTV percentage
   const [interestRate, setInterestRate] = useState(10);
@@ -98,6 +100,36 @@ export default function BorrowPage() {
     });
   }, [availableTokens, balancesData]);
 
+  // Filter stablecoins for borrowing (USDC, USDT, DAI, etc.)
+  const stablecoinSymbols = ['USDC', 'USDT', 'DAI'];
+  const stablecoins: StablecoinAsset[] = useMemo(() => {
+    return availableTokens
+      .filter(token => stablecoinSymbols.includes(token.symbol))
+      .map(token => ({
+        symbol: token.symbol,
+        name: token.name,
+        address: token.address,
+        decimals: token.decimals,
+        icon: token.icon,
+      }));
+  }, [availableTokens]);
+
+  // Sync selectedBorrowAsset with selectedStablecoin
+  useEffect(() => {
+    if (selectedStablecoin) {
+      setSelectedBorrowAsset({
+        symbol: selectedStablecoin.symbol,
+        name: selectedStablecoin.name,
+        address: selectedStablecoin.address,
+        decimals: selectedStablecoin.decimals,
+        icon: selectedStablecoin.icon,
+        type: 'crypto',
+      });
+    } else {
+      setSelectedBorrowAsset(null);
+    }
+  }, [selectedStablecoin]);
+
   // Get collateral price
   const collateralPriceHook = useTokenPrice(selectedCollateral?.address as Address | undefined);
   const collateralPrice = collateralPriceHook.price;
@@ -136,8 +168,9 @@ export default function BorrowPage() {
   // Calculate max LTV percentage from contract
   const maxLTVPercent = ltvBps ? Number(ltvBps) / 100 : 0;
 
-  // Liquidation threshold percentage
-  const liquidationThreshold = liquidationThresholdBps ? Number(liquidationThresholdBps) / 100 : 85;
+  // Liquidation threshold percentage (available for future use)
+  const _liquidationThreshold = liquidationThresholdBps ? Number(liquidationThresholdBps) / 100 : 85;
+  void _liquidationThreshold; // Suppress unused variable warning
 
   // Minimum LTV - use 1% if contract doesn't return a minimum
   const minLTVPercent = 1;
@@ -184,7 +217,7 @@ export default function BorrowPage() {
   }, [maxLTVPercent]);
 
   // Calculate borrow amount based on selected LTV using BigInt (like working page)
-  const { borrowAmount, borrowAmountUSD, isCalculatingLoan } = useMemo(() => {
+  const { borrowAmount, borrowAmountUSD, isCalculatingLoan: _isCalculatingLoan } = useMemo(() => {
     const isCalculating = collateralPriceHook.isLoading || borrowPriceHook.isLoading || isLoadingLTV;
 
     if (!collateralAmount || parseFloat(collateralAmount) <= 0 || !collateralPrice || !borrowPrice || !selectedBorrowAsset || selectedLTV <= 0) {
@@ -224,21 +257,20 @@ export default function BorrowPage() {
       return { borrowAmount: 0, borrowAmountUSD: 0, isCalculatingLoan: false };
     }
   }, [collateralAmount, collateralPrice, borrowPrice, selectedBorrowAsset, selectedLTV, selectedCollateral, collateralPriceHook.isLoading, borrowPriceHook.isLoading, isLoadingLTV]);
+  void _isCalculatingLoan; // Suppress unused variable warning
 
   // Step validation
   const canProceed = useMemo(() => {
     switch (currentStep) {
-      case 1: // Collateral selection
+      case 1: // Stablecoin selection (what to borrow)
+        return selectedStablecoin !== null;
+      case 2: // Collateral selection
         return selectedCollateral !== null;
-      case 2: // Amount input
+      case 3: // Amount input + LTV
         if (!collateralAmount || !selectedCollateral) return false;
         const numAmount = parseFloat(collateralAmount);
         const maxBalance = parseFloat(selectedCollateral.balance.replace(/,/g, ''));
-        return numAmount > 0 && numAmount <= maxBalance;
-      case 3: // Borrow asset selection + LTV
-        if (borrowType === null || selectedBorrowAsset === null) return false;
-        // Both crypto and fiat now use LTV slider
-        return selectedLTV > 0 && selectedLTV <= maxLTVPercent;
+        return numAmount > 0 && numAmount <= maxBalance && selectedLTV > 0 && selectedLTV <= maxLTVPercent;
       case 4: // Interest rate and duration
         return duration > 0 && interestRate >= 5 && interestRate <= 15;
       case 5: // Review
@@ -246,7 +278,7 @@ export default function BorrowPage() {
       default:
         return false;
     }
-  }, [currentStep, selectedCollateral, collateralAmount, borrowType, selectedBorrowAsset, selectedLTV, maxLTVPercent, duration, interestRate]);
+  }, [currentStep, selectedStablecoin, selectedCollateral, collateralAmount, selectedLTV, maxLTVPercent, duration, interestRate]);
 
   // Navigation
   const goNext = () => {
@@ -266,34 +298,20 @@ export default function BorrowPage() {
     setSelectedCollateral(asset);
   };
 
-  // Handle borrow type change
-  const handleBorrowTypeChange = (type: BorrowType) => {
-    setBorrowType(type);
-    setSelectedBorrowAsset(null);
-  };
-
-  // Handle borrow asset selection
-  const handleBorrowAssetSelect = (asset: BorrowAsset) => {
-    setSelectedBorrowAsset(asset);
-  };
-
   // Is form valid for submission
   const isFormValid = useMemo(() => {
-    const baseValid =
+    return (
+      selectedStablecoin !== null &&
       selectedCollateral !== null &&
       collateralAmount !== '' &&
       parseFloat(collateralAmount) > 0 &&
       selectedBorrowAsset !== null &&
       selectedLTV > 0 &&
       selectedLTV <= maxLTVPercent &&
-      duration > 0;
-
-    // For crypto loans, check borrowAmount; for fiat loans, check fiatBorrowAmount
-    if (borrowType === 'cash') {
-      return baseValid && fiatBorrowAmount.amount > 0;
-    }
-    return baseValid && borrowAmount > 0;
-  }, [selectedCollateral, collateralAmount, selectedBorrowAsset, selectedLTV, maxLTVPercent, borrowAmount, duration, borrowType, fiatBorrowAmount.amount]);
+      duration > 0 &&
+      borrowAmount > 0
+    );
+  }, [selectedStablecoin, selectedCollateral, collateralAmount, selectedBorrowAsset, selectedLTV, maxLTVPercent, borrowAmount, duration]);
 
   // Get current step info
   const currentStepInfo = STEPS.find(s => s.id === currentStep);
@@ -305,41 +323,72 @@ export default function BorrowPage() {
   const renderStepContent = () => {
     switch (currentStep) {
       case 1:
+        // Step 1: Select stablecoin to borrow
+        return (
+          <StablecoinSelector
+            selected={selectedStablecoin}
+            onSelect={setSelectedStablecoin}
+            assets={stablecoins}
+            isLoading={isLoadingSupportedTokens}
+          />
+        );
+      case 2:
+        // Step 2: Select collateral asset
         return (
           <CollateralSelector
             selected={selectedCollateral}
             onSelect={handleCollateralSelect}
-            assets={collateralAssets}
+            assets={collateralAssets.filter(a => a.symbol !== selectedStablecoin?.symbol)}
             isLoading={isLoadingAssets}
           />
         );
-      case 2:
-        return (
-          <CollateralAmountInput
-            asset={selectedCollateral}
-            amount={collateralAmount}
-            onAmountChange={setCollateralAmount}
-            usdValue={collateralValue}
-          />
-        );
       case 3:
+        // Step 3: Enter collateral amount + LTV
         return (
-          <BorrowAssetSelector
-            borrowType={borrowType}
-            selectedAsset={selectedBorrowAsset}
-            onBorrowTypeChange={handleBorrowTypeChange}
-            onAssetSelect={handleBorrowAssetSelect}
-            excludeSymbol={selectedCollateral?.symbol}
-            selectedLTV={selectedLTV}
-            maxLTV={maxLTVPercent}
-            minLTV={minLTVPercent}
-            onLTVChange={setSelectedLTV}
-            liquidationThreshold={liquidationThreshold}
-            borrowAmount={borrowAmount}
-            borrowAmountUSD={borrowAmountUSD}
-            isCalculatingLoan={isCalculatingLoan}
-            collateralValueUSD={collateralValue}
-          />
+          <div className="space-y-6">
+            <CollateralAmountInput
+              asset={selectedCollateral}
+              amount={collateralAmount}
+              onAmountChange={setCollateralAmount}
+              usdValue={collateralValue}
+            />
+            {/* LTV Slider */}
+            {collateralAmount && parseFloat(collateralAmount) > 0 && (
+              <div className="p-5 rounded-2xl bg-white/5 border border-white/10 max-w-xl mx-auto">
+                <div className="flex justify-between items-center mb-3">
+                  <span className="text-white/70 text-sm">Loan-to-Value (LTV)</span>
+                  <span className="text-lg font-semibold text-primary-400">{selectedLTV.toFixed(0)}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={minLTVPercent}
+                  max={maxLTVPercent}
+                  step={1}
+                  value={selectedLTV}
+                  onChange={(e) => setSelectedLTV(Number(e.target.value))}
+                  className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer
+                    [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5
+                    [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary-500
+                    [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-lg
+                    [&::-webkit-slider-thumb]:shadow-primary-500/30"
+                />
+                <div className="flex justify-between text-xs text-white/40 mt-2">
+                  <span>{minLTVPercent}%</span>
+                  <span>Max: {maxLTVPercent.toFixed(0)}%</span>
+                </div>
+                {/* Borrow amount preview */}
+                {borrowAmount > 0 && (
+                  <div className="mt-4 p-3 bg-primary-500/10 border border-primary-500/30 rounded-lg">
+                    <p className="text-sm text-white/70">You will receive:</p>
+                    <p className="text-xl font-bold text-primary-400">
+                      {borrowAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })} {selectedStablecoin?.symbol}
+                    </p>
+                    <p className="text-xs text-white/50">~${borrowAmountUSD.toFixed(2)} USD</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         );
       case 4:
         return (
@@ -446,14 +495,14 @@ export default function BorrowPage() {
         >
           {/* Step Counter Badge */}
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 mb-4">
-            <span className="text-blue-400 font-semibold">Step {currentStep}</span>
+            <span className="text-primary-400 font-semibold">Step {currentStep}</span>
             <span className="text-white/40">of {STEPS.length}</span>
           </div>
 
           {/* Main Title */}
           <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-white mb-2">
             Borrow against your{' '}
-            <span className="text-blue-400">crypto</span>
+            <span className="text-primary-400">crypto</span>
           </h1>
 
           {/* Subtitle - current step description */}

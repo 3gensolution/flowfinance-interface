@@ -544,10 +544,10 @@ export function CreateLoanRequestForm() {
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Loading Supported Tokens */}
           {isLoadingSupportedTokens && (
-            <div className="glass-card p-4 border border-blue-500/20 bg-blue-500/5">
+            <div className="glass-card p-4 border border-primary-500/20 bg-blue-500/5">
               <div className="flex gap-3 items-center">
-                <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
-                <p className="text-sm text-blue-400">Loading supported tokens from contract...</p>
+                <Loader2 className="w-5 h-5 text-primary-400 animate-spin" />
+                <p className="text-sm text-primary-400">Loading supported tokens from contract...</p>
               </div>
             </div>
           )}
@@ -828,9 +828,9 @@ export function CreateLoanRequestForm() {
           )}
 
           {/* Info Banner */}
-          <div className="glass-card p-4 border border-blue-500/20">
+          <div className="glass-card p-4 border border-primary-500/20">
             <div className="flex gap-3">
-              <Info className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
+              <Info className="w-5 h-5 text-primary-400 flex-shrink-0 mt-0.5" />
               <div className="space-y-2 text-sm">
                 <p className="text-gray-300">
                   <strong>How it works:</strong> Your collateral amount determines how much you can borrow based on the Loan-to-Value (LTV) ratio.
