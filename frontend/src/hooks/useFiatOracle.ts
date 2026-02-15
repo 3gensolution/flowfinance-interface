@@ -169,6 +169,29 @@ export function formatCurrency(cents: bigint, currency: string, decimals: number
   return `${symbol}${value}`;
 }
 
+// Format currency in human-readable format with K/M notation for large amounts
+export function formatCurrencyHuman(cents: bigint, currency: string): string {
+  const symbol = getCurrencySymbol(currency);
+  const amount = Number(cents) / 100; // Convert cents to dollars/currency units
+
+  if (amount < 1000) {
+    // Less than 1,000: show with 2 decimals
+    return `${symbol}${amount.toFixed(2)}`;
+  } else if (amount < 10000) {
+    // 1,000 - 9,999: show with comma and 2 decimals
+    return `${symbol}${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  } else if (amount < 1000000) {
+    // 10,000 - 999,999: show as K with 1 decimal
+    return `${symbol}${(amount / 1000).toFixed(1)}K`;
+  } else if (amount < 1000000000) {
+    // 1M - 999M: show as M with 2 decimals
+    return `${symbol}${(amount / 1000000).toFixed(2)}M`;
+  } else {
+    // 1B+: show as B with 2 decimals
+    return `${symbol}${(amount / 1000000000).toFixed(2)}B`;
+  }
+}
+
 // Check if exchange rate is stale (older than 1 hour) - client-side helper
 export function isExchangeRateStale(updatedAt: bigint): boolean {
   if (!updatedAt || updatedAt === BigInt(0)) return true;

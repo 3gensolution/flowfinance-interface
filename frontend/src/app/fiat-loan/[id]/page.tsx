@@ -24,7 +24,6 @@ import {
   formatPercentage,
   formatDuration,
   formatAddress,
-  formatTimeUntil,
   getTokenSymbol,
   getTokenDecimals,
   getHealthFactorColor,
@@ -281,11 +280,8 @@ export default function FiatLoanDetailPage() {
     );
   }
 
-  // Expiration for pending loans (7 days from creation)
-  const expiresAt = Number(loan.createdAt) + (7 * 24 * 60 * 60);
-  const isExpired = loan.status === FiatLoanStatus.PENDING_SUPPLIER && Date.now() / 1000 > expiresAt;
-  const canFund = loan.status === FiatLoanStatus.PENDING_SUPPLIER && !isBorrower && !isExpired && isConnected && canActAsSupplier;
-  const showSupplierNotice = loan.status === FiatLoanStatus.PENDING_SUPPLIER && !isBorrower && !isExpired && isConnected && !canActAsSupplier;
+  const canFund = loan.status === FiatLoanStatus.PENDING_SUPPLIER && !isBorrower && isConnected && canActAsSupplier;
+  const showSupplierNotice = loan.status === FiatLoanStatus.PENDING_SUPPLIER && !isBorrower && isConnected && !canActAsSupplier;
   const canCancel = loan.status === FiatLoanStatus.PENDING_SUPPLIER && isBorrower;
 
   return (
@@ -612,14 +608,6 @@ export default function FiatLoanDetailPage() {
                     <span className="text-gray-400">Created</span>
                     <span>{new Date(Number(loan.createdAt) * 1000).toLocaleDateString()}</span>
                   </div>
-                  {loan.status === FiatLoanStatus.PENDING_SUPPLIER && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Expires</span>
-                      <span className={isExpired ? 'text-red-400' : ''}>
-                        {isExpired ? 'Expired' : formatTimeUntil(BigInt(expiresAt))}
-                      </span>
-                    </div>
-                  )}
                   {loan.activatedAt > BigInt(0) && (
                     <div className="flex justify-between">
                       <span className="text-gray-400">Activated</span>
@@ -649,22 +637,12 @@ export default function FiatLoanDetailPage() {
               <Card className="border-green-500/20">
                 <h3 className="font-semibold mb-4">Status</h3>
                 <div className="space-y-3">
-                  {loan.status === FiatLoanStatus.PENDING_SUPPLIER && !isExpired && (
+                  {loan.status === FiatLoanStatus.PENDING_SUPPLIER && (
                     <div className="text-center py-4">
                       <Clock className="w-12 h-12 text-yellow-400 mx-auto mb-2" />
                       <p className="text-yellow-400 font-semibold">Awaiting Supplier</p>
                       <p className="text-gray-400 text-sm mt-1">
                         Waiting for a fiat supplier to fund this loan
-                      </p>
-                    </div>
-                  )}
-
-                  {loan.status === FiatLoanStatus.PENDING_SUPPLIER && isExpired && (
-                    <div className="text-center py-4">
-                      <AlertTriangle className="w-12 h-12 text-orange-400 mx-auto mb-2" />
-                      <p className="text-orange-400 font-semibold">Request Expired</p>
-                      <p className="text-gray-400 text-sm mt-1">
-                        This request can no longer be funded
                       </p>
                     </div>
                   )}

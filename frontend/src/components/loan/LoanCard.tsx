@@ -426,9 +426,6 @@ export function FiatLoanRequestCard({ loan, onFund, onCancel, isOwner, isSupplie
   // LTV from contract is in basis points (10000 = 100%)
   const ltv = ltvBps ? Number(ltvBps) / 100 : 0;
 
-  // Format expiration (7 days from creation for pending loans)
-  const expiresAt = Number(loan.createdAt) + (7 * 24 * 60 * 60);
-
   // Status badge color
   const getStatusBadge = () => {
     switch (loan.status) {
@@ -496,12 +493,6 @@ export function FiatLoanRequestCard({ loan, onFund, onCancel, isOwner, isSupplie
           <span className={`text-sm font-medium ${ltv > 80 ? 'text-red-400' : ltv > 70 ? 'text-yellow-400' : 'text-green-400'}`}>
             {ltv.toFixed(1)}%
           </span>
-        </div>
-      )}
-
-      {loan.status === FiatLoanStatus.PENDING_SUPPLIER && (
-        <div className="text-sm text-gray-400 mb-4">
-          Expires: {formatTimeUntil(BigInt(expiresAt))}
         </div>
       )}
 

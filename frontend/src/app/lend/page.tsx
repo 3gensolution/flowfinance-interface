@@ -1,8 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, ArrowRight } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Users, Info } from 'lucide-react';
+import Link from 'next/link';
+import { useAccount, useReadContracts, useReadContract } from 'wagmi';
+import { Abi } from 'viem';
 import { Button } from '@/components/ui/Button';
 import {
   AssetTypeSelector,
@@ -16,6 +19,16 @@ import {
 } from '@/components/lender';
 import { useIsVerifiedSupplier } from '@/hooks/useSupplyAssets';
 import { useLoanConfigLimits } from '@/hooks/useContracts';
+import { CONTRACT_ADDRESSES } from '@/config/contracts';
+import { useNetwork } from '@/contexts/NetworkContext';
+import { config as wagmiConfig } from '@/config/wagmi';
+import { LoanRequestStatus } from '@/types';
+import { FiatLoanStatus } from '@/hooks/useFiatLoan';
+import LoanMarketPlaceABIJson from '@/contracts/LoanMarketPlaceABI.json';
+import FiatLoanBridgeABIJson from '@/contracts/FiatLoanBridgeABI.json';
+
+const LoanMarketPlaceABI = LoanMarketPlaceABIJson as Abi;
+const FiatLoanBridgeABI = FiatLoanBridgeABIJson as Abi;
 
 // Define wizard steps
 const STEPS = [
@@ -27,6 +40,9 @@ const STEPS = [
 ];
 
 export default function LendPage() {
+  const { address, isConnected } = useAccount();
+  const { selectedNetwork } = useNetwork();
+
   // Wizard state
   const [currentStep, setCurrentStep] = useState(1);
 
@@ -35,6 +51,138 @@ export default function LendPage() {
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
   const [amount, setAmount] = useState('');
   const [interestRate, setInterestRate] = useState(10);
+
+  // Fetch available borrow requests count for informational banner
+  const { data: nextCryptoRequestId } = useReadContract({
+    address: CONTRACT_ADDRESSES.loanMarketPlace,
+    abi: LoanMarketPlaceABI,
+    functionName: 'nextLoanRequestId',
+    chainId: selectedNetwork.id,
+    config: wagmiConfig,
+  });
+
+  const cryptoRequestCount = nextCryptoRequestId ? Number(nextCryptoRequestId) : 0;
+
+  // Fetch crypto requests to filter out user's own requests
+  const { data: cryptoRequestsData } = useReadContracts({
+    contracts: Array.from({ length: cryptoRequestCount }, (_, i) => ({
+      address: CONTRACT_ADDRESSES.loanMarketPlace,
+      abi: LoanMarketPlaceABI,
+      functionName: 'loanRequests',
+      args: [BigInt(i)],
+      chainId: selectedNetwork.id,
+    })),
+    config: wagmiConfig,
+    query: {
+      enabled: cryptoRequestCount > 0 && isConnected,
+    },
+  });
+
+  const { data: pendingFiatLoanIds } = useReadContract({
+    address: CONTRACT_ADDRESSES.fiatLoanBridge,
+    abi: FiatLoanBridgeABI,
+    functionName: 'getPendingFiatLoans',
+    chainId: selectedNetwork.id,
+    config: wagmiConfig,
+  });
+
+  const fiatLoanIds = useMemo(() => (pendingFiatLoanIds as bigint[]) || [], [pendingFiatLoanIds]);
+
+  // Fetch fiat requests to filter out user's own requests
+  const { data: fiatRequestsData } = useReadContracts({
+    contracts: fiatLoanIds.map((id) => ({
+      address: CONTRACT_ADDRESSES.fiatLoanBridge,
+      abi: FiatLoanBridgeABI,
+      functionName: 'getFiatLoan',
+      args: [id],
+      chainId: selectedNetwork.id,
+    })),
+    config: wagmiConfig,
+    query: {
+      enabled: fiatLoanIds.length > 0 && isConnected,
+    },
+  });
+
+  // Calculate total available borrow requests (excluding user's own requests)
+  const totalAvailableRequests = useMemo(() => {
+    if (!isConnected || !address) {
+      // If not connected, show total count
+      return cryptoRequestCount + fiatLoanIds.length;
+    }
+
+    // Filter out user's own crypto requests
+    let cryptoCount = 0;
+    if (cryptoRequestsData) {
+      cryptoCount = cryptoRequestsData.filter((result) => {
+        if (result.status !== 'success' || !result.result) return false;
+
+        const data = result.result;
+        const isArray = Array.isArray(data);
+
+        let requestData;
+        if (isArray) {
+          const arr = data as readonly unknown[];
+          requestData = {
+            borrower: arr[1],
+            status: arr[11],
+          };
+        } else {
+          requestData = data as Record<string, unknown>;
+        }
+
+        // Filter out user's own requests, empty requests, and non-pending requests
+        if (!requestData.borrower || requestData.borrower === '0x0000000000000000000000000000000000000000') {
+          return false;
+        }
+        if ((requestData.borrower as string).toLowerCase() === address.toLowerCase()) {
+          return false;
+        }
+        if (Number(requestData.status) !== LoanRequestStatus.PENDING) {
+          return false;
+        }
+
+        return true;
+      }).length;
+    }
+
+    // Filter out user's own fiat requests
+    let fiatCount = 0;
+    if (fiatRequestsData) {
+      fiatCount = fiatRequestsData.filter((result) => {
+        if (result.status !== 'success' || !result.result) return false;
+
+        const data = result.result;
+        const isArray = Array.isArray(data);
+
+        let loanData;
+        if (isArray) {
+          const arr = data as readonly unknown[];
+          loanData = {
+            borrower: arr[1],
+            status: arr[9],
+          };
+        } else {
+          loanData = data as Record<string, unknown>;
+        }
+
+        // Filter out user's own requests and empty requests
+        if (!loanData.borrower || loanData.borrower === '0x0000000000000000000000000000000000000000') {
+          return false;
+        }
+        if ((loanData.borrower as string).toLowerCase() === address.toLowerCase()) {
+          return false;
+        }
+        // For fiat loans, status 0 = PENDING_SUPPLIER
+        if (Number(loanData.status) !== FiatLoanStatus.PENDING_SUPPLIER) {
+          return false;
+        }
+
+        return true;
+      }).length;
+    }
+
+    return cryptoCount + fiatCount;
+  }, [isConnected, address, cryptoRequestsData, fiatRequestsData, cryptoRequestCount, fiatLoanIds.length]);
 
   // Check if user is verified supplier (for cash/fiat)
   const { isVerified, isLoading: isVerificationLoading } = useIsVerifiedSupplier();
@@ -111,18 +259,88 @@ export default function LendPage() {
     switch (currentStep) {
       case 1:
         return (
-          <AssetTypeSelector
-            selected={assetType}
-            onSelect={handleAssetTypeChange}
-          />
+          <div className="space-y-6">
+            {/* Available Requests Banner */}
+            {totalAvailableRequests > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="max-w-2xl mx-auto"
+              >
+                <Link href="/marketplace?tab=borrow_requests">
+                  <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-orange-500/10 to-primary-500/10 border border-orange-500/30 hover:border-orange-500/50 transition-all duration-300 group cursor-pointer">
+                    <Users className="w-5 h-5 flex-shrink-0 mt-0.5 text-orange-400 group-hover:scale-110 transition-transform" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-orange-400 mb-1">
+                        {totalAvailableRequests} borrower{totalAvailableRequests !== 1 ? 's' : ''} waiting for funding
+                      </p>
+                      <p className="text-xs text-white/60">
+                        Browse the marketplace to find borrowers looking for loans right now
+                      </p>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-orange-400 flex-shrink-0 mt-1 opacity-0 group-hover:opacity-100 -translate-x-2 group-hover:translate-x-0 transition-all" />
+                  </div>
+                </Link>
+              </motion.div>
+            )}
+
+            <AssetTypeSelector
+              selected={assetType}
+              onSelect={handleAssetTypeChange}
+            />
+          </div>
         );
       case 2:
         return (
-          <AssetSelector
-            assetType={assetType}
-            selected={selectedAsset}
-            onSelect={setSelectedAsset}
-          />
+          <div className="space-y-6">
+            {/* Available Requests Banner */}
+            {totalAvailableRequests > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="max-w-2xl mx-auto"
+              >
+                <Link href="/marketplace?tab=borrow_requests">
+                  <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-orange-500/10 to-primary-500/10 border border-orange-500/30 hover:border-orange-500/50 transition-all duration-300 group cursor-pointer">
+                    <Users className="w-5 h-5 flex-shrink-0 mt-0.5 text-orange-400 group-hover:scale-110 transition-transform" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-orange-400 mb-1">
+                        {totalAvailableRequests} borrower{totalAvailableRequests !== 1 ? 's' : ''} waiting for funding
+                      </p>
+                      <p className="text-xs text-white/60">
+                        Start earning interest immediately by funding existing borrow requests
+                      </p>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-orange-400 flex-shrink-0 mt-1 opacity-0 group-hover:opacity-100 -translate-x-2 group-hover:translate-x-0 transition-all" />
+                  </div>
+                </Link>
+              </motion.div>
+            )}
+
+            <AssetSelector
+              assetType={assetType}
+              selected={selectedAsset}
+              onSelect={setSelectedAsset}
+            />
+
+            {/* Faucet Info - only show for crypto assets */}
+            {assetType === 'crypto' && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex items-start gap-3 px-4 py-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-sm text-blue-400 max-w-2xl mx-auto"
+              >
+                <Info className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                <p>
+                  Need testnet tokens?{' '}
+                  <Link href="/faucet" className="font-semibold underline underline-offset-2 hover:text-blue-300 transition-colors">
+                    Visit our Faucet page
+                  </Link>
+                  {' '}to get free testnet tokens to start lending.
+                </p>
+              </motion.div>
+            )}
+          </div>
         );
       case 3:
         return (

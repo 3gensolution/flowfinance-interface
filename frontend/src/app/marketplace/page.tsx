@@ -1,11 +1,14 @@
 'use client';
 
-import { useState, useMemo, Suspense, useCallback } from 'react';
+import { useState, useMemo, Suspense, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FileText, HandCoins, RefreshCw, Info } from 'lucide-react';
 import { useReadContracts, useReadContract, useAccount } from 'wagmi';
 import { Abi, Address } from 'viem';
-import { CONTRACT_ADDRESSES } from '@/config/contracts';
+import { CONTRACT_ADDRESSES, CHAIN_CONFIG } from '@/config/contracts';
+import { useNetwork } from '@/contexts/NetworkContext';
+import { config as wagmiConfig } from '@/config/wagmi';
+import { NetworkSwitcher } from '@/components/network/NetworkSwitcher';
 import LoanMarketPlaceABIJson from '@/contracts/LoanMarketPlaceABI.json';
 import FiatLoanBridgeABIJson from '@/contracts/FiatLoanBridgeABI.json';
 import {
@@ -43,27 +46,35 @@ const MAX_ITEMS_TO_FETCH = 50;
 
 // Hook to fetch crypto loan requests directly from contract
 function useCryptoLoanRequests() {
+  const { selectedNetwork } = useNetwork();
+
   // Get total count
-  const { data: nextRequestId, refetch: refetchCount } = useReadContract({
+  const { data: nextRequestId, refetch: refetchCount, error: errorCount } = useReadContract({
     address: CONTRACT_ADDRESSES.loanMarketPlace,
     abi: LoanMarketPlaceABI,
     functionName: 'nextLoanRequestId',
+    chainId: selectedNetwork.id,
+    config: wagmiConfig,
   });
 
   const count = nextRequestId ? Math.min(Number(nextRequestId), MAX_ITEMS_TO_FETCH) : 0;
 
   // Batch fetch all requests
-  const { data: requestsData, isLoading, refetch: refetchData } = useReadContracts({
+  const { data: requestsData, isLoading, refetch: refetchData, error: errorData } = useReadContracts({
     contracts: Array.from({ length: count }, (_, i) => ({
       address: CONTRACT_ADDRESSES.loanMarketPlace,
       abi: LoanMarketPlaceABI,
       functionName: 'loanRequests',
       args: [BigInt(i)],
+      chainId: selectedNetwork.id,
     })),
+    config: wagmiConfig,
     query: {
       enabled: count > 0,
     },
   });
+  console.log("request data", requestsData, "loading", isLoading);
+  
 
   const requests = useMemo(() => {
     if (!requestsData) return [];
@@ -91,6 +102,7 @@ function useCryptoLoanRequests() {
             createdAt: arr[9],
             expireAt: arr[10],
             status: arr[11],
+            chainId: arr[12],
           };
         } else {
           requestData = data as Record<string, unknown>;
@@ -117,6 +129,7 @@ function useCryptoLoanRequests() {
           createdAt: requestData.createdAt as bigint,
           expireAt: requestData.expireAt as bigint,
           status: Number(requestData.status) as LoanRequestStatus,
+          chainId: (requestData.chainId as bigint) || BigInt(0),
         } as LoanRequest;
       })
       .filter((r): r is LoanRequest => r !== null);
@@ -127,28 +140,34 @@ function useCryptoLoanRequests() {
     refetchData();
   }, [refetchCount, refetchData]);
 
-  return { data: requests, isLoading, refetch };
+  return { data: requests, isLoading, refetch, error: errorCount || errorData };
 }
 
 // Hook to fetch crypto lender offers directly from contract
 function useCryptoLenderOffers() {
+  const { selectedNetwork } = useNetwork();
+
   // Get total count
-  const { data: nextOfferId, refetch: refetchCount } = useReadContract({
+  const { data: nextOfferId, refetch: refetchCount, error: errorCount } = useReadContract({
     address: CONTRACT_ADDRESSES.loanMarketPlace,
     abi: LoanMarketPlaceABI,
     functionName: 'nextLenderOfferId',
+    chainId: selectedNetwork.id,
+    config: wagmiConfig,
   });
 
   const count = nextOfferId ? Math.min(Number(nextOfferId), MAX_ITEMS_TO_FETCH) : 0;
 
   // Batch fetch all offers
-  const { data: offersData, isLoading, refetch: refetchData } = useReadContracts({
+  const { data: offersData, isLoading, refetch: refetchData, error: errorData } = useReadContracts({
     contracts: Array.from({ length: count }, (_, i) => ({
       address: CONTRACT_ADDRESSES.loanMarketPlace,
       abi: LoanMarketPlaceABI,
       functionName: 'lenderOffers',
       args: [BigInt(i)],
+      chainId: selectedNetwork.id,
     })),
+    config: wagmiConfig,
     query: {
       enabled: count > 0,
     },
@@ -181,6 +200,7 @@ function useCryptoLenderOffers() {
             createdAt: arr[10],
             expireAt: arr[11],
             status: arr[12],
+            chainId: arr[13],
           };
         } else {
           offerData = data as Record<string, unknown>;
@@ -208,6 +228,7 @@ function useCryptoLenderOffers() {
           createdAt: offerData.createdAt as bigint,
           expireAt: offerData.expireAt as bigint,
           status: Number(offerData.status) as LoanRequestStatus,
+          chainId: (offerData.chainId as bigint) || BigInt(0),
         } as LenderOffer;
       })
       .filter((o): o is LenderOffer => o !== null);
@@ -218,28 +239,34 @@ function useCryptoLenderOffers() {
     refetchData();
   }, [refetchCount, refetchData]);
 
-  return { data: offers, isLoading, refetch };
+  return { data: offers, isLoading, refetch, error: errorCount || errorData };
 }
 
 // Hook to fetch pending fiat loans directly from contract
 function useFiatLoanRequests() {
+  const { selectedNetwork } = useNetwork();
+
   // Get pending loan IDs
-  const { data: pendingIds, isLoading: isLoadingIds, refetch: refetchIds } = useReadContract({
+  const { data: pendingIds, isLoading: isLoadingIds, refetch: refetchIds, error: errorIds } = useReadContract({
     address: CONTRACT_ADDRESSES.fiatLoanBridge,
     abi: FiatLoanBridgeABI,
     functionName: 'getPendingFiatLoans',
+    chainId: selectedNetwork.id,
+    config: wagmiConfig,
   });
 
   const loanIds = useMemo(() => (pendingIds as bigint[]) || [], [pendingIds]);
 
   // Batch fetch loan details
-  const { data: loansData, isLoading: isLoadingLoans, refetch: refetchLoans } = useReadContracts({
+  const { data: loansData, isLoading: isLoadingLoans, refetch: refetchLoans, error: errorLoans } = useReadContracts({
     contracts: loanIds.map((id) => ({
       address: CONTRACT_ADDRESSES.fiatLoanBridge,
       abi: FiatLoanBridgeABI,
       functionName: 'getFiatLoan',
       args: [id],
+      chainId: selectedNetwork.id,
     })),
+    config: wagmiConfig,
     query: {
       enabled: loanIds.length > 0,
     },
@@ -317,28 +344,34 @@ function useFiatLoanRequests() {
     refetchLoans();
   }, [refetchIds, refetchLoans]);
 
-  return { data: loans, isLoading: isLoadingIds || isLoadingLoans, refetch };
+  return { data: loans, isLoading: isLoadingIds || isLoadingLoans, refetch, error: errorIds || errorLoans };
 }
 
 // Hook to fetch active fiat lender offers directly from contract
 function useFiatLenderOffersData() {
+  const { selectedNetwork } = useNetwork();
+
   // Get active offer IDs
-  const { data: activeIds, isLoading: isLoadingIds, refetch: refetchIds } = useReadContract({
+  const { data: activeIds, isLoading: isLoadingIds, refetch: refetchIds, error: errorIds } = useReadContract({
     address: CONTRACT_ADDRESSES.fiatLoanBridge,
     abi: FiatLoanBridgeABI,
     functionName: 'getActiveFiatLenderOffers',
+    chainId: selectedNetwork.id,
+    config: wagmiConfig,
   });
 
   const offerIds = useMemo(() => (activeIds as bigint[]) || [], [activeIds]);
 
   // Batch fetch offer details
-  const { data: offersData, isLoading: isLoadingOffers, refetch: refetchOffers } = useReadContracts({
+  const { data: offersData, isLoading: isLoadingOffers, refetch: refetchOffers, error: errorOffers } = useReadContracts({
     contracts: offerIds.map((id) => ({
       address: CONTRACT_ADDRESSES.fiatLoanBridge,
       abi: FiatLoanBridgeABI,
       functionName: 'fiatLenderOffers',
       args: [id],
+      chainId: selectedNetwork.id,
     })),
+    config: wagmiConfig,
     query: {
       enabled: offerIds.length > 0,
     },
@@ -406,13 +439,15 @@ function useFiatLenderOffersData() {
     refetchOffers();
   }, [refetchIds, refetchOffers]);
 
-  return { data: offers, isLoading: isLoadingIds || isLoadingOffers, refetch };
+  return { data: offers, isLoading: isLoadingIds || isLoadingOffers, refetch, error: errorIds || errorOffers };
 }
 
 function MarketplaceContent() {
-  const { address: connectedAddress } = useAccount();
+  const { address: connectedAddress, isConnected } = useAccount();
+  const { selectedNetwork } = useNetwork();
   const [activeTab, setActiveTab] = useState<Tab>('borrow_requests');
   const [currentPage, setCurrentPage] = useState(1);
+  const [showLoadingTimeout, setShowLoadingTimeout] = useState(false);
   const [filters, setFilters] = useState<FilterState>({
     assetType: 'all',
     tokens: [],
@@ -423,17 +458,42 @@ function MarketplaceContent() {
   });
 
   // Load data directly from contracts (no store)
-  const { data: cryptoRequests, isLoading: isLoadingCryptoRequests, refetch: refetchCryptoRequests } = useCryptoLoanRequests();
-  const { data: cryptoOffers, isLoading: isLoadingCryptoOffers, refetch: refetchCryptoOffers } = useCryptoLenderOffers();
-  const { data: fiatRequests, isLoading: isLoadingFiatRequests, refetch: refetchFiatRequests } = useFiatLoanRequests();
-  const { data: fiatOffers, isLoading: isLoadingFiatOffers, refetch: refetchFiatOffers } = useFiatLenderOffersData();
+  const { data: cryptoRequests, isLoading: isLoadingCryptoRequests, refetch: refetchCryptoRequests, error: errorCryptoRequests } = useCryptoLoanRequests();
+  const { data: cryptoOffers, isLoading: isLoadingCryptoOffers, refetch: refetchCryptoOffers, error: errorCryptoOffers } = useCryptoLenderOffers();
+  const { data: fiatRequests, isLoading: isLoadingFiatRequests, refetch: refetchFiatRequests, error: errorFiatRequests } = useFiatLoanRequests();
+  const { data: fiatOffers, isLoading: isLoadingFiatOffers, refetch: refetchFiatOffers, error: errorFiatOffers } = useFiatLenderOffersData();
 
-  // Current timestamp for expiry checks
-  const now = BigInt(Math.floor(Date.now() / 1000));
+  // Debug logging
+  console.log('Marketplace Data:', {
+    cryptoRequests: cryptoRequests?.length,
+    cryptoOffers: cryptoOffers?.length,
+    fiatRequests: fiatRequests?.length,
+    fiatOffers: fiatOffers?.length,
+    isLoading: { cryptoRequests: isLoadingCryptoRequests, cryptoOffers: isLoadingCryptoOffers, fiatRequests: isLoadingFiatRequests, fiatOffers: isLoadingFiatOffers },
+    errors: { cryptoRequests: errorCryptoRequests, cryptoOffers: errorCryptoOffers, fiatRequests: errorFiatRequests, fiatOffers: errorFiatOffers },
+    isConnected,
+  });
 
   const isLoadingCrypto = isLoadingCryptoRequests || isLoadingCryptoOffers;
   const isLoadingFiat = isLoadingFiatRequests || isLoadingFiatOffers;
   const isLoading = isLoadingCrypto || isLoadingFiat;
+
+  const hasError = errorCryptoRequests || errorCryptoOffers || errorFiatRequests || errorFiatOffers;
+
+  // Set timeout to stop showing loading spinner after 5 seconds
+  useEffect(() => {
+    if (isLoading) {
+      const timer = setTimeout(() => {
+        setShowLoadingTimeout(true);
+      }, 5000);
+      return () => clearTimeout(timer);
+    } else {
+      setShowLoadingTimeout(false);
+    }
+  }, [isLoading]);
+
+  // If loading for too long or has error, treat as loaded with empty data
+  const effectivelyLoading = isLoading && !showLoadingTimeout && !hasError;
 
   const refetch = useCallback(() => {
     refetchCryptoRequests();
@@ -444,18 +504,6 @@ function MarketplaceContent() {
 
   // Filter and sort data
   const filteredData = useMemo(() => {
-    // Helper: Check if item is expired
-    const isExpired = (item: MarketplaceItem): boolean => {
-      if (item.itemType === 'crypto_request' || item.itemType === 'crypto_offer') {
-        return item.expireAt > BigInt(0) && now > item.expireAt;
-      }
-      if (item.itemType === 'fiat_offer') {
-        return item.expireAt > BigInt(0) && now > item.expireAt;
-      }
-      // Fiat requests don't have expireAt, skip expiry check
-      return false;
-    };
-
     // Helper: Check if item belongs to connected user
     const isOwnItem = (item: MarketplaceItem): boolean => {
       if (!connectedAddress) return false;
@@ -471,6 +519,21 @@ function MarketplaceContent() {
     };
 
     // Helper functions defined inside useMemo to avoid dependency issues
+    const matchesNetworkFilter = (item: MarketplaceItem): boolean => {
+      // Get chainId from item (default to 0 if not present)
+      const chainId = 'chainId' in item ? Number(item.chainId) : 0;
+
+      // If no chainId, check if it matches selected network ID (could be default chain)
+      // Otherwise, only show items from the currently selected network
+      if (chainId === 0) {
+        // For items without chainId, show them on the default network (Base Sepolia)
+        return selectedNetwork.id === CHAIN_CONFIG.baseSepolia.id;
+      }
+
+      // Only show items from the selected network
+      return chainId === selectedNetwork.id;
+    };
+
     const matchesTokenFilter = (item: MarketplaceItem): boolean => {
       if (filters.tokens.length === 0) return true;
 
@@ -530,10 +593,10 @@ function MarketplaceContent() {
       }
     }
 
-    // Apply filters: exclude expired, exclude own items, then apply user filters
+    // Apply filters: exclude own items, then apply user filters
     items = items
-      .filter(item => !isExpired(item))
       .filter(item => !isOwnItem(item))
+      .filter(matchesNetworkFilter)
       .filter(matchesTokenFilter)
       .filter(matchesInterestFilter)
       .filter(matchesDurationFilter);
@@ -558,7 +621,7 @@ function MarketplaceContent() {
     }
 
     return items;
-  }, [activeTab, cryptoRequests, cryptoOffers, fiatRequests, fiatOffers, filters, now, connectedAddress]);
+  }, [activeTab, cryptoRequests, cryptoOffers, fiatRequests, fiatOffers, filters, connectedAddress, selectedNetwork]);
 
   // Pagination
   const totalPages = Math.ceil(filteredData.length / ITEMS_PER_PAGE);
@@ -656,6 +719,16 @@ function MarketplaceContent() {
           </p>
         </motion.div>
 
+        {/* Network Switcher */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.05 }}
+          className="flex justify-center mb-6"
+        >
+          <NetworkSwitcher />
+        </motion.div>
+
         {/* Tabs */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
@@ -674,7 +747,7 @@ function MarketplaceContent() {
               )}
             >
               <FileText className="w-4 h-4" />
-              Borrow Requests
+              Loan Requests
               <span className={cn(
                 'px-2 py-0.5 rounded-full text-xs',
                 activeTab === 'borrow_requests'
@@ -694,7 +767,7 @@ function MarketplaceContent() {
               )}
             >
               <HandCoins className="w-4 h-4" />
-              Lending Offers
+              Instant offers
               <span className={cn(
                 'px-2 py-0.5 rounded-full text-xs',
                 activeTab === 'lending_offers'
@@ -725,6 +798,23 @@ function MarketplaceContent() {
           resultCount={filteredData.length}
         />
 
+        {/* Error or Loading Timeout Message */}
+        {(hasError || showLoadingTimeout) && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="flex items-center gap-3 px-4 py-3 mb-6 rounded-xl bg-orange-500/10 border border-orange-500/20 text-sm text-orange-400"
+          >
+            <Info className="w-4 h-4 flex-shrink-0" />
+            <p>
+              {hasError
+                ? 'Unable to load marketplace data. Please check your network connection and try refreshing.'
+                : 'Data is taking longer than usual to load. Showing available results...'
+              }
+            </p>
+          </motion.div>
+        )}
+
         {/* Info Message */}
         {connectedAddress && (
           <motion.div
@@ -734,7 +824,7 @@ function MarketplaceContent() {
           >
             <Info className="w-4 h-4 flex-shrink-0 text-primary-400" />
             <p>
-              Your own {activeTab === 'borrow_requests' ? 'requests' : 'offers'} and expired listings are hidden.{' '}
+              Your own {activeTab === 'borrow_requests' ? 'requests' : 'offers'} are hidden.{' '}
               <Link href="/dashboard" className="text-primary-400 hover:text-primary-300 underline underline-offset-2">
                 View your listings in Dashboard
               </Link>
@@ -751,7 +841,7 @@ function MarketplaceContent() {
             exit={{ opacity: 0, y: -10 }}
           >
             <ListingsGrid
-              isLoading={isLoading}
+              isLoading={effectivelyLoading}
               isEmpty={paginatedData.length === 0}
               emptyTitle={
                 activeTab === 'borrow_requests'

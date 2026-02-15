@@ -29,16 +29,15 @@ import {
   formatPercentage,
   formatDuration,
   formatAddress,
-  formatTimeUntil,
   getTokenSymbol,
   getTokenDecimals,
 } from '@/lib/utils';
-import { 
-  formatCurrency, 
-  useExchangeRate, 
-  convertToUSDCents, 
-  convertFromUSDCents, 
-  // getCurrencySymbol 
+import {
+  formatCurrency,
+  useExchangeRate,
+  convertToUSDCents,
+  convertFromUSDCents,
+  // getCurrencySymbol
 } from '@/hooks/useFiatOracle';
 import { 
   TOKEN_LIST, 
@@ -80,8 +79,6 @@ function FiatOfferStatusBadge({ status }: { status: FiatLenderOfferStatus }) {
       return <Badge variant="info" size="sm">Accepted</Badge>;
     case FiatLenderOfferStatus.CANCELLED:
       return <Badge variant="danger" size="sm">Cancelled</Badge>;
-    case FiatLenderOfferStatus.EXPIRED:
-      return <Badge variant="warning" size="sm">Expired</Badge>;
     default:
       return <Badge variant="default" size="sm">Unknown</Badge>;
   }
@@ -104,6 +101,7 @@ export default function FiatOfferDetailPage() {
   const [selectedCollateralToken, setSelectedCollateralToken] = useState<Address | ''>('');
   const [collateralAmount, setCollateralAmount] = useState<string>('');
   const [borrowAmountInput, setBorrowAmountInput] = useState<string>('');
+  const [selectedDurationDays, setSelectedDurationDays] = useState<number>(0); // Will be set from offer
 
   // Fetch fiat lender offer data
   const { data: offerData, isLoading: offerLoading, refetch } = useFiatLenderOffer(offerId);
@@ -161,9 +159,12 @@ export default function FiatOfferDetailPage() {
   // Check price staleness
   const isPriceStale = selectedCollateralToken ? collateralPriceHook.isStale : false;
 
-  // Get LTV for the selected collateral token and offer duration
-  const durationDays = offer ? Number(offer.duration) / 86400 : undefined;
-  const { data: ltvBps } = useLTV(selectedCollateralToken as Address || undefined, durationDays);
+  // Get LTV for the selected collateral token and selected duration
+  const maxDurationDays = offer ? Math.floor(Number(offer.duration) / 86400) : 365;
+  const { data: ltvBps } = useLTV(
+    selectedCollateralToken as Address || undefined,
+    selectedDurationDays > 0 ? selectedDurationDays : undefined
+  );
 
   // Get exchange rate for currency conversion
   const { data: exchangeRate } = useExchangeRate(offer?.currency || 'USD');
@@ -281,12 +282,17 @@ export default function FiatOfferDetailPage() {
   const { acceptFiatLenderOffer, isPending: acceptIsPending, isConfirming: isAcceptConfirming, isSuccess: acceptSuccess, error: acceptError } = useAcceptFiatLenderOffer();
   const { cancelFiatLenderOffer, isPending: cancelIsPending, isSuccess: cancelSuccess, error: cancelError } = useCancelFiatLenderOffer();
 
-  // Initialize borrow amount when offer loads
+  // Initialize borrow amount and duration when offer loads
   useEffect(() => {
     if (offer && offer.remainingAmountCents > BigInt(0) && !borrowAmountInput) {
       setBorrowAmountInput((Number(offer.remainingAmountCents) / 100).toFixed(2));
     }
-  }, [offer, borrowAmountInput]);
+    if (offer && offer.duration && selectedDurationDays === 0) {
+      // Initialize to lender's max duration
+      const offerDurationDays = Math.floor(Number(offer.duration) / 86400);
+      setSelectedDurationDays(offerDurationDays);
+    }
+  }, [offer, borrowAmountInput, selectedDurationDays]);
 
   // Handle approval success
   useEffect(() => {
@@ -339,14 +345,18 @@ export default function FiatOfferDetailPage() {
     }
   }, [cancelError]);
 
-  // Reset modal state
+  // Reset modal state (only when modal opens, not when offer changes)
   useEffect(() => {
-    if (showAcceptModal) {
+    if (showAcceptModal && offer && offer.duration) {
       setAcceptStep('form');
       setCollateralAmount('');
       setSimulationError('');
+      // Reset duration to lender's max duration
+      const offerDurationDays = Math.floor(Number(offer.duration) / 86400);
+      setSelectedDurationDays(offerDurationDays);
     }
-  }, [showAcceptModal]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showAcceptModal]); // Only run when modal opens, not when offer changes
 
   const handleProceedToApprove = () => {
     if (!isFormValid) return;
@@ -449,8 +459,7 @@ export default function FiatOfferDetailPage() {
     );
   }
 
-  const isExpired = Number(offer.expireAt) * 1000 < Date.now();
-  const canAccept = offer.status === FiatLenderOfferStatus.ACTIVE && !isLender && !isExpired && isConnected;
+  const canAccept = offer.status === FiatLenderOfferStatus.ACTIVE && !isLender && isConnected;
   const canCancel = offer.status === FiatLenderOfferStatus.ACTIVE && isLender;
 
   return (
@@ -681,12 +690,6 @@ export default function FiatOfferDetailPage() {
                     <span>{new Date(Number(offer.createdAt) * 1000).toLocaleDateString()}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-400">Expires</span>
-                    <span className={isExpired ? 'text-red-400' : ''}>
-                      {isExpired ? 'Expired' : formatTimeUntil(offer.expireAt)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
                     <span className="text-gray-400">Loan Duration</span>
                     <span>{formatDuration(offer.duration)}</span>
                   </div>
@@ -703,7 +706,7 @@ export default function FiatOfferDetailPage() {
               <Card className="border-green-500/20">
                 <h3 className="font-semibold mb-4">Status</h3>
                 <div className="space-y-3">
-                  {offer.status === FiatLenderOfferStatus.ACTIVE && !isExpired && (
+                  {offer.status === FiatLenderOfferStatus.ACTIVE && (
                     <div className="text-center py-4">
                       <CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-2" />
                       <p className="text-green-400 font-semibold">Active Offer</p>
@@ -727,16 +730,6 @@ export default function FiatOfferDetailPage() {
                     <div className="text-center py-4">
                       <XCircle className="w-12 h-12 text-red-400 mx-auto mb-2" />
                       <p className="text-red-400 font-semibold">Offer Cancelled</p>
-                    </div>
-                  )}
-
-                  {(offer.status === FiatLenderOfferStatus.EXPIRED || (isExpired && offer.status === FiatLenderOfferStatus.ACTIVE)) && (
-                    <div className="text-center py-4">
-                      <AlertTriangle className="w-12 h-12 text-orange-400 mx-auto mb-2" />
-                      <p className="text-orange-400 font-semibold">Offer Expired</p>
-                      <p className="text-gray-400 text-sm mt-1">
-                        This offer can no longer be accepted
-                      </p>
                     </div>
                   )}
                 </div>
@@ -813,12 +806,17 @@ export default function FiatOfferDetailPage() {
                 </label>
                 <div className="flex items-center gap-2">
                   <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    max={maxBorrowAmount}
-                    value={borrowAmountInput}
-                    onChange={(e) => setBorrowAmountInput(e.target.value)}
+                    type="text"
+                    inputMode="decimal"
+                    value={borrowAmountInput || ''}
+                    onChange={(e) => {
+                      const value = e.target.value;
+
+                      // Allow empty OR valid decimal
+                      if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                        setBorrowAmountInput(value);
+                      }
+                    }}
                     placeholder="0.00"
                     className="input-field flex-1"
                   />
@@ -834,6 +832,83 @@ export default function FiatOfferDetailPage() {
                   <span>Max available: {formatCurrency(offer?.remainingAmountCents || BigInt(0), offer?.currency || 'USD')}</span>
                   {offer?.currency !== 'USD' && borrowAmountUSDCents > BigInt(0) && (
                     <span className="text-green-400">≈ ${(Number(borrowAmountUSDCents) / 100).toFixed(2)} USD</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Duration Selection */}
+              <div>
+                <label className="block text-sm text-gray-400 mb-2">
+                  Loan Duration (Days) <span className="text-xs text-gray-500">- Max: {maxDurationDays} days</span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={selectedDurationDays || ''}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (value === '') {
+                        setSelectedDurationDays(1);
+                      } else if (/^\d+$/.test(value)) {
+                        const days = parseInt(value);
+                        // Ensure duration is between 1 and lender's max duration
+                        const clampedDays = Math.max(1, Math.min(maxDurationDays, days));
+                        setSelectedDurationDays(clampedDays);
+                      }
+                    }}
+                    onBlur={(e) => {
+                      if (!e.target.value || parseInt(e.target.value) < 1) {
+                        setSelectedDurationDays(1);
+                      }
+                    }}
+                    placeholder={maxDurationDays.toString()}
+                    className="input-field flex-1"
+                  />
+                  <div className="flex gap-1">
+                    {maxDurationDays >= 7 && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDurationDays(7)}
+                        className="px-2 py-2 text-xs font-semibold text-primary-400 hover:text-primary-300 bg-primary-400/10 hover:bg-primary-400/20 rounded-lg transition-colors"
+                      >
+                        7D
+                      </button>
+                    )}
+                    {maxDurationDays >= 30 && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDurationDays(30)}
+                        className="px-2 py-2 text-xs font-semibold text-primary-400 hover:text-primary-300 bg-primary-400/10 hover:bg-primary-400/20 rounded-lg transition-colors"
+                      >
+                        30D
+                      </button>
+                    )}
+                    {maxDurationDays >= 90 && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDurationDays(90)}
+                        className="px-2 py-2 text-xs font-semibold text-primary-400 hover:text-primary-300 bg-primary-400/10 hover:bg-primary-400/20 rounded-lg transition-colors"
+                      >
+                        90D
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDurationDays(maxDurationDays)}
+                      className="px-2 py-2 text-xs font-semibold text-green-400 hover:text-green-300 bg-green-400/10 hover:bg-green-400/20 rounded-lg transition-colors"
+                    >
+                      MAX
+                    </button>
+                  </div>
+                </div>
+                <div className="flex justify-between text-xs text-gray-500 mt-1">
+                  <span>Min: 1 day | Your choice ≤ Lender&apos;s max</span>
+                  {selectedDurationDays > 0 && (
+                    <span className="text-primary-400">
+                      ≈ {Math.floor(selectedDurationDays / 30)}mo {selectedDurationDays % 30}d
+                      {ltvValue > 0 && ` • LTV: ${(ltvValue / 100).toFixed(1)}%`}
+                    </span>
                   )}
                 </div>
               </div>

@@ -205,6 +205,26 @@ export const CHAIN_CONFIG = {
   },
 } as const;
 
+// Testnet chains
+export const TESTNET_CHAINS = [
+  CHAIN_CONFIG.baseSepolia,
+  CHAIN_CONFIG.sepolia,
+  CHAIN_CONFIG.arbitrumSepolia,
+  CHAIN_CONFIG.optimismSepolia,
+  CHAIN_CONFIG.anvil,
+] as const;
+
+// Mainnet chains
+export const MAINNET_CHAINS = [
+  CHAIN_CONFIG.base,
+  CHAIN_CONFIG.ethereum,
+  CHAIN_CONFIG.arbitrum,
+  CHAIN_CONFIG.optimism,
+  CHAIN_CONFIG.polygon,
+  CHAIN_CONFIG.bsc,
+  CHAIN_CONFIG.avalanche,
+] as const;
+
 // Supported chains for the app (Testnets only for development)
 export const SUPPORTED_CHAINS = [
   CHAIN_CONFIG.baseSepolia,

@@ -167,14 +167,7 @@ export function FiatLendingOfferCard({ offer, index = 0 }: FiatLendingOfferCardP
   const remainingCents = Number(offer.remainingAmountCents);
   const borrowedCents = Number(offer.borrowedAmountCents);
 
-  // Calculate if offer is expired
-  const isExpired = offer.status === FiatLenderOfferStatus.ACTIVE &&
-    BigInt(Math.floor(Date.now() / 1000)) > offer.expireAt;
-
   const getStatusBadge = () => {
-    if (isExpired) {
-      return <span className="px-2 py-0.5 rounded-full text-xs bg-red-500/20 text-red-400">Expired</span>;
-    }
     switch (offer.status) {
       case FiatLenderOfferStatus.ACTIVE:
         return <span className="px-2 py-0.5 rounded-full text-xs bg-green-500/20 text-green-400">Active</span>;

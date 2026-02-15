@@ -11,8 +11,8 @@ import { useState, useEffect } from 'react';
 
 const navLinks = [
   { href: '/marketplace', label: 'Marketplace' },
-  { href: '/borrow', label: 'Borrow' },
-  { href: '/lend', label: 'Lend' },
+  { href: '/borrow', label: 'Get a Loan' },
+  { href: '/lend', label: 'Earn Interest' },
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/faucet', label: 'Faucet' },
 ];
@@ -88,7 +88,7 @@ export function Header() {
           </div>
 
           {/* Wallet & Mobile Menu */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <div className="hidden sm:block">
               <ConnectButton />
             </div>

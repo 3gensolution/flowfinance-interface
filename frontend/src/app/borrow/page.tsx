@@ -2,9 +2,10 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, ArrowRight } from 'lucide-react';
-import { useAccount, useReadContracts } from 'wagmi';
-import { Address, formatUnits, parseUnits } from 'viem';
+import { ArrowLeft, ArrowRight, Info, Sparkles } from 'lucide-react';
+import { useAccount, useReadContracts, useReadContract } from 'wagmi';
+import Link from 'next/link';
+import { Address, formatUnits, parseUnits, Abi } from 'viem';
 import { Button } from '@/components/ui/Button';
 import { PriceStaleWarning } from '@/components/ui/PriceStaleWarning';
 import {
@@ -26,11 +27,17 @@ import {
   useLiquidationThreshold,
 } from '@/hooks/useContracts';
 import { getCurrencySymbol, useExchangeRate, convertFromUSDCents } from '@/hooks/useFiatOracle';
-import { TOKEN_LIST } from '@/config/contracts';
+import { CONTRACT_ADDRESSES, TOKEN_LIST } from '@/config/contracts';
+import { useNetwork } from '@/contexts/NetworkContext';
+import { config as wagmiConfig } from '@/config/wagmi';
+import { LoanRequestStatus } from '@/types';
+import LoanMarketPlaceABIJson from '@/contracts/LoanMarketPlaceABI.json';
+import FiatLoanBridgeABIJson from '@/contracts/FiatLoanBridgeABI.json';
 import ERC20ABIJson from '@/contracts/ERC20ABI.json';
-import { Abi } from 'viem';
 
 const ERC20ABI = ERC20ABIJson as Abi;
+const LoanMarketPlaceABI = LoanMarketPlaceABIJson as Abi;
+const FiatLoanBridgeABI = FiatLoanBridgeABIJson as Abi;
 
 // Define wizard steps - Start with borrow asset, then collateral
 const STEPS = [
@@ -43,6 +50,7 @@ const STEPS = [
 
 export default function BorrowPage() {
   const { address, isConnected } = useAccount();
+  const { selectedNetwork } = useNetwork();
 
   // Wizard state (1-indexed to match Step ids)
   const [currentStep, setCurrentStep] = useState(1);
@@ -57,6 +65,138 @@ export default function BorrowPage() {
   const [interestRate, setInterestRate] = useState(10);
   const [duration, setDuration] = useState(30);
   const [customDate, setCustomDate] = useState<Date | null>(null);
+
+  // Fetch available lender offers count for informational banner
+  const { data: nextCryptoOfferId } = useReadContract({
+    address: CONTRACT_ADDRESSES.loanMarketPlace,
+    abi: LoanMarketPlaceABI,
+    functionName: 'nextLenderOfferId',
+    chainId: selectedNetwork.id,
+    config: wagmiConfig,
+  });
+
+  const cryptoOfferCount = nextCryptoOfferId ? Number(nextCryptoOfferId) : 0;
+
+  // Fetch crypto offers to filter out user's own offers
+  const { data: cryptoOffersData } = useReadContracts({
+    contracts: Array.from({ length: cryptoOfferCount }, (_, i) => ({
+      address: CONTRACT_ADDRESSES.loanMarketPlace,
+      abi: LoanMarketPlaceABI,
+      functionName: 'lenderOffers',
+      args: [BigInt(i)],
+      chainId: selectedNetwork.id,
+    })),
+    config: wagmiConfig,
+    query: {
+      enabled: cryptoOfferCount > 0 && isConnected,
+    },
+  });
+
+  const { data: activeFiatOfferIds } = useReadContract({
+    address: CONTRACT_ADDRESSES.fiatLoanBridge,
+    abi: FiatLoanBridgeABI,
+    functionName: 'getActiveFiatLenderOffers',
+    chainId: selectedNetwork.id,
+    config: wagmiConfig,
+  });
+
+  const fiatOfferIds = useMemo(() => (activeFiatOfferIds as bigint[]) || [], [activeFiatOfferIds]);
+
+  // Fetch fiat offers to filter out user's own offers
+  const { data: fiatOffersData } = useReadContracts({
+    contracts: fiatOfferIds.map((id) => ({
+      address: CONTRACT_ADDRESSES.fiatLoanBridge,
+      abi: FiatLoanBridgeABI,
+      functionName: 'fiatLenderOffers',
+      args: [id],
+      chainId: selectedNetwork.id,
+    })),
+    config: wagmiConfig,
+    query: {
+      enabled: fiatOfferIds.length > 0 && isConnected,
+    },
+  });
+
+  // Calculate total available offers (excluding user's own offers)
+  const totalAvailableOffers = useMemo(() => {
+    if (!isConnected || !address) {
+      // If not connected, show total count
+      return cryptoOfferCount + fiatOfferIds.length;
+    }
+
+    // Filter out user's own crypto offers
+    let cryptoCount = 0;
+    if (cryptoOffersData) {
+      cryptoCount = cryptoOffersData.filter((result) => {
+        if (result.status !== 'success' || !result.result) return false;
+
+        const data = result.result;
+        const isArray = Array.isArray(data);
+
+        let offerData;
+        if (isArray) {
+          const arr = data as readonly unknown[];
+          offerData = {
+            lender: arr[1],
+            status: arr[12],
+          };
+        } else {
+          offerData = data as Record<string, unknown>;
+        }
+
+        // Filter out user's own offers, empty offers, and non-pending offers
+        if (!offerData.lender || offerData.lender === '0x0000000000000000000000000000000000000000') {
+          return false;
+        }
+        if ((offerData.lender as string).toLowerCase() === address.toLowerCase()) {
+          return false;
+        }
+        if (Number(offerData.status) !== LoanRequestStatus.PENDING) {
+          return false;
+        }
+
+        return true;
+      }).length;
+    }
+
+    // Filter out user's own fiat offers
+    let fiatCount = 0;
+    if (fiatOffersData) {
+      fiatCount = fiatOffersData.filter((result) => {
+        if (result.status !== 'success' || !result.result) return false;
+
+        const data = result.result;
+        const isArray = Array.isArray(data);
+
+        let offerData;
+        if (isArray) {
+          const arr = data as readonly unknown[];
+          offerData = {
+            lender: arr[1],
+            status: arr[9],
+          };
+        } else {
+          offerData = data as Record<string, unknown>;
+        }
+
+        // Filter out user's own offers and empty offers
+        if (!offerData.lender || offerData.lender === '0x0000000000000000000000000000000000000000') {
+          return false;
+        }
+        if ((offerData.lender as string).toLowerCase() === address.toLowerCase()) {
+          return false;
+        }
+        // For fiat offers, status 0 = ACTIVE
+        if (Number(offerData.status) !== 0) {
+          return false;
+        }
+
+        return true;
+      }).length;
+    }
+
+    return cryptoCount + fiatCount;
+  }, [isConnected, address, cryptoOffersData, fiatOffersData, cryptoOfferCount, fiatOfferIds.length]);
 
   // Get supported assets from Configuration contract
   const { supportedTokens, isLoading: isLoadingSupportedTokens } = useSupportedAssets();
@@ -325,22 +465,90 @@ export default function BorrowPage() {
       case 1:
         // Step 1: Select stablecoin to borrow
         return (
-          <StablecoinSelector
-            selected={selectedStablecoin}
-            onSelect={setSelectedStablecoin}
-            assets={stablecoins}
-            isLoading={isLoadingSupportedTokens}
-          />
+          <div className="space-y-6">
+            {/* Available Offers Banner */}
+            {totalAvailableOffers > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="max-w-2xl mx-auto"
+              >
+                <Link href="/marketplace?tab=lending_offers">
+                  <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-accent-500/10 to-primary-500/10 border border-accent-500/30 hover:border-accent-500/50 transition-all duration-300 group cursor-pointer">
+                    <Sparkles className="w-5 h-5 flex-shrink-0 mt-0.5 text-accent-400 group-hover:scale-110 transition-transform" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-accent-400 mb-1">
+                        {totalAvailableOffers} lender offer{totalAvailableOffers !== 1 ? 's' : ''} available
+                      </p>
+                      <p className="text-xs text-white/60">
+                        Browse the marketplace to find competitive rates from lenders ready to fund your loan
+                      </p>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-accent-400 flex-shrink-0 mt-1 opacity-0 group-hover:opacity-100 -translate-x-2 group-hover:translate-x-0 transition-all" />
+                  </div>
+                </Link>
+              </motion.div>
+            )}
+
+            <StablecoinSelector
+              selected={selectedStablecoin}
+              onSelect={setSelectedStablecoin}
+              assets={stablecoins}
+              isLoading={isLoadingSupportedTokens}
+            />
+          </div>
         );
       case 2:
         // Step 2: Select collateral asset
         return (
-          <CollateralSelector
-            selected={selectedCollateral}
-            onSelect={handleCollateralSelect}
-            assets={collateralAssets.filter(a => a.symbol !== selectedStablecoin?.symbol)}
-            isLoading={isLoadingAssets}
-          />
+          <div className="space-y-6">
+            {/* Available Offers Banner */}
+            {totalAvailableOffers > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="max-w-2xl mx-auto"
+              >
+                <Link href="/marketplace?tab=lending_offers">
+                  <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-accent-500/10 to-primary-500/10 border border-accent-500/30 hover:border-accent-500/50 transition-all duration-300 group cursor-pointer">
+                    <Sparkles className="w-5 h-5 flex-shrink-0 mt-0.5 text-accent-400 group-hover:scale-110 transition-transform" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-accent-400 mb-1">
+                        {totalAvailableOffers} lender offer{totalAvailableOffers !== 1 ? 's' : ''} available
+                      </p>
+                      <p className="text-xs text-white/60">
+                        Skip the wait - match with a lender instantly on the marketplace
+                      </p>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-accent-400 flex-shrink-0 mt-1 opacity-0 group-hover:opacity-100 -translate-x-2 group-hover:translate-x-0 transition-all" />
+                  </div>
+                </Link>
+              </motion.div>
+            )}
+
+            <CollateralSelector
+              selected={selectedCollateral}
+              onSelect={handleCollateralSelect}
+              assets={collateralAssets.filter(a => a.symbol !== selectedStablecoin?.symbol)}
+              isLoading={isLoadingAssets}
+            />
+
+            {/* Faucet Info */}
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex items-start gap-3 px-4 py-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-sm text-blue-400 max-w-2xl mx-auto"
+            >
+              <Info className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <p>
+                Need testnet tokens?{' '}
+                <Link href="/faucet" className="font-semibold underline underline-offset-2 hover:text-blue-300 transition-colors">
+                  Visit our Faucet page
+                </Link>
+                {' '}to get free testnet tokens for collateral.
+              </p>
+            </motion.div>
+          </div>
         );
       case 3:
         // Step 3: Enter collateral amount + LTV

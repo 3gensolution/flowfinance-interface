@@ -3,7 +3,6 @@
 import { motion } from 'framer-motion';
 import { Loader2, Check } from 'lucide-react';
 import { Address } from 'viem';
-import Image from 'next/image';
 
 export interface StablecoinAsset {
   symbol: string;
@@ -82,23 +81,13 @@ export function StablecoinSelector({
                 {/* Icon */}
                 <div
                   className={`
-                    w-14 h-14 rounded-full mx-auto mb-3 flex items-center justify-center overflow-hidden
+                    w-14 h-14 rounded-full mx-auto mb-3 flex items-center justify-center
                     ${isSelected ? 'bg-primary-500/20' : 'bg-white/10'}
                   `}
                 >
-                  {asset.icon ? (
-                    <Image
-                      src={asset.icon}
-                      alt={asset.symbol}
-                      width={40}
-                      height={40}
-                      className="object-contain"
-                    />
-                  ) : (
-                    <span className={`text-lg font-bold ${isSelected ? 'text-primary-400' : 'text-white'}`}>
-                      {asset.symbol.slice(0, 2)}
-                    </span>
-                  )}
+                  <span className={`text-lg font-bold ${isSelected ? 'text-primary-400' : 'text-white'}`}>
+                    {asset.symbol.slice(0, 2)}
+                  </span>
                 </div>
 
                 {/* Symbol */}

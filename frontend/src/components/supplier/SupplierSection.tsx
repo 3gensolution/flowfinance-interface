@@ -16,8 +16,8 @@ import { GenerateLinkResponse } from '@/services/mutation/generate-link';
 import {
   useGetSupportedCurrencies,
   useSupplierBalances,
-  getCurrencySymbol,
   getCurrencyName,
+  formatCurrency,
 } from '@/hooks/useFiatOracle';
 import {
   UserPlus,
@@ -484,7 +484,7 @@ export function SupplierSection() {
                       </div>
                       <div className="text-right">
                         <span className={`text-sm font-semibold ${balance > BigInt(0) ? 'text-green-400' : 'text-gray-500'}`}>
-                          {getCurrencySymbol(currency)}{(Number(balance) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {formatCurrency(balance, currency)}
                         </span>
                       </div>
                     </div>

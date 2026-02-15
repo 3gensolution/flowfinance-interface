@@ -3,6 +3,8 @@
 import { useRef } from 'react';
 import { motion, useInView } from 'framer-motion';
 import { Shield, Lock, Eye, Code2 } from 'lucide-react';
+import { usePlatformStats } from '@/hooks/useContracts';
+import { formatCompactUSD } from '@/lib/utils';
 
 const trustFeatures = [
   {
@@ -27,12 +29,6 @@ const trustFeatures = [
   },
 ];
 
-const stats = [
-  { value: '$2M+', label: 'Total Value Locked' },
-  { value: '1,000+', label: 'Active Users' },
-  { value: '99.9%', label: 'Uptime' },
-  { value: '0', label: 'Security Incidents' },
-];
 
 function TrustBadge({
   feature,
@@ -67,7 +63,7 @@ function StatCard({
   stat,
   index,
 }: {
-  stat: (typeof stats)[0];
+  stat: { value: string; label: string };
   index: number;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -90,6 +86,26 @@ function StatCard({
 export function Trust() {
   const sectionRef = useRef<HTMLElement>(null);
   const isInView = useInView(sectionRef, { once: true, margin: '-100px' });
+  const { data: platformStats, isLoading } = usePlatformStats();
+
+  const stats = [
+    {
+      value: isLoading ? 'Loading...' : formatCompactUSD(platformStats?.totalCollateralValue || 0),
+      label: 'Total Value Locked'
+    },
+    {
+      value: isLoading ? 'Loading...' : `${platformStats?.activeUsers || 0}+`,
+      label: 'Active Users'
+    },
+    {
+      value: isLoading ? 'Loading...' : `${platformStats?.totalLoans || 0}+`,
+      label: 'Total Loans'
+    },
+    {
+      value: isLoading ? 'Loading...' : `${platformStats?.activeLoans || 0}+`,
+      label: 'Active Loans'
+    },
+  ];
 
   return (
     <section ref={sectionRef} className="py-24 bg-[#0A0A0A] relative overflow-hidden">
