@@ -2,8 +2,9 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, ArrowRight } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Info } from 'lucide-react';
 import { useAccount, useReadContracts } from 'wagmi';
+import Link from 'next/link';
 import { Address, formatUnits, parseUnits } from 'viem';
 import { Button } from '@/components/ui/Button';
 import { PriceStaleWarning } from '@/components/ui/PriceStaleWarning';
@@ -335,12 +336,30 @@ export default function BorrowPage() {
       case 2:
         // Step 2: Select collateral asset
         return (
-          <CollateralSelector
-            selected={selectedCollateral}
-            onSelect={handleCollateralSelect}
-            assets={collateralAssets.filter(a => a.symbol !== selectedStablecoin?.symbol)}
-            isLoading={isLoadingAssets}
-          />
+          <div className="space-y-6">
+            <CollateralSelector
+              selected={selectedCollateral}
+              onSelect={handleCollateralSelect}
+              assets={collateralAssets.filter(a => a.symbol !== selectedStablecoin?.symbol)}
+              isLoading={isLoadingAssets}
+            />
+
+            {/* Faucet Info */}
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex items-start gap-3 px-4 py-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-sm text-blue-400 max-w-2xl mx-auto"
+            >
+              <Info className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <p>
+                Need testnet tokens?{' '}
+                <Link href="/faucet" className="font-semibold underline underline-offset-2 hover:text-blue-300 transition-colors">
+                  Visit our Faucet page
+                </Link>
+                {' '}to get free testnet tokens for collateral.
+              </p>
+            </motion.div>
+          </div>
         );
       case 3:
         // Step 3: Enter collateral amount + LTV

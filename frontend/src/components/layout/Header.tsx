@@ -88,7 +88,7 @@ export function Header() {
           </div>
 
           {/* Wallet & Mobile Menu */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <div className="hidden sm:block">
               <ConnectButton />
             </div>
