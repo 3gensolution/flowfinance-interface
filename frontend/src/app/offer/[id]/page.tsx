@@ -38,7 +38,6 @@ import {
   TrendingUp,
   Clock,
   User,
-  AlertTriangle,
   CheckCircle,
   XCircle,
   ExternalLink,
@@ -553,8 +552,7 @@ export default function OfferDetailPage() {
     );
   }
 
-  const isExpired = Number(offer.expireAt) * 1000 < Date.now();
-  const canAccept = offer.status === LoanRequestStatus.PENDING && !isLender && !isExpired && isConnected;
+  const canAccept = offer.status === LoanRequestStatus.PENDING && !isLender && isConnected;
 
   return (
     <div className="min-h-screen py-12 px-4 sm:px-6 lg:px-8">
@@ -962,9 +960,7 @@ export default function OfferDetailPage() {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-400">Expires</span>
-                    <span className={isExpired ? 'text-red-400' : ''}>
-                      {isExpired ? 'Expired' : formatTimeUntil(offer.expireAt)}
-                    </span>
+                    <span>{formatTimeUntil(offer.expireAt)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-400">Loan Duration</span>
@@ -983,7 +979,7 @@ export default function OfferDetailPage() {
               <Card>
                 <h3 className="font-semibold mb-4">Actions</h3>
                 <div className="space-y-3">
-                  {offer.status === LoanRequestStatus.PENDING && !isLender && !isExpired && (
+                  {offer.status === LoanRequestStatus.PENDING && !isLender && (
                     <>
                       {isConnected ? (
                         <Button
@@ -1026,23 +1022,6 @@ export default function OfferDetailPage() {
                     <div className="text-center py-4">
                       <XCircle className="w-12 h-12 text-red-400 mx-auto mb-2" />
                       <p className="text-red-400 font-semibold">Offer Cancelled</p>
-                    </div>
-                  )}
-
-                  {offer.status === LoanRequestStatus.EXPIRED && (
-                    <div className="text-center py-4">
-                      <AlertTriangle className="w-12 h-12 text-orange-400 mx-auto mb-2" />
-                      <p className="text-orange-400 font-semibold">Offer Expired</p>
-                    </div>
-                  )}
-
-                  {isExpired && offer.status === LoanRequestStatus.PENDING && (
-                    <div className="text-center py-4">
-                      <AlertTriangle className="w-12 h-12 text-orange-400 mx-auto mb-2" />
-                      <p className="text-orange-400 font-semibold">Offer Expired</p>
-                      <p className="text-gray-400 text-sm mt-1">
-                        This offer can no longer be accepted
-                      </p>
                     </div>
                   )}
                 </div>

@@ -8,30 +8,41 @@ import { ActiveLoanCardWithData, LoanData } from '@/components/loan/ActiveLoanCa
 import {
   DashboardLoanRequestCard,
   DashboardLenderOfferCard,
+  DashboardFiatLoanRequestCard,
+  DashboardFiatLenderOfferCard,
 } from '@/components/dashboard/DashboardCards';
 import { LoanStatus, LoanRequestStatus } from '@/types';
+import { FiatLoanStatus, FiatLenderOfferStatus } from '@/hooks/useFiatLoan';
 import {
   useLoanRequestsByBorrower,
   useLenderOffersByLender,
   useLoansByBorrower,
   useLoansByLender,
+  useFiatLoansByBorrower,
+  useFiatLenderOffersByLender,
 } from '@/stores/contractStore';
 import { useUIStore } from '@/stores/uiStore';
 import { Plus } from 'lucide-react';
 
-type Tab = 'requests' | 'offers';
+type Tab = 'crypto_borrow' | 'cash_borrow' | 'crypto_lend' | 'cash_lend';
 
 export function ActiveLoansOffers() {
-  const [activeTab, setActiveTab] = useState<Tab>('requests');
+  const [activeTab, setActiveTab] = useState<Tab>('crypto_borrow');
   const { address } = useAccount();
 
+  // Crypto loans and offers
   const loanRequests = useLoanRequestsByBorrower(address);
   const lenderOffers = useLenderOffersByLender(address);
   const borrowedLoans = useLoansByBorrower(address);
   const lentLoans = useLoansByLender(address);
+
+  // Fiat loans and offers
+  const fiatLoans = useFiatLoansByBorrower(address);
+  const fiatOffers = useFiatLenderOffersByLender(address);
+
   const openRepayModal = useUIStore((state) => state.openRepayModal);
 
-  // Filter active items
+  // Filter active crypto loans
   const activeBorrowedLoans = useMemo(() =>
     borrowedLoans.filter(l => l.status === LoanStatus.ACTIVE),
     [borrowedLoans]
@@ -42,34 +53,59 @@ export function ActiveLoansOffers() {
     [lentLoans]
   );
 
-  const pendingRequests = useMemo(() =>
+  const pendingCryptoRequests = useMemo(() =>
     loanRequests.filter(r => r.status === LoanRequestStatus.PENDING),
     [loanRequests]
   );
 
-  const pendingOffers = useMemo(() =>
+  const pendingCryptoOffers = useMemo(() =>
     lenderOffers.filter(o => o.status === LoanRequestStatus.PENDING),
     [lenderOffers]
   );
 
-  // Combine borrowed and lent loans for "My Loan Requests" tab
+  // Filter active and pending fiat loans
+  const activeFiatLoans = useMemo(() =>
+    fiatLoans.filter(l => l.status === FiatLoanStatus.ACTIVE || l.status === FiatLoanStatus.PENDING_SUPPLIER),
+    [fiatLoans]
+  );
+
+  const activeFiatOffers = useMemo(() =>
+    fiatOffers.filter(o => o.status === FiatLenderOfferStatus.ACTIVE),
+    [fiatOffers]
+  );
+
+  // Combine all active loans for "Borrowing Activity" tab
   const allActiveLoans = useMemo(() => {
     return [
-      ...activeBorrowedLoans.map(loan => ({ loan, isBorrower: true })),
-      ...activeLentLoans.map(loan => ({ loan, isBorrower: false })),
+      ...activeBorrowedLoans.map(loan => ({ loan, isBorrower: true, type: 'crypto' as const })),
+      ...activeLentLoans.map(loan => ({ loan, isBorrower: false, type: 'crypto' as const })),
     ];
   }, [activeBorrowedLoans, activeLentLoans]);
 
   const tabs = [
     {
-      id: 'requests' as const,
-      label: 'My Loan Requests',
-      count: pendingRequests.length + allActiveLoans.length,
+      id: 'crypto_borrow' as const,
+      label: 'Crypto Loans',
+      description: 'Borrow requests & active crypto loans',
+      count: pendingCryptoRequests.length + allActiveLoans.filter(l => l.isBorrower).length,
     },
     {
-      id: 'offers' as const,
-      label: 'My Loan Offers',
-      count: pendingOffers.length,
+      id: 'cash_borrow' as const,
+      label: 'Cash Loans',
+      description: 'Fiat/cash loan requests & active loans',
+      count: activeFiatLoans.length,
+    },
+    {
+      id: 'crypto_lend' as const,
+      label: 'Crypto Offers',
+      description: 'My crypto lending offers',
+      count: pendingCryptoOffers.length,
+    },
+    {
+      id: 'cash_lend' as const,
+      label: 'Cash Offers',
+      description: 'My fiat/cash lending offers',
+      count: activeFiatOffers.length,
     },
   ];
 
@@ -83,41 +119,52 @@ export function ActiveLoansOffers() {
       <h2 className="text-xl font-semibold mb-4">Active Loans & Offers</h2>
 
       {/* Tab Pills */}
-      <div className="flex gap-2 mb-6">
+      <div className="flex gap-3 mb-6 flex-wrap">
         {tabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
+            className={`px-5 py-3 rounded-xl text-sm font-medium transition-all duration-200 flex flex-col items-start ${
               activeTab === tab.id
-                ? 'bg-primary-600 text-white'
+                ? 'bg-primary-600 text-white shadow-lg shadow-primary-500/30'
                 : 'bg-white/10 text-gray-400 hover:bg-white/15'
             }`}
           >
-            {tab.label} ({tab.count})
+            <div className="flex items-center gap-2">
+              <span>{tab.label}</span>
+              <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                activeTab === tab.id ? 'bg-white/20' : 'bg-white/10'
+              }`}>
+                {tab.count}
+              </span>
+            </div>
+            <span className={`text-xs mt-1 ${activeTab === tab.id ? 'text-white/80' : 'text-gray-500'}`}>
+              {tab.description}
+            </span>
           </button>
         ))}
       </div>
 
       {/* Tab Content */}
       <AnimatePresence mode="wait">
-        {activeTab === 'requests' && (
+        {/* Crypto Borrow Tab */}
+        {activeTab === 'crypto_borrow' && (
           <motion.div
-            key="requests"
+            key="crypto_borrow"
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 10 }}
             transition={{ duration: 0.2 }}
           >
-            {pendingRequests.length === 0 && allActiveLoans.length === 0 ? (
+            {pendingCryptoRequests.length === 0 && allActiveLoans.filter(l => l.isBorrower).length === 0 ? (
               <EmptyState
-                title="No Loan Requests"
-                description="You don't have any loan requests yet. Start borrowing to see your activity here."
+                title="No Crypto Loans"
+                description="You don't have any active crypto loans or borrow requests. Start borrowing crypto to see your activity here."
                 lottieUrl="/empty.json"
                 lottieWidth={180}
                 lottieHeight={180}
                 action={{
-                  label: 'Create Loan Request',
+                  label: 'Borrow Crypto',
                   href: '/borrow',
                   icon: <Plus className="w-4 h-4" />,
                 }}
@@ -125,12 +172,12 @@ export function ActiveLoansOffers() {
               />
             ) : (
               <div className="space-y-6">
-                {/* Active Loans Section */}
-                {allActiveLoans.length > 0 && (
+                {/* Active Crypto Loans */}
+                {allActiveLoans.filter(l => l.isBorrower).length > 0 && (
                   <div>
-                    <h3 className="text-sm font-medium text-gray-400 mb-3">Active Loans</h3>
+                    <h3 className="text-sm font-medium text-gray-400 mb-3">Active Crypto Loans</h3>
                     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {allActiveLoans.map(({ loan, isBorrower }) => (
+                      {allActiveLoans.filter(l => l.isBorrower).map(({ loan, isBorrower }) => (
                         <LoanCard
                           key={loan.loanId.toString()}
                           loan={loan as LoanData}
@@ -142,12 +189,12 @@ export function ActiveLoansOffers() {
                   </div>
                 )}
 
-                {/* Pending Requests Section */}
-                {pendingRequests.length > 0 && (
+                {/* Pending Crypto Requests */}
+                {pendingCryptoRequests.length > 0 && (
                   <div>
                     <h3 className="text-sm font-medium text-gray-400 mb-3">Pending Requests</h3>
                     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {pendingRequests.map((request) => (
+                      {pendingCryptoRequests.map((request) => (
                         <DashboardLoanRequestCard
                           key={request.requestId.toString()}
                           request={request}
@@ -161,23 +208,60 @@ export function ActiveLoansOffers() {
           </motion.div>
         )}
 
-        {activeTab === 'offers' && (
+        {/* Cash Borrow Tab */}
+        {activeTab === 'cash_borrow' && (
           <motion.div
-            key="offers"
+            key="cash_borrow"
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 10 }}
             transition={{ duration: 0.2 }}
           >
-            {pendingOffers.length === 0 ? (
+            {activeFiatLoans.length === 0 ? (
               <EmptyState
-                title="No Loan Offers"
-                description="You don't have any lending offers yet. Start earning interest by creating a loan offer."
+                title="No Cash Loans"
+                description="You don't have any active cash/fiat loans. Start borrowing cash to see your activity here."
                 lottieUrl="/empty.json"
                 lottieWidth={180}
                 lottieHeight={180}
                 action={{
-                  label: 'Create Loan Offer',
+                  label: 'Borrow Cash',
+                  href: '/borrow',
+                  icon: <Plus className="w-4 h-4" />,
+                }}
+                size="md"
+              />
+            ) : (
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {activeFiatLoans.map((loan) => (
+                  <DashboardFiatLoanRequestCard
+                    key={loan.loanId.toString()}
+                    loan={loan}
+                  />
+                ))}
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        {/* Crypto Lend Tab */}
+        {activeTab === 'crypto_lend' && (
+          <motion.div
+            key="crypto_lend"
+            initial={{ opacity: 0, x: -10 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 10 }}
+            transition={{ duration: 0.2 }}
+          >
+            {pendingCryptoOffers.length === 0 ? (
+              <EmptyState
+                title="No Crypto Lending Offers"
+                description="You don't have any crypto lending offers yet. Start earning interest by creating crypto loan offers."
+                lottieUrl="/empty.json"
+                lottieWidth={180}
+                lottieHeight={180}
+                action={{
+                  label: 'Create Crypto Offer',
                   href: '/lend',
                   icon: <Plus className="w-4 h-4" />,
                 }}
@@ -185,8 +269,44 @@ export function ActiveLoansOffers() {
               />
             ) : (
               <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {pendingOffers.map((offer) => (
+                {pendingCryptoOffers.map((offer) => (
                   <DashboardLenderOfferCard
+                    key={offer.offerId.toString()}
+                    offer={offer}
+                  />
+                ))}
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        {/* Cash Lend Tab */}
+        {activeTab === 'cash_lend' && (
+          <motion.div
+            key="cash_lend"
+            initial={{ opacity: 0, x: -10 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 10 }}
+            transition={{ duration: 0.2 }}
+          >
+            {activeFiatOffers.length === 0 ? (
+              <EmptyState
+                title="No Cash Lending Offers"
+                description="You don't have any cash/fiat lending offers yet. Start earning interest by creating cash loan offers."
+                lottieUrl="/empty.json"
+                lottieWidth={180}
+                lottieHeight={180}
+                action={{
+                  label: 'Create Cash Offer',
+                  href: '/lend',
+                  icon: <Plus className="w-4 h-4" />,
+                }}
+                size="md"
+              />
+            ) : (
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {activeFiatOffers.map((offer) => (
+                  <DashboardFiatLenderOfferCard
                     key={offer.offerId.toString()}
                     offer={offer}
                   />

@@ -1,13 +1,12 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Clock, Shield, TrendingUp, ArrowRight, Network } from 'lucide-react';
+import { Clock, Shield, TrendingUp, ArrowRight } from 'lucide-react';
 import { LoanRequest, LoanRequestStatus } from '@/types';
 import { FiatLoan, FiatLoanStatus } from '@/hooks/useFiatLoan';
 import { formatTokenAmount, formatPercentage, formatDuration, formatRelativeTime, getTokenSymbol, getTokenDecimals, convertFiatToUSD } from '@/lib/utils';
 import { useTokenPrice } from '@/hooks/useContracts';
 import { formatCurrency } from '@/hooks/useFiatOracle';
-import { getChainById } from '@/config/contracts';
 import Link from 'next/link';
 
 // Helper to format USD values
@@ -36,7 +35,6 @@ export function CryptoBorrowRequestCard({ request, index = 0 }: CryptoBorrowRequ
   const borrowSymbol = getTokenSymbol(request.borrowAsset);
   const collateralDecimals = getTokenDecimals(request.collateralToken);
   const borrowDecimals = getTokenDecimals(request.borrowAsset);
-  const chainInfo = 'chainId' in request && request.chainId ? getChainById(Number(request.chainId)) : null;
 
   // Get USD prices
   const { price: borrowPrice } = useTokenPrice(request.borrowAsset);
@@ -67,17 +65,9 @@ export function CryptoBorrowRequestCard({ request, index = 0 }: CryptoBorrowRequ
           <div className="mb-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs text-gray-400 uppercase tracking-wider">Borrower wants</span>
-              <div className="flex items-center gap-2">
-                {chainInfo && (
-                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-blue-500/20 text-blue-400">
-                    <Network className="w-3 h-3" />
-                    {chainInfo.name}
-                  </span>
-                )}
-                {request.status === LoanRequestStatus.PENDING && (
-                  <span className="px-2 py-0.5 rounded-full text-xs bg-green-500/20 text-green-400">Active</span>
-                )}
-              </div>
+              {request.status === LoanRequestStatus.PENDING && (
+                <span className="px-2 py-0.5 rounded-full text-xs bg-green-500/20 text-green-400">Active</span>
+              )}
             </div>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-bold text-white">
@@ -166,7 +156,6 @@ interface FiatBorrowRequestCardProps {
 export function FiatBorrowRequestCard({ loan, index = 0 }: FiatBorrowRequestCardProps) {
   const collateralSymbol = getTokenSymbol(loan.collateralAsset);
   const collateralDecimals = getTokenDecimals(loan.collateralAsset);
-  const chainInfo = loan.chainId ? getChainById(Number(loan.chainId)) : null;
 
   // Get USD price for collateral
   const { price: collateralPrice } = useTokenPrice(loan.collateralAsset);
@@ -206,15 +195,7 @@ export function FiatBorrowRequestCard({ loan, index = 0 }: FiatBorrowRequestCard
           <div className="mb-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs text-gray-400 uppercase tracking-wider">Borrower wants</span>
-              <div className="flex items-center gap-2">
-                {chainInfo && (
-                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-blue-500/20 text-blue-400">
-                    <Network className="w-3 h-3" />
-                    {chainInfo.name}
-                  </span>
-                )}
-                {getStatusBadge()}
-              </div>
+              {getStatusBadge()}
             </div>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-bold text-green-400">

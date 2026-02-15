@@ -4,7 +4,7 @@ import { Card } from '@/components/ui/Card';
 import { Badge, LoanStatusBadge, RequestStatusBadge, HealthBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Loan, LoanRequest, LenderOffer, LoanStatus, LoanRequestStatus, getHealthStatus } from '@/types';
-import { formatTokenAmount, formatPercentage, formatDuration, formatTimeUntil, getTokenSymbol, getTokenDecimals, getHealthFactorColor, convertFiatToUSD } from '@/lib/utils';
+import { formatTokenAmount, formatPercentage, formatDuration, getTokenSymbol, getTokenDecimals, getHealthFactorColor, convertFiatToUSD } from '@/lib/utils';
 import { useTokenPrice, useLTV } from '@/hooks/useContracts';
 import { FiatLoan, FiatLoanStatus, FiatLenderOffer, FiatLenderOfferStatus } from '@/hooks/useFiatLoan';
 import { formatCurrency } from '@/hooks/useFiatOracle';
@@ -102,10 +102,6 @@ export function LoanRequestCard({ request, onFund, onCancel, isOwner, loading }:
           </span>
         </div>
       )}
-
-      <div className="text-sm text-gray-400 mb-4">
-        Expires: {formatTimeUntil(request.expireAt)}
-      </div>
 
       <div className="mt-auto flex gap-2">
         {request.status === LoanRequestStatus.PENDING && !isOwner && onFund && (
@@ -229,10 +225,6 @@ export function LenderOfferCard({ offer, onAccept, onCancel, isOwner, loading }:
           <span className="text-sm font-medium text-accent-400">Flexible</span>
         </div>
       )}
-
-      <div className="text-sm text-gray-400 mb-4">
-        Expires: {formatTimeUntil(offer.expireAt)}
-      </div>
 
       <div className="mt-auto flex gap-2">
         {offer.status === LoanRequestStatus.PENDING && !isOwner && onAccept && (
@@ -546,16 +538,10 @@ export function FiatLenderOfferCard({ offer, onAccept, onCancel, isOwner, loadin
         return <Badge variant="info" size="sm">Accepted</Badge>;
       case FiatLenderOfferStatus.CANCELLED:
         return <Badge variant="default" size="sm">Cancelled</Badge>;
-      case FiatLenderOfferStatus.EXPIRED:
-        return <Badge variant="danger" size="sm">Expired</Badge>;
       default:
         return null;
     }
   };
-
-  // Calculate if offer is expired
-  const isExpired = offer.status === FiatLenderOfferStatus.ACTIVE &&
-    BigInt(Math.floor(Date.now() / 1000)) > offer.expireAt;
 
   return (
     <Card hover className="flex flex-col h-full border-green-500/20">
@@ -597,20 +583,8 @@ export function FiatLenderOfferCard({ offer, onAccept, onCancel, isOwner, loadin
         </div>
       </div>
 
-      <div className="text-sm text-gray-400 mb-4">
-        {offer.status === FiatLenderOfferStatus.ACTIVE ? (
-          isExpired ? (
-            <span className="text-red-400">Expired</span>
-          ) : (
-            <>Expires: {formatTimeUntil(offer.expireAt)}</>
-          )
-        ) : (
-          <>Created: {new Date(Number(offer.createdAt) * 1000).toLocaleDateString()}</>
-        )}
-      </div>
-
       <div className="mt-auto flex gap-2">
-        {offer.status === FiatLenderOfferStatus.ACTIVE && !isOwner && !isExpired && onAccept && (
+        {offer.status === FiatLenderOfferStatus.ACTIVE && !isOwner && onAccept && (
           <Button onClick={onAccept} loading={loading} className="flex-1 bg-green-600 hover:bg-green-700">
             Accept Offer
           </Button>

@@ -32,7 +32,6 @@ import {
   TrendingUp,
   Clock,
   User,
-  AlertTriangle,
   CheckCircle,
   XCircle,
   ExternalLink,
@@ -416,8 +415,7 @@ export default function LoanDetailPage() {
     );
   }
 
-  const isExpired = Number(request.expireAt) * 1000 < Date.now();
-  const canFund = request.status === LoanRequestStatus.PENDING && !isBorrower && !isExpired && isConnected;
+  const canFund = request.status === LoanRequestStatus.PENDING && !isBorrower && isConnected;
 
   return (
     <div className="min-h-screen py-12 px-4 sm:px-6 lg:px-8">
@@ -705,9 +703,7 @@ export default function LoanDetailPage() {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-400">Expires</span>
-                    <span className={isExpired ? 'text-red-400' : ''}>
-                      {isExpired ? 'Expired' : formatTimeUntil(request.expireAt)}
-                    </span>
+                    <span>{formatTimeUntil(request.expireAt)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-400">Loan Duration</span>
@@ -726,7 +722,7 @@ export default function LoanDetailPage() {
               <Card>
                 <h3 className="font-semibold mb-4">Actions</h3>
                 <div className="space-y-3">
-                  {request.status === LoanRequestStatus.PENDING && !isBorrower && !isExpired && (
+                  {request.status === LoanRequestStatus.PENDING && !isBorrower && (
                     <>
                       {isConnected ? (
                         <Button
@@ -769,23 +765,6 @@ export default function LoanDetailPage() {
                     <div className="text-center py-4">
                       <XCircle className="w-12 h-12 text-red-400 mx-auto mb-2" />
                       <p className="text-red-400 font-semibold">Request Cancelled</p>
-                    </div>
-                  )}
-
-                  {request.status === LoanRequestStatus.EXPIRED && (
-                    <div className="text-center py-4">
-                      <AlertTriangle className="w-12 h-12 text-orange-400 mx-auto mb-2" />
-                      <p className="text-orange-400 font-semibold">Request Expired</p>
-                    </div>
-                  )}
-
-                  {isExpired && request.status === LoanRequestStatus.PENDING && (
-                    <div className="text-center py-4">
-                      <AlertTriangle className="w-12 h-12 text-orange-400 mx-auto mb-2" />
-                      <p className="text-orange-400 font-semibold">Request Expired</p>
-                      <p className="text-gray-400 text-sm mt-1">
-                        This request can no longer be funded
-                      </p>
                     </div>
                   )}
                 </div>

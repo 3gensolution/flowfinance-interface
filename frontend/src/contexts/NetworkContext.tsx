@@ -65,19 +65,23 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
   ];
   const isTestnet = testnetIds.includes(selectedNetwork.id);
 
-  // Load saved network from localStorage on mount
+  // Load saved network from localStorage on mount, default to Base Sepolia
   useEffect(() => {
     const savedNetworkId = localStorage.getItem('selectedNetworkId');
     if (savedNetworkId) {
       const network = AVAILABLE_NETWORKS.find(n => n.id === parseInt(savedNetworkId));
-      // Only restore if network exists and has contracts
-      if (network && hasContracts(network.id)) {
+      // Only restore if network exists and has contracts AND is Base Sepolia
+      if (network && hasContracts(network.id) && network.id === CHAIN_CONFIG.baseSepolia.id) {
         setSelectedNetworkState(network);
-      } else if (network) {
-        // If saved network no longer has contracts, fall back to Base Sepolia
-        console.warn(`Saved network ${network.name} no longer has contracts. Falling back to Base Sepolia.`);
+      } else {
+        // Always fall back to Base Sepolia for any other network
+        console.warn(`Saved network is not Base Sepolia. Defaulting to Base Sepolia.`);
+        setSelectedNetworkState(CHAIN_CONFIG.baseSepolia);
         localStorage.setItem('selectedNetworkId', CHAIN_CONFIG.baseSepolia.id.toString());
       }
+    } else {
+      // No saved network, default to Base Sepolia
+      localStorage.setItem('selectedNetworkId', CHAIN_CONFIG.baseSepolia.id.toString());
     }
   }, []);
 

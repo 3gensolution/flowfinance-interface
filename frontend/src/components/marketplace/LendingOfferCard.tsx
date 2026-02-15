@@ -1,13 +1,12 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Clock, Coins, TrendingUp, ArrowRight, Wallet, Network } from 'lucide-react';
+import { Clock, Coins, TrendingUp, ArrowRight, Wallet } from 'lucide-react';
 import { LenderOffer, LoanRequestStatus } from '@/types';
 import { FiatLenderOffer, FiatLenderOfferStatus } from '@/hooks/useFiatLoan';
 import { formatTokenAmount, formatPercentage, formatDuration, formatRelativeTime, getTokenSymbol, getTokenDecimals, convertFiatToUSD } from '@/lib/utils';
 import { useTokenPrice } from '@/hooks/useContracts';
 import { formatCurrency } from '@/hooks/useFiatOracle';
-import { getChainById } from '@/config/contracts';
 import Link from 'next/link';
 
 // Helper to format USD values
@@ -26,7 +25,6 @@ interface CryptoLendingOfferCardProps {
 export function CryptoLendingOfferCard({ offer, index = 0 }: CryptoLendingOfferCardProps) {
   const lendSymbol = getTokenSymbol(offer.lendAsset);
   const lendDecimals = getTokenDecimals(offer.lendAsset);
-  const chainInfo = 'chainId' in offer && offer.chainId ? getChainById(Number(offer.chainId)) : null;
 
   // Check if collateral is "any" (zero address means borrower chooses)
   const isAnyCollateral = offer.requiredCollateralAsset === '0x0000000000000000000000000000000000000000';
@@ -60,17 +58,9 @@ export function CryptoLendingOfferCard({ offer, index = 0 }: CryptoLendingOfferC
           <div className="mb-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs text-gray-400 uppercase tracking-wider">Available to lend</span>
-              <div className="flex items-center gap-2">
-                {chainInfo && (
-                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-blue-500/20 text-blue-400">
-                    <Network className="w-3 h-3" />
-                    {chainInfo.name}
-                  </span>
-                )}
-                {offer.status === LoanRequestStatus.PENDING && (
-                  <span className="px-2 py-0.5 rounded-full text-xs bg-accent-500/20 text-accent-400">Active</span>
-                )}
-              </div>
+              {offer.status === LoanRequestStatus.PENDING && (
+                <span className="px-2 py-0.5 rounded-full text-xs bg-accent-500/20 text-accent-400">Active</span>
+              )}
             </div>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-bold text-white">
@@ -170,8 +160,6 @@ interface FiatLendingOfferCardProps {
 }
 
 export function FiatLendingOfferCard({ offer, index = 0 }: FiatLendingOfferCardProps) {
-  const chainInfo = offer.chainId ? getChainById(Number(offer.chainId)) : null;
-
   // Convert fiat amount to display value
   const fiatAmountUSD = convertFiatToUSD(offer.fiatAmountCents, offer.currency, offer.exchangeRateAtCreation);
 
@@ -206,15 +194,7 @@ export function FiatLendingOfferCard({ offer, index = 0 }: FiatLendingOfferCardP
           <div className="mb-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs text-gray-400 uppercase tracking-wider">Available to lend</span>
-              <div className="flex items-center gap-2">
-                {chainInfo && (
-                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-blue-500/20 text-blue-400">
-                    <Network className="w-3 h-3" />
-                    {chainInfo.name}
-                  </span>
-                )}
-                {getStatusBadge()}
-              </div>
+              {getStatusBadge()}
             </div>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-bold text-green-400">
