@@ -3,6 +3,7 @@
 import { Address } from 'viem';
 import { LoanStatus } from '@/types';
 import { useLoanHealthFactor, useOutstandingDebt } from '@/hooks/useContracts';
+import { normalizeHealthFactor, getTokenDecimals } from '@/lib/utils';
 import { ActiveLoanCard } from './LoanCard';
 
 export interface LoanData {
@@ -48,12 +49,17 @@ export function ActiveLoanCardWithData({
     status: loan.status as LoanStatus,
   };
 
-  const healthFactorValue = healthFactor ? healthFactor as bigint : undefined;
+  // Normalize health factor: contract value is inflated by 10^(collateralDecimals - borrowDecimals)
+  const collateralDec = getTokenDecimals(loan.collateralAsset);
+  const borrowDec = getTokenDecimals(loan.borrowAsset);
+  const normalizedHF = healthFactor
+    ? normalizeHealthFactor(healthFactor as bigint, collateralDec, borrowDec)
+    : undefined;
 
   return (
     <ActiveLoanCard
       loan={loanData}
-      healthFactor={healthFactorValue}
+      healthFactor={normalizedHF}
       isLoadingHealth={isLoadingHealth}
       repaymentAmount={outstandingDebt ? outstandingDebt as bigint : undefined}
       isBorrower={isBorrower}

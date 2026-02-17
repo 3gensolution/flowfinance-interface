@@ -117,12 +117,36 @@ export function getTokenDecimals(address: Address | undefined): number {
   return token?.decimals || 18;
 }
 
-// Calculate health factor color
-export function getHealthFactorColor(healthFactor: bigint): string {
-  const factor = Number(healthFactor);
-  if (factor >= 15000) return 'text-green-400';
-  if (factor >= 12000) return 'text-yellow-400';
-  if (factor >= 10000) return 'text-orange-400';
+// Normalize raw health factor from contract (inflated by decimal mismatch)
+// The contract's calculateHealthFactor doesn't normalize for differing token decimals,
+// so the result is inflated by 10^(collateralDecimals - borrowDecimals).
+// Returns health factor as a percentage (e.g., 170 means 170%).
+export function normalizeHealthFactor(
+  rawValue: bigint,
+  collateralDecimals: number,
+  borrowDecimals: number
+): number {
+  const decimalDiff = collateralDecimals - borrowDecimals;
+  const divisor = Math.pow(10, decimalDiff);
+  // rawValue is in basis points (10000 = 100%) after removing decimal inflation
+  return Number(rawValue) / divisor / 100;
+}
+
+// Calculate health factor from USD values (for fiat loans computed on frontend)
+// Returns percentage (e.g., 170 means 170%)
+export function calculateHealthFactorFromUSD(
+  collateralUSD: number,
+  debtUSD: number
+): number {
+  if (debtUSD <= 0) return 0;
+  return (collateralUSD / debtUSD) * 100;
+}
+
+// Calculate health factor color from percentage value
+export function getHealthFactorColor(healthFactorPercent: number): string {
+  if (healthFactorPercent >= 150) return 'text-green-400';
+  if (healthFactorPercent >= 120) return 'text-yellow-400';
+  if (healthFactorPercent >= 100) return 'text-orange-400';
   return 'text-red-400';
 }
 

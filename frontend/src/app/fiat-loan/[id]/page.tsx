@@ -10,7 +10,6 @@ import { Modal } from '@/components/ui/Modal';
 import {
   useFiatLoan,
   useFiatLoanTotalDebt,
-  useFiatLoanHealthFactor,
   useAcceptFiatLoanRequest,
   useCancelFiatLoanRequest,
   FiatLoanStatus,
@@ -26,6 +25,8 @@ import {
   getTokenSymbol,
   getTokenDecimals,
   getHealthFactorColor,
+  calculateHealthFactorFromUSD,
+  convertFiatToUSD,
 } from '@/lib/utils';
 import {
   ArrowLeft,
@@ -138,11 +139,8 @@ export default function FiatLoanDetailPage() {
     chainId: ((rawLoan.chainId ?? rawLoan[18]) as bigint) || BigInt(0),
   } : null;
 
-  // Get total debt and health factor for active loans
+  // Get total debt for active loans
   const { data: totalDebt } = useFiatLoanTotalDebt(
-    loan?.status === FiatLoanStatus.ACTIVE ? loanId : undefined
-  );
-  const { data: healthFactor, isLoading: isLoadingHealth } = useFiatLoanHealthFactor(
     loan?.status === FiatLoanStatus.ACTIVE ? loanId : undefined
   );
 
@@ -266,9 +264,12 @@ export default function FiatLoanDetailPage() {
     toast.success('Address copied!');
   };
 
-  // Format health factor
-  const healthFactorValue = healthFactor ? Number(healthFactor as bigint) / 100 : 0;
-  const healthFactorDisplay = isLoadingHealth ? 'Loading...' : healthFactorValue.toFixed(2);
+  // Calculate health factor on frontend (FiatLoanBridge has no calculateHealthFactor function)
+  const fiatAmountUSD = loan ? convertFiatToUSD(loan.fiatAmountCents, loan.currency, loan.exchangeRateAtCreation) : 0;
+  const healthFactorValue = collateralUSD > 0 && fiatAmountUSD > 0
+    ? calculateHealthFactorFromUSD(collateralUSD, fiatAmountUSD)
+    : 0;
+  const healthFactorDisplay = healthFactorValue > 0 ? `${healthFactorValue.toFixed(0)}%` : '--';
 
   // Format total debt
   const totalDebtCents = totalDebt ? Number(totalDebt as bigint) : 0;
@@ -459,18 +460,18 @@ export default function FiatLoanDetailPage() {
                         <Shield className="w-4 h-4 text-accent-400" />
                         <p className="text-sm text-gray-400">Health Factor</p>
                       </div>
-                      <p className={`text-3xl font-bold ${getHealthFactorColor(BigInt(Math.floor(healthFactorValue * 100)))}`}>
+                      <p className={`text-3xl font-bold ${getHealthFactorColor(healthFactorValue)}`}>
                         {healthFactorDisplay}
                       </p>
                       <div className="mt-2">
                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs ${
-                          healthFactorValue >= 1.5
+                          healthFactorValue >= 150
                             ? 'bg-green-500/15 text-green-400'
-                            : healthFactorValue >= 1.0
+                            : healthFactorValue >= 100
                             ? 'bg-yellow-500/15 text-yellow-400'
                             : 'bg-red-500/15 text-red-400'
                         }`}>
-                          {healthFactorValue >= 1.5 ? 'Healthy' : healthFactorValue >= 1.0 ? 'Warning' : 'At Risk'}
+                          {healthFactorValue >= 150 ? 'Healthy' : healthFactorValue >= 100 ? 'Warning' : 'At Risk'}
                         </span>
                       </div>
                     </div>

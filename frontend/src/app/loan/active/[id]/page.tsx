@@ -20,6 +20,7 @@ import {
   formatAddress,
   getTokenSymbol,
   getTokenDecimals,
+  normalizeHealthFactor,
 } from '@/lib/utils';
 import {
   ArrowLeft,
@@ -83,9 +84,11 @@ export default function ActiveLoanDetailPage() {
   const remainingCollateral = repaymentInfo ? repaymentInfo[3] : BigInt(0);
   const collateralReleased = repaymentInfo ? repaymentInfo[4] : BigInt(0);
 
-  // Get health factor
+  // Get health factor — normalize for decimal mismatch between collateral and borrow tokens
   const { data: healthFactorData } = useLoanHealthFactor(loanId);
-  const healthFactor = healthFactorData ? Number(healthFactorData) / 100 : 0;
+  const healthFactor = healthFactorData
+    ? normalizeHealthFactor(healthFactorData as bigint, collateralDecimals, borrowDecimals)
+    : 0;
 
   // Calculate USD values
   const collateralUSD = loan && collateralPrice

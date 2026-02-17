@@ -4,7 +4,7 @@ import { Card } from '@/components/ui/Card';
 import { Badge, LoanStatusBadge, RequestStatusBadge, HealthBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Loan, LoanRequest, LenderOffer, LoanStatus, LoanRequestStatus, getHealthStatus } from '@/types';
-import { formatTokenAmount, formatPercentage, formatDuration, getTokenSymbol, getTokenDecimals, getHealthFactorColor, convertFiatToUSD } from '@/lib/utils';
+import { formatTokenAmount, formatPercentage, formatDuration, getTokenSymbol, getTokenDecimals, getHealthFactorColor, convertFiatToUSD, calculateHealthFactorFromUSD } from '@/lib/utils';
 import { useTokenPrice, useLTV } from '@/hooks/useContracts';
 import { FiatLoan, FiatLoanStatus, FiatLenderOffer, FiatLenderOfferStatus } from '@/hooks/useFiatLoan';
 import { formatCurrency } from '@/hooks/useFiatOracle';
@@ -249,7 +249,7 @@ export function LenderOfferCard({ offer, onAccept, onCancel, isOwner, loading }:
 
 interface ActiveLoanCardProps {
   loan: Loan;
-  healthFactor?: bigint;
+  healthFactor?: number; // percentage (e.g., 170 = 170%)
   isLoadingHealth?: boolean;
   repaymentAmount?: bigint;
   onRepay?: () => void;
@@ -277,8 +277,8 @@ export function ActiveLoanCard({
   const { price: borrowPrice } = useTokenPrice(loan.borrowAsset);
   const { price: collateralPrice } = useTokenPrice(loan.collateralAsset);
 
-  const healthStatus = healthFactor ? getHealthStatus(healthFactor) : undefined;
-  const healthFactorDisplay = isLoadingHealth ? 'Loading...' : healthFactor ? (Number(healthFactor) / 100).toFixed(2) : '--';
+  const healthStatus = healthFactor !== undefined ? getHealthStatus(healthFactor) : undefined;
+  const healthFactorDisplay = isLoadingHealth ? 'Loading...' : healthFactor !== undefined ? `${healthFactor.toFixed(0)}%` : '--';
   const remainingCollateral = loan.collateralAmount - loan.collateralReleased;
 
   // Calculate USD values
@@ -350,7 +350,7 @@ export function ActiveLoanCard({
             <div className="flex items-center justify-between">
               <span className="text-sm text-gray-400">Total Debt</span>
               <div className="text-right">
-                <span className={`font-medium ${getHealthFactorColor(healthFactor || BigInt(0))}`}>
+                <span className={`font-medium ${getHealthFactorColor(healthFactor || 0)}`}>
                   {formatTokenAmount(repaymentAmount, borrowDecimals)} {borrowSymbol}
                 </span>
                 {repaymentUSD > 0 && (
@@ -487,6 +487,20 @@ export function FiatLoanRequestCard({ loan, onFund, onCancel, isOwner, isSupplie
           </span>
         </div>
       )}
+
+      {/* Health Factor for active fiat loans */}
+      {loan.status === FiatLoanStatus.ACTIVE && collateralUSD > 0 && fiatAmountUSD > 0 && (() => {
+        const hf = calculateHealthFactorFromUSD(collateralUSD, fiatAmountUSD);
+        const hfStatus = getHealthStatus(hf);
+        return (
+          <div className="glass-card p-3 mb-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-gray-400">Health Factor</span>
+              <HealthBadge status={hfStatus} value={`${hf.toFixed(0)}%`} />
+            </div>
+          </div>
+        );
+      })()}
 
       {loan.status === FiatLoanStatus.ACTIVE && loan.dueDate > BigInt(0) && (
         <div className="text-sm text-gray-400 mb-4">
