@@ -101,7 +101,7 @@ export function NetworkSwitcher() {
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="absolute top-full right-0 mt-2 w-64 rounded-xl bg-navy-900 border border-white/10 shadow-xl z-50 overflow-hidden"
+              className="absolute top-full left-0 mt-2 w-64 rounded-xl bg-navy-900 border border-white/10 shadow-xl z-50 overflow-hidden"
             >
               {/* Tabs */}
               <div className="flex border-b border-white/10">

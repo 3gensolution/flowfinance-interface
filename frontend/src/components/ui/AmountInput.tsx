@@ -87,12 +87,12 @@ export function AmountInput({
       {/* Amount Input Card */}
       <div
         className={`
-          p-6 rounded-2xl border-2 bg-white/5
+          p-4 sm:p-6 rounded-2xl border-2 bg-white/5
           ${isCrypto ? 'border-primary-500/30' : 'border-primary-500/30'}
         `}
       >
         {/* Input Row */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4">
           <input
             type="text"
             inputMode="decimal"
@@ -101,7 +101,7 @@ export function AmountInput({
             placeholder="0.00"
             autoFocus
             className="
-              flex-1 text-4xl sm:text-5xl font-bold text-white
+              flex-1 min-w-0 text-3xl sm:text-4xl md:text-5xl font-bold text-white
               bg-transparent border-none outline-none focus:outline-none focus:ring-0
               placeholder:text-white/20 caret-primary-400
             "
@@ -110,19 +110,19 @@ export function AmountInput({
           {/* Currency Badge */}
           <div
             className={`
-              flex items-center gap-2 px-4 py-2 rounded-xl
+              flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-xl flex-shrink-0
               ${isCrypto ? 'bg-primary-500/20 text-primary-400' : 'bg-primary-500/20 text-primary-400'}
             `}
           >
             <div
               className={`
-                w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold
+                w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center text-[10px] sm:text-xs font-bold
                 ${isCrypto ? 'bg-blue-500 text-white' : 'bg-blue-500 text-white'}
               `}
             >
               {asset.symbol.slice(0, 2)}
             </div>
-            <span className="font-semibold">{asset.symbol}</span>
+            <span className="font-semibold text-sm sm:text-base">{asset.symbol}</span>
           </div>
         </div>
 
@@ -131,17 +131,17 @@ export function AmountInput({
           <motion.p
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="text-center text-white/40 mt-2"
+            className="text-center text-white/40 mt-2 text-sm sm:text-base"
           >
             ≈ {formatUsdValue(usdValue)} USD
           </motion.p>
         )}
 
         {/* Balance Info Row */}
-        <div className="flex items-center justify-between mt-6 pt-4 border-t border-white/10">
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-white/40">Available:</span>
-            <span className="text-sm font-medium text-white/70">
+        <div className="flex flex-wrap items-center justify-between gap-2 mt-4 sm:mt-6 pt-3 sm:pt-4 border-t border-white/10">
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <span className="text-xs sm:text-sm text-white/40">Available:</span>
+            <span className="text-xs sm:text-sm font-medium text-white/70 truncate max-w-[120px] sm:max-w-none">
               {isCrypto ? `${availableBalance} ${asset.symbol}` : availableBalance}
             </span>
             <button
@@ -157,8 +157,8 @@ export function AmountInput({
           </div>
 
           <div className="flex items-center gap-1">
-            <span className="text-sm text-white/40">Minimum:</span>
-            <span className="text-sm font-medium text-white/70">
+            <span className="text-xs sm:text-sm text-white/40">Minimum:</span>
+            <span className="text-xs sm:text-sm font-medium text-white/70">
               {minAmount} {asset.symbol}
             </span>
           </div>

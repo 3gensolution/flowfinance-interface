@@ -2,7 +2,7 @@
 
 import { ConnectButton as RainbowConnectButton } from '@rainbow-me/rainbowkit';
 
-export function ConnectButton() {
+export function ConnectButton({ stacked = false }: { stacked?: boolean }) {
   return (
     <RainbowConnectButton.Custom>
       {({
@@ -53,10 +53,10 @@ export function ConnectButton() {
               }
 
               return (
-                <div className="flex items-center gap-3">
+                <div className={stacked ? "flex flex-col gap-3" : "flex items-center gap-3"}>
                   <button
                     onClick={openChainModal}
-                    className="flex items-center gap-2 px-4 py-2 glass-card hover:bg-white/10 rounded-xl transition-all"
+                    className={`flex items-center gap-2 px-4 py-2 glass-card hover:bg-white/10 rounded-xl transition-all ${stacked ? 'w-full justify-center' : ''}`}
                     type="button"
                   >
                     {chain.hasIcon && (
@@ -79,7 +79,7 @@ export function ConnectButton() {
 
                   <button
                     onClick={openAccountModal}
-                    className="flex items-center gap-2 px-4 py-2 glass-card hover:bg-white/10 rounded-xl transition-all"
+                    className={`flex items-center gap-2 px-4 py-2 glass-card hover:bg-white/10 rounded-xl transition-all ${stacked ? 'w-full justify-center' : ''}`}
                     type="button"
                   >
                     <div className="w-5 h-5 rounded-full bg-gradient-to-r from-primary-500 to-accent-500" />

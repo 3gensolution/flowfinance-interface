@@ -6,7 +6,6 @@ import { useAccount } from 'wagmi';
 import { motion } from 'framer-motion';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import {
   useFiatLoan,
@@ -43,6 +42,12 @@ import {
   AlertCircle,
   Banknote,
   Loader2,
+  Percent,
+  Timer,
+  Wallet,
+  Activity,
+  Calendar,
+  ArrowUpRight,
 } from 'lucide-react';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
@@ -54,23 +59,44 @@ import { Abi } from 'viem';
 
 const FiatLoanBridgeABI = FiatLoanBridgeABIJson as Abi;
 
-// Status badge component
-function FiatLoanStatusBadge({ status }: { status: FiatLoanStatus }) {
-  switch (status) {
-    case FiatLoanStatus.PENDING_SUPPLIER:
-      return <Badge variant="warning" size="sm">Pending Supplier</Badge>;
-    case FiatLoanStatus.ACTIVE:
-      return <Badge variant="success" size="sm">Active</Badge>;
-    case FiatLoanStatus.REPAID:
-      return <Badge variant="info" size="sm">Repaid</Badge>;
-    case FiatLoanStatus.LIQUIDATED:
-      return <Badge variant="danger" size="sm">Liquidated</Badge>;
-    case FiatLoanStatus.CANCELLED:
-      return <Badge variant="default" size="sm">Cancelled</Badge>;
-    default:
-      return null;
-  }
-}
+// Status config
+const STATUS_CONFIG: Record<FiatLoanStatus, { label: string; color: string; bgColor: string; borderColor: string; icon: React.ReactNode }> = {
+  [FiatLoanStatus.PENDING_SUPPLIER]: {
+    label: 'Pending Supplier',
+    color: 'text-yellow-400',
+    bgColor: 'bg-yellow-500/15',
+    borderColor: 'border-yellow-500/30',
+    icon: <Clock className="w-4 h-4" />,
+  },
+  [FiatLoanStatus.ACTIVE]: {
+    label: 'Active',
+    color: 'text-green-400',
+    bgColor: 'bg-green-500/15',
+    borderColor: 'border-green-500/30',
+    icon: <Activity className="w-4 h-4" />,
+  },
+  [FiatLoanStatus.REPAID]: {
+    label: 'Repaid',
+    color: 'text-blue-400',
+    bgColor: 'bg-blue-500/15',
+    borderColor: 'border-blue-500/30',
+    icon: <CheckCircle className="w-4 h-4" />,
+  },
+  [FiatLoanStatus.LIQUIDATED]: {
+    label: 'Liquidated',
+    color: 'text-red-400',
+    bgColor: 'bg-red-500/15',
+    borderColor: 'border-red-500/30',
+    icon: <AlertTriangle className="w-4 h-4" />,
+  },
+  [FiatLoanStatus.CANCELLED]: {
+    label: 'Cancelled',
+    color: 'text-gray-400',
+    bgColor: 'bg-gray-500/15',
+    borderColor: 'border-gray-500/30',
+    icon: <XCircle className="w-4 h-4" />,
+  },
+};
 
 export default function FiatLoanDetailPage() {
   const params = useParams();
@@ -141,9 +167,6 @@ export default function FiatLoanDetailPage() {
     ? (Number(loan.collateralAmount) / Math.pow(10, Number(collateralDecimals))) * Number(collateralPrice) / 1e8
     : 0;
 
-  // Fiat amount
-  // const fiatAmount = loan ? Number(loan.fiatAmountCents) / 100 : 0;
-
   // Write hooks
   const { acceptFiatLoanRequest, isPending: acceptIsPending, isSuccess: acceptSuccess, error: acceptError } = useAcceptFiatLoanRequest();
   const { cancelFiatLoanRequest, isPending: cancelIsPending, isSuccess: cancelSuccess, error: cancelError } = useCancelFiatLoanRequest();
@@ -202,7 +225,6 @@ export default function FiatLoanDetailPage() {
     setSimulationError('');
 
     try {
-      // Simulate the transaction first
       const simulation = await simulateContractWrite({
         address: CONTRACT_ADDRESSES.fiatLoanBridge,
         abi: FiatLoanBridgeABI,
@@ -217,9 +239,7 @@ export default function FiatLoanDetailPage() {
         return;
       }
 
-      // Simulation passed, execute the transaction
       await acceptFiatLoanRequest(loanId);
-      // Success will be handled by the useEffect watching acceptSuccess
     } catch (error: unknown) {
       const errorMsg = formatSimulationError(error);
       setSimulationError(errorMsg);
@@ -257,12 +277,14 @@ export default function FiatLoanDetailPage() {
   if (loanLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-green-400" />
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-8 h-8 animate-spin text-green-400" />
+          <p className="text-sm text-gray-400">Loading loan details...</p>
+        </div>
       </div>
     );
   }
 
-  // Status 0 from an unfilled/invalid slot will have empty borrower
   if (!loan || !loan.borrower || loan.borrower === '0x0000000000000000000000000000000000000000') {
     return (
       <div className="min-h-screen flex items-center justify-center py-12 px-4">
@@ -280,172 +302,247 @@ export default function FiatLoanDetailPage() {
     );
   }
 
+  const statusConfig = STATUS_CONFIG[loan.status];
   const canFund = loan.status === FiatLoanStatus.PENDING_SUPPLIER && !isBorrower && isConnected && canActAsSupplier;
   const showSupplierNotice = loan.status === FiatLoanStatus.PENDING_SUPPLIER && !isBorrower && isConnected && !canActAsSupplier;
   const canCancel = loan.status === FiatLoanStatus.PENDING_SUPPLIER && isBorrower;
 
   return (
-    <div className="min-h-screen py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen py-8 sm:py-12 px-4 sm:px-5 md:px-10 lg:px-20">
       <div className="max-w-[1920px] mx-auto">
         {/* Back Button */}
-        <Link href="/dashboard" className="inline-flex items-center gap-2 text-gray-400 hover:text-white mb-6 transition-colors">
-          <ArrowLeft className="w-4 h-4" />
-          Back to Dashboard
-        </Link>
+        <motion.div
+          initial={{ opacity: 0, x: -10 }}
+          animate={{ opacity: 1, x: 0 }}
+        >
+          <Link href="/dashboard" className="inline-flex items-center gap-2 text-gray-400 hover:text-white mb-6 transition-colors text-sm">
+            <ArrowLeft className="w-4 h-4" />
+            Back to Dashboard
+          </Link>
+        </motion.div>
 
-        {/* Header */}
+        {/* Hero Header Card */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8"
+          transition={{ delay: 0.05 }}
+          className="relative overflow-hidden rounded-2xl border border-green-500/20 bg-gradient-to-br from-green-500/10 via-emerald-500/5 to-transparent p-6 sm:p-8 mb-8"
         >
-          <div>
-            <div className="flex items-center gap-3 mb-2">
-              <Banknote className="w-8 h-8 text-green-400" />
-              <h1 className="text-3xl font-bold">Fiat Loan #{loan.loanId.toString()}</h1>
-              <FiatLoanStatusBadge status={loan.status} />
-            </div>
-            <p className="text-gray-400">
-              {isBorrower ? 'Your fiat loan request for' : isSupplier ? 'You funded' : 'Borrower requesting'}{' '}
-              <span className="text-green-400 font-medium">
-                {formatCurrency(loan.fiatAmountCents, loan.currency)}
-              </span>
-            </p>
-          </div>
+          {/* Background decoration */}
+          <div className="absolute top-0 right-0 w-64 h-64 bg-green-500/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
+          <div className="absolute bottom-0 left-0 w-48 h-48 bg-emerald-500/5 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2" />
 
-          <div className="flex gap-3">
-            {canFund && (
-              <Button
-                onClick={() => setShowFundModal(true)}
-                icon={<DollarSign className="w-4 h-4" />}
-                size="lg"
-                className="bg-green-600 hover:bg-green-700"
-              >
-                Fund This Loan
-              </Button>
-            )}
-            {showSupplierNotice && (
-              <Link href="/dashboard#supplier">
+          <div className="relative z-10">
+            {/* Top row: ID + Status */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-green-500/20 border border-green-500/30 flex items-center justify-center">
+                  <Banknote className="w-5 h-5 sm:w-6 sm:h-6 text-green-400" />
+                </div>
+                <div>
+                  <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold">
+                    Fiat Loan <span className="text-green-400">#{loan.loanId.toString()}</span>
+                  </h1>
+                  <p className="text-sm text-gray-400 mt-0.5">
+                    {isBorrower ? 'Your fiat loan request' : isSupplier ? 'You funded this loan' : 'Fiat loan request'}
+                  </p>
+                </div>
+              </div>
+
+              <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium ${statusConfig.bgColor} ${statusConfig.borderColor} border ${statusConfig.color} self-start sm:self-auto`}>
+                {statusConfig.icon}
+                {statusConfig.label}
+              </div>
+            </div>
+
+            {/* Key Metrics Row */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+              <div className="bg-white/5 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-white/5">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <DollarSign className="w-3.5 h-3.5 text-green-400" />
+                  <span className="text-xs text-gray-400">Fiat Amount</span>
+                </div>
+                <p className="text-lg sm:text-xl font-bold text-green-400 truncate">
+                  {formatCurrency(loan.fiatAmountCents, loan.currency)}
+                </p>
+              </div>
+
+              <div className="bg-white/5 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-white/5">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <Percent className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="text-xs text-gray-400">Interest Rate</span>
+                </div>
+                <p className="text-lg sm:text-xl font-bold text-emerald-400">
+                  {formatPercentage(loan.interestRate)}
+                  <span className="text-xs font-normal text-gray-400 ml-1">APY</span>
+                </p>
+              </div>
+
+              <div className="bg-white/5 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-white/5">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <Timer className="w-3.5 h-3.5 text-blue-400" />
+                  <span className="text-xs text-gray-400">Duration</span>
+                </div>
+                <p className="text-lg sm:text-xl font-bold text-white">
+                  {formatDuration(loan.duration)}
+                </p>
+              </div>
+
+              <div className="bg-white/5 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-white/5">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <Wallet className="w-3.5 h-3.5 text-purple-400" />
+                  <span className="text-xs text-gray-400">Collateral</span>
+                </div>
+                <p className="text-lg sm:text-xl font-bold text-white truncate">
+                  {formatTokenAmount(loan.collateralAmount, collateralDecimals)} <span className="text-sm text-gray-300">{collateralSymbol}</span>
+                </p>
+                {collateralUSD > 0 && (
+                  <p className="text-xs text-gray-500 mt-0.5">~${collateralUSD.toFixed(2)}</p>
+                )}
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex flex-wrap gap-3 mt-6">
+              {canFund && (
                 <Button
-                  icon={<AlertCircle className="w-4 h-4" />}
+                  onClick={() => setShowFundModal(true)}
+                  icon={<DollarSign className="w-4 h-4" />}
                   size="lg"
-                  variant="secondary"
-                  className="border-yellow-500/50 text-yellow-400 hover:bg-yellow-500/10"
+                  className="bg-green-600 hover:bg-green-700"
                 >
-                  Register as Supplier
+                  Fund This Loan
                 </Button>
-              </Link>
-            )}
-            {canCancel && (
-              <Button
-                onClick={() => setShowCancelModal(true)}
-                variant="danger"
-                size="lg"
-              >
-                Cancel Request
-              </Button>
-            )}
+              )}
+              {showSupplierNotice && (
+                <Link href="/dashboard#supplier">
+                  <Button
+                    icon={<ArrowUpRight className="w-4 h-4" />}
+                    size="lg"
+                    className="bg-yellow-500/15 hover:bg-yellow-500/25 text-yellow-400 border border-yellow-500/30"
+                  >
+                    Register as Supplier
+                  </Button>
+                </Link>
+              )}
+              {canCancel && (
+                <Button
+                  onClick={() => setShowCancelModal(true)}
+                  variant="danger"
+                  size="lg"
+                >
+                  Cancel Request
+                </Button>
+              )}
+            </div>
           </div>
         </motion.div>
 
         <div className="grid lg:grid-cols-3 gap-6">
-          {/* Main Info */}
+          {/* Main Content */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Loan Details Card */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-            >
-              <Card className="border-green-500/20">
-                <h2 className="text-xl font-bold mb-6">Loan Details</h2>
-                <div className="grid sm:grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <div>
-                      <p className="text-sm text-gray-400 mb-1">Fiat Amount</p>
-                      <p className="text-2xl font-bold text-green-400">
-                        {formatCurrency(loan.fiatAmountCents, loan.currency)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-400 mb-1">Interest Rate</p>
-                      <p className="text-lg font-semibold text-green-400">
-                        {formatPercentage(loan.interestRate)} APY
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-400 mb-1">Duration</p>
-                      <p className="text-lg font-semibold">
-                        {formatDuration(loan.duration)}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div>
-                      <p className="text-sm text-gray-400 mb-1">Collateral Locked</p>
-                      <p className="text-lg font-semibold">
-                        {formatTokenAmount(loan.collateralAmount, collateralDecimals)} {collateralSymbol}
-                      </p>
-                      {collateralUSD > 0 && (
-                        <p className="text-sm text-gray-500">~${collateralUSD.toFixed(2)} USD</p>
-                      )}
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-400 mb-1">Currency</p>
-                      <p className="text-lg font-semibold">{loan.currency}</p>
-                    </div>
-                    {loan.exchangeRateAtCreation > BigInt(0) && (
-                      <div>
-                        <p className="text-sm text-gray-400 mb-1">Exchange Rate at Creation</p>
-                        <p className="text-lg font-semibold">
-                          {(Number(loan.exchangeRateAtCreation) / 1e8).toFixed(4)} {loan.currency}/USD
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </Card>
-            </motion.div>
-
             {/* Health & Debt Info for Active Loans */}
             {loan.status === FiatLoanStatus.ACTIVE && (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.15 }}
+                transition={{ delay: 0.1 }}
               >
-                <Card className="border-green-500/20">
-                  <h2 className="text-xl font-bold mb-6">Loan Health</h2>
-                  <div className="grid sm:grid-cols-2 gap-6">
-                    <div className="glass-card p-4">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Shield className="w-5 h-5 text-accent-400" />
+                <Card>
+                  <div className="flex items-center gap-2 mb-5">
+                    <Activity className="w-5 h-5 text-green-400" />
+                    <h2 className="text-lg font-bold">Loan Health</h2>
+                  </div>
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-white/5 to-transparent p-5 border border-white/5">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Shield className="w-4 h-4 text-accent-400" />
                         <p className="text-sm text-gray-400">Health Factor</p>
                       </div>
-                      <p className={`text-2xl font-bold ${getHealthFactorColor(BigInt(Math.floor(healthFactorValue * 100)))}`}>
+                      <p className={`text-3xl font-bold ${getHealthFactorColor(BigInt(Math.floor(healthFactorValue * 100)))}`}>
                         {healthFactorDisplay}
                       </p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {healthFactorValue >= 1.5 ? 'Healthy' : healthFactorValue >= 1.0 ? 'Warning' : 'At Risk'}
-                      </p>
+                      <div className="mt-2">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs ${
+                          healthFactorValue >= 1.5
+                            ? 'bg-green-500/15 text-green-400'
+                            : healthFactorValue >= 1.0
+                            ? 'bg-yellow-500/15 text-yellow-400'
+                            : 'bg-red-500/15 text-red-400'
+                        }`}>
+                          {healthFactorValue >= 1.5 ? 'Healthy' : healthFactorValue >= 1.0 ? 'Warning' : 'At Risk'}
+                        </span>
+                      </div>
                     </div>
-                    <div className="glass-card p-4">
-                      <div className="flex items-center gap-2 mb-2">
-                        <DollarSign className="w-5 h-5 text-green-400" />
+                    <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-white/5 to-transparent p-5 border border-white/5">
+                      <div className="flex items-center gap-2 mb-3">
+                        <DollarSign className="w-4 h-4 text-green-400" />
                         <p className="text-sm text-gray-400">Total Debt</p>
                       </div>
-                      <p className="text-2xl font-bold text-green-400">
-                        ${totalDebtDisplay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {loan.currency}
+                      <p className="text-3xl font-bold text-green-400">
+                        {totalDebtDisplay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        Principal + Accrued Interest
-                      </p>
+                      <p className="text-xs text-gray-500 mt-2">{loan.currency} (Principal + Interest)</p>
                     </div>
                   </div>
                 </Card>
               </motion.div>
             )}
+
+            {/* Loan Details Card */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.15 }}
+            >
+              <Card>
+                <div className="flex items-center gap-2 mb-5">
+                  <Banknote className="w-5 h-5 text-green-400" />
+                  <h2 className="text-lg font-bold">Loan Details</h2>
+                </div>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between py-3 border-b border-white/5">
+                    <span className="text-sm text-gray-400">Fiat Amount</span>
+                    <span className="font-semibold text-green-400">
+                      {formatCurrency(loan.fiatAmountCents, loan.currency)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between py-3 border-b border-white/5">
+                    <span className="text-sm text-gray-400">Interest Rate</span>
+                    <span className="font-semibold text-emerald-400">
+                      {formatPercentage(loan.interestRate)} APY
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between py-3 border-b border-white/5">
+                    <span className="text-sm text-gray-400">Duration</span>
+                    <span className="font-semibold">{formatDuration(loan.duration)}</span>
+                  </div>
+                  <div className="flex items-center justify-between py-3 border-b border-white/5">
+                    <span className="text-sm text-gray-400">Collateral Locked</span>
+                    <div className="text-right">
+                      <span className="font-semibold">
+                        {formatTokenAmount(loan.collateralAmount, collateralDecimals)} {collateralSymbol}
+                      </span>
+                      {collateralUSD > 0 && (
+                        <p className="text-xs text-gray-500">~${collateralUSD.toFixed(2)} USD</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between py-3 border-b border-white/5">
+                    <span className="text-sm text-gray-400">Currency</span>
+                    <span className="font-semibold">{loan.currency}</span>
+                  </div>
+                  {loan.exchangeRateAtCreation > BigInt(0) && (
+                    <div className="flex items-center justify-between py-3">
+                      <span className="text-sm text-gray-400">Exchange Rate at Creation</span>
+                      <span className="font-semibold">
+                        {(Number(loan.exchangeRateAtCreation) / 1e8).toFixed(4)} {loan.currency}/USD
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </Card>
+            </motion.div>
 
             {/* Participants */}
             <motion.div
@@ -453,60 +550,71 @@ export default function FiatLoanDetailPage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2 }}
             >
-              <Card className="border-green-500/20">
-                <h2 className="text-xl font-bold mb-6">Participants</h2>
-                <div className="space-y-4">
+              <Card>
+                <div className="flex items-center gap-2 mb-5">
+                  <User className="w-5 h-5 text-primary-400" />
+                  <h2 className="text-lg font-bold">Participants</h2>
+                </div>
+                <div className="space-y-3">
                   {/* Borrower */}
-                  <div className="flex items-center justify-between p-4 glass-card rounded-xl">
+                  <div className="flex items-center justify-between p-4 rounded-xl bg-white/[0.03] border border-white/5 hover:border-white/10 transition-colors">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-primary-500/20 flex items-center justify-center">
+                      <div className="w-10 h-10 rounded-full bg-primary-500/15 flex items-center justify-center">
                         <User className="w-5 h-5 text-primary-400" />
                       </div>
                       <div>
-                        <p className="text-sm text-gray-400">Borrower</p>
-                        <p className="font-mono">{formatAddress(loan.borrower, 6)}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs text-gray-400">Borrower</p>
+                          {isBorrower && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary-500/20 text-primary-400">You</span>
+                          )}
+                        </div>
+                        <p className="font-mono text-sm mt-0.5">{formatAddress(loan.borrower, 6)}</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      {isBorrower && <Badge variant="info" size="sm">You</Badge>}
-                      <button onClick={() => copyAddress(loan.borrower)} className="p-2 hover:bg-white/10 rounded-lg">
-                        <Copy className="w-4 h-4" />
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => copyAddress(loan.borrower)} className="p-2 hover:bg-white/10 rounded-lg transition-colors">
+                        <Copy className="w-4 h-4 text-gray-400" />
                       </button>
                       <a
                         href={`${DEFAULT_CHAIN.blockExplorer}/address/${loan.borrower}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="p-2 hover:bg-white/10 rounded-lg"
+                        className="p-2 hover:bg-white/10 rounded-lg transition-colors"
                       >
-                        <ExternalLink className="w-4 h-4" />
+                        <ExternalLink className="w-4 h-4 text-gray-400" />
                       </a>
                     </div>
                   </div>
 
-                  {/* Supplier (only show if funded) */}
+                  {/* Supplier */}
                   {loan.supplier && loan.supplier !== '0x0000000000000000000000000000000000000000' && (
-                    <div className="flex items-center justify-between p-4 glass-card rounded-xl">
+                    <div className="flex items-center justify-between p-4 rounded-xl bg-white/[0.03] border border-white/5 hover:border-white/10 transition-colors">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-green-500/20 flex items-center justify-center">
+                        <div className="w-10 h-10 rounded-full bg-green-500/15 flex items-center justify-center">
                           <Banknote className="w-5 h-5 text-green-400" />
                         </div>
                         <div>
-                          <p className="text-sm text-gray-400">Supplier</p>
-                          <p className="font-mono">{formatAddress(loan.supplier, 6)}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="text-xs text-gray-400">Supplier</p>
+                            {isSupplier && (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-500/20 text-green-400">You</span>
+                            )}
+                          </div>
+                          <p className="font-mono text-sm mt-0.5">{formatAddress(loan.supplier, 6)}</p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        {isSupplier && <Badge variant="success" size="sm">You</Badge>}
-                        <button onClick={() => copyAddress(loan.supplier)} className="p-2 hover:bg-white/10 rounded-lg">
-                          <Copy className="w-4 h-4" />
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => copyAddress(loan.supplier)} className="p-2 hover:bg-white/10 rounded-lg transition-colors">
+                          <Copy className="w-4 h-4 text-gray-400" />
                         </button>
                         <a
                           href={`${DEFAULT_CHAIN.blockExplorer}/address/${loan.supplier}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="p-2 hover:bg-white/10 rounded-lg"
+                          className="p-2 hover:bg-white/10 rounded-lg transition-colors"
                         >
-                          <ExternalLink className="w-4 h-4" />
+                          <ExternalLink className="w-4 h-4 text-gray-400" />
                         </a>
                       </div>
                     </div>
@@ -520,169 +628,193 @@ export default function FiatLoanDetailPage() {
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3 }}
+                transition={{ delay: 0.25 }}
               >
-                <Card className="border border-green-500/30 bg-green-500/5">
-                  <div className="flex items-center gap-2 mb-4">
-                    <TrendingUp className="w-5 h-5 text-green-400" />
-                    <h3 className="font-semibold">Funding Opportunity</h3>
-                  </div>
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center py-2 border-b border-white/10">
-                      <span className="text-gray-400">You Provide (Fiat)</span>
-                      <span className="font-medium text-green-400">
-                        {formatCurrency(loan.fiatAmountCents, loan.currency)}
-                      </span>
+                <div className="relative overflow-hidden rounded-2xl border border-green-500/20 bg-gradient-to-br from-green-500/10 via-green-500/5 to-transparent p-6">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-green-500/10 rounded-full blur-2xl" />
+                  <div className="relative z-10">
+                    <div className="flex items-center gap-2 mb-5">
+                      <TrendingUp className="w-5 h-5 text-green-400" />
+                      <h3 className="text-lg font-bold">Funding Opportunity</h3>
                     </div>
-                    <div className="flex justify-between items-center py-2 border-b border-white/10">
-                      <span className="text-gray-400">Interest Rate</span>
-                      <span className="font-medium text-green-400">
-                        {formatPercentage(loan.interestRate)} APY
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center py-2 border-b border-white/10">
-                      <span className="text-gray-400">Collateral Securing Loan</span>
-                      <span className="font-medium">
-                        {formatTokenAmount(loan.collateralAmount, collateralDecimals)} {collateralSymbol}
-                        {collateralUSD > 0 && (
-                          <span className="text-gray-500 text-sm ml-1">(~${collateralUSD.toFixed(2)})</span>
-                        )}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center py-2">
-                      <span className="text-gray-400">Loan Duration</span>
-                      <span className="font-medium">
-                        {formatDuration(loan.duration)}
-                      </span>
-                    </div>
-                  </div>
-
-                  {canActAsSupplier ? (
-                    <div className="mt-4 p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
-                      <p className="text-sm text-gray-400">
-                        As a supplier, you will provide fiat currency to the borrower off-chain.
-                        The borrower&apos;s crypto collateral is locked in the smart contract as security.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="mt-4 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-                      <div className="flex gap-3">
-                        <AlertCircle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
-                        <div className="flex-1">
-                          <p className="text-sm text-yellow-400 font-medium mb-2">
-                            Supplier Registration Required
-                          </p>
-                          <p className="text-sm text-gray-400 mb-3">
-                            To fund fiat loan requests, you need to register and get verified as a supplier.
-                            This ensures trust and security for all parties.
-                          </p>
-                          <Link href="/dashboard#supplier">
-                            <Button size="sm" className="bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-400 border border-yellow-500/50">
-                              Register as Supplier
-                            </Button>
-                          </Link>
-                        </div>
+                    <div className="space-y-0">
+                      <div className="flex justify-between items-center py-3 border-b border-white/5">
+                        <span className="text-sm text-gray-400">You Provide (Fiat)</span>
+                        <span className="font-semibold text-green-400">
+                          {formatCurrency(loan.fiatAmountCents, loan.currency)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center py-3 border-b border-white/5">
+                        <span className="text-sm text-gray-400">Interest Rate</span>
+                        <span className="font-semibold text-emerald-400">
+                          {formatPercentage(loan.interestRate)} APY
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center py-3 border-b border-white/5">
+                        <span className="text-sm text-gray-400">Collateral Securing Loan</span>
+                        <span className="font-semibold">
+                          {formatTokenAmount(loan.collateralAmount, collateralDecimals)} {collateralSymbol}
+                          {collateralUSD > 0 && (
+                            <span className="text-gray-500 text-xs ml-1">(~${collateralUSD.toFixed(2)})</span>
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center py-3">
+                        <span className="text-sm text-gray-400">Loan Duration</span>
+                        <span className="font-semibold">{formatDuration(loan.duration)}</span>
                       </div>
                     </div>
-                  )}
-                </Card>
+
+                    {canActAsSupplier ? (
+                      <div className="mt-5 p-4 rounded-xl bg-green-500/10 border border-green-500/20">
+                        <p className="text-sm text-gray-300">
+                          As a supplier, you will provide fiat currency to the borrower off-chain.
+                          The borrower&apos;s crypto collateral is locked in the smart contract as security.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="mt-5 p-4 rounded-xl bg-yellow-500/10 border border-yellow-500/20">
+                        <div className="flex gap-3">
+                          <AlertCircle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
+                          <div className="flex-1">
+                            <p className="text-sm text-yellow-400 font-medium mb-1">Supplier Registration Required</p>
+                            <p className="text-sm text-gray-400 mb-3">
+                              To fund fiat loan requests, you need to register and get verified as a supplier.
+                            </p>
+                            <Link href="/dashboard#supplier">
+                              <Button size="sm" className="bg-yellow-500/15 hover:bg-yellow-500/25 text-yellow-400 border border-yellow-500/30">
+                                Register as Supplier
+                              </Button>
+                            </Link>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </motion.div>
             )}
           </div>
 
           {/* Sidebar */}
           <div className="space-y-6">
-            {/* Status & Timeline */}
+            {/* Status Card */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4 }}
+              transition={{ delay: 0.3 }}
             >
-              <Card className="border-green-500/20">
-                <div className="flex items-center gap-2 mb-4">
-                  <Clock className="w-5 h-5 text-yellow-400" />
-                  <h3 className="font-semibold">Timeline</h3>
-                </div>
-                <div className="space-y-3 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Created</span>
-                    <span>{new Date(Number(loan.createdAt) * 1000).toLocaleDateString()}</span>
-                  </div>
-                  {loan.activatedAt > BigInt(0) && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Activated</span>
-                      <span>{new Date(Number(loan.activatedAt) * 1000).toLocaleDateString()}</span>
+              <Card>
+                <h3 className="text-lg font-bold mb-4">Status</h3>
+                {loan.status === FiatLoanStatus.PENDING_SUPPLIER && (
+                  <div className="text-center py-6">
+                    <div className="w-16 h-16 rounded-full bg-yellow-500/10 border border-yellow-500/20 flex items-center justify-center mx-auto mb-3">
+                      <Clock className="w-8 h-8 text-yellow-400" />
                     </div>
-                  )}
-                  {loan.dueDate > BigInt(0) && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Due Date</span>
-                      <span>{new Date(Number(loan.dueDate) * 1000).toLocaleDateString()}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Loan Duration</span>
-                    <span>{formatDuration(loan.duration)}</span>
+                    <p className="text-yellow-400 font-semibold">Awaiting Supplier</p>
+                    <p className="text-gray-400 text-sm mt-1 max-w-[200px] mx-auto">
+                      Waiting for a fiat supplier to fund this loan
+                    </p>
                   </div>
-                </div>
+                )}
+                {loan.status === FiatLoanStatus.ACTIVE && (
+                  <div className="text-center py-6">
+                    <div className="w-16 h-16 rounded-full bg-green-500/10 border border-green-500/20 flex items-center justify-center mx-auto mb-3">
+                      <CheckCircle className="w-8 h-8 text-green-400" />
+                    </div>
+                    <p className="text-green-400 font-semibold">Loan Active</p>
+                    <p className="text-gray-400 text-sm mt-1">This loan is currently active</p>
+                  </div>
+                )}
+                {loan.status === FiatLoanStatus.REPAID && (
+                  <div className="text-center py-6">
+                    <div className="w-16 h-16 rounded-full bg-blue-500/10 border border-blue-500/20 flex items-center justify-center mx-auto mb-3">
+                      <CheckCircle className="w-8 h-8 text-blue-400" />
+                    </div>
+                    <p className="text-blue-400 font-semibold">Loan Repaid</p>
+                    <p className="text-gray-400 text-sm mt-1">This loan has been fully repaid</p>
+                  </div>
+                )}
+                {loan.status === FiatLoanStatus.LIQUIDATED && (
+                  <div className="text-center py-6">
+                    <div className="w-16 h-16 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto mb-3">
+                      <AlertTriangle className="w-8 h-8 text-red-400" />
+                    </div>
+                    <p className="text-red-400 font-semibold">Loan Liquidated</p>
+                    <p className="text-gray-400 text-sm mt-1">Collateral was liquidated</p>
+                  </div>
+                )}
+                {loan.status === FiatLoanStatus.CANCELLED && (
+                  <div className="text-center py-6">
+                    <div className="w-16 h-16 rounded-full bg-gray-500/10 border border-gray-500/20 flex items-center justify-center mx-auto mb-3">
+                      <XCircle className="w-8 h-8 text-gray-400" />
+                    </div>
+                    <p className="text-gray-400 font-semibold">Request Cancelled</p>
+                  </div>
+                )}
               </Card>
             </motion.div>
 
-            {/* Actions */}
+            {/* Timeline */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.5 }}
+              transition={{ delay: 0.35 }}
             >
-              <Card className="border-green-500/20">
-                <h3 className="font-semibold mb-4">Status</h3>
-                <div className="space-y-3">
-                  {loan.status === FiatLoanStatus.PENDING_SUPPLIER && (
-                    <div className="text-center py-4">
-                      <Clock className="w-12 h-12 text-yellow-400 mx-auto mb-2" />
-                      <p className="text-yellow-400 font-semibold">Awaiting Supplier</p>
-                      <p className="text-gray-400 text-sm mt-1">
-                        Waiting for a fiat supplier to fund this loan
-                      </p>
-                    </div>
-                  )}
+              <Card>
+                <div className="flex items-center gap-2 mb-5">
+                  <Calendar className="w-5 h-5 text-blue-400" />
+                  <h3 className="text-lg font-bold">Timeline</h3>
+                </div>
+                <div className="space-y-4">
+                  {/* Timeline items with visual line */}
+                  <div className="relative pl-6">
+                    <div className="absolute left-[7px] top-1 w-0.5 h-[calc(100%-8px)] bg-white/10" />
 
-                  {loan.status === FiatLoanStatus.ACTIVE && (
-                    <div className="text-center py-4">
-                      <CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-2" />
-                      <p className="text-green-400 font-semibold">Loan Active</p>
-                      <p className="text-gray-400 text-sm mt-1">
-                        This loan is currently active
-                      </p>
+                    <div className="relative pb-4">
+                      <div className="absolute -left-6 top-1 w-4 h-4 rounded-full bg-green-500/20 border-2 border-green-500 flex items-center justify-center">
+                        <div className="w-1.5 h-1.5 rounded-full bg-green-400" />
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-400">Created</span>
+                        <span className="text-sm font-medium">{new Date(Number(loan.createdAt) * 1000).toLocaleDateString()}</span>
+                      </div>
                     </div>
-                  )}
 
-                  {loan.status === FiatLoanStatus.REPAID && (
-                    <div className="text-center py-4">
-                      <CheckCircle className="w-12 h-12 text-primary-400 mx-auto mb-2" />
-                      <p className="text-primary-400 font-semibold">Loan Repaid</p>
-                      <p className="text-gray-400 text-sm mt-1">
-                        This loan has been fully repaid
-                      </p>
-                    </div>
-                  )}
+                    {loan.activatedAt > BigInt(0) && (
+                      <div className="relative pb-4">
+                        <div className="absolute -left-6 top-1 w-4 h-4 rounded-full bg-blue-500/20 border-2 border-blue-500 flex items-center justify-center">
+                          <div className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-400">Activated</span>
+                          <span className="text-sm font-medium">{new Date(Number(loan.activatedAt) * 1000).toLocaleDateString()}</span>
+                        </div>
+                      </div>
+                    )}
 
-                  {loan.status === FiatLoanStatus.LIQUIDATED && (
-                    <div className="text-center py-4">
-                      <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-2" />
-                      <p className="text-red-400 font-semibold">Loan Liquidated</p>
-                      <p className="text-gray-400 text-sm mt-1">
-                        Collateral was liquidated due to undercollateralization
-                      </p>
-                    </div>
-                  )}
+                    {loan.dueDate > BigInt(0) && (
+                      <div className="relative pb-4">
+                        <div className="absolute -left-6 top-1 w-4 h-4 rounded-full bg-yellow-500/20 border-2 border-yellow-500 flex items-center justify-center">
+                          <div className="w-1.5 h-1.5 rounded-full bg-yellow-400" />
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-400">Due Date</span>
+                          <span className="text-sm font-medium">{new Date(Number(loan.dueDate) * 1000).toLocaleDateString()}</span>
+                        </div>
+                      </div>
+                    )}
 
-                  {loan.status === FiatLoanStatus.CANCELLED && (
-                    <div className="text-center py-4">
-                      <XCircle className="w-12 h-12 text-gray-400 mx-auto mb-2" />
-                      <p className="text-gray-400 font-semibold">Request Cancelled</p>
+                    <div className="relative">
+                      <div className="absolute -left-6 top-1 w-4 h-4 rounded-full bg-gray-500/20 border-2 border-gray-500 flex items-center justify-center">
+                        <div className="w-1.5 h-1.5 rounded-full bg-gray-400" />
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-400">Duration</span>
+                        <span className="text-sm font-medium">{formatDuration(loan.duration)}</span>
+                      </div>
                     </div>
-                  )}
+                  </div>
                 </div>
               </Card>
             </motion.div>
@@ -691,20 +823,23 @@ export default function FiatLoanDetailPage() {
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.6 }}
+              transition={{ delay: 0.4 }}
             >
-              <Card className="border-green-500/20">
+              <Card>
                 <div className="flex items-center gap-2 mb-4">
                   <Shield className="w-5 h-5 text-accent-400" />
-                  <h3 className="font-semibold">Security</h3>
+                  <h3 className="text-lg font-bold">Security</h3>
                 </div>
-                <div className="space-y-2 text-sm text-gray-400">
-                  <p>
+                <div className="space-y-3">
+                  <p className="text-sm text-gray-400 leading-relaxed">
                     Collateral is held in escrow on-chain. The supplier provides fiat off-chain while the smart contract secures the crypto collateral.
                   </p>
-                  <p className="text-green-400 font-medium">
-                    Collateral Value: ${collateralUSD.toFixed(2)}
-                  </p>
+                  <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/15">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-400">Collateral Value</span>
+                      <span className="text-sm font-bold text-green-400">${collateralUSD.toFixed(2)}</span>
+                    </div>
+                  </div>
                 </div>
               </Card>
             </motion.div>
@@ -720,7 +855,6 @@ export default function FiatLoanDetailPage() {
         size="md"
       >
         <div className="space-y-6">
-          {/* Summary */}
           <div className="glass-card p-4 space-y-3">
             <div className="flex justify-between">
               <span className="text-gray-400">Fiat Amount to Provide</span>
@@ -761,7 +895,6 @@ export default function FiatLoanDetailPage() {
             </div>
           </div>
 
-          {/* Simulation Error */}
           {simulationError && (
             <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
               <div className="flex gap-2 items-start">

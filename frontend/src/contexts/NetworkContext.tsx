@@ -67,6 +67,7 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
 
   // Load saved network from localStorage on mount, default to Base Sepolia
   useEffect(() => {
+    if (typeof window === 'undefined') return;
     const savedNetworkId = localStorage.getItem('selectedNetworkId');
     if (savedNetworkId) {
       const network = AVAILABLE_NETWORKS.find(n => n.id === parseInt(savedNetworkId));
@@ -93,7 +94,9 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     setSelectedNetworkState(network);
-    localStorage.setItem('selectedNetworkId', network.id.toString());
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('selectedNetworkId', network.id.toString());
+    }
   }, []);
 
   return (

@@ -693,7 +693,7 @@ export default function BorrowPage() {
   }
 
   return (
-    <div className="min-h-screen bg-navy-900 pt-20 pb-8 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-navy-900 pt-20 pb-8 px-4 sm:px-5 md:px-10 lg:px-20 overflow-x-hidden">
       <div className="max-w-4xl mx-auto">
         {/* Header with Step Counter */}
         <motion.div
@@ -714,13 +714,13 @@ export default function BorrowPage() {
           </h1>
 
           {/* Subtitle - current step description */}
-          <p className="text-base text-white/60 max-w-2xl mx-auto">
+          <p className="text-sm sm:text-base text-white/60 max-w-2xl mx-auto">
             {currentStepInfo?.description}
           </p>
         </motion.div>
 
         {/* Step Content */}
-        <div className="min-h-[320px] flex items-center justify-center py-4">
+        <div className="min-h-[280px] sm:min-h-[320px] flex items-center justify-center py-4">
           <AnimatePresence mode="wait">
             <motion.div
               key={currentStep}
@@ -740,10 +740,10 @@ export default function BorrowPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          className="flex items-center justify-between max-w-xl mx-auto mt-4"
+          className="flex items-center justify-between gap-3 max-w-xl mx-auto mt-4"
         >
           {/* Back Button */}
-          <div className="w-28">
+          <div className="w-20 sm:w-28 flex-shrink-0">
             {currentStep > 1 && (
               <motion.div
                 initial={{ opacity: 0, x: -20 }}
@@ -763,7 +763,7 @@ export default function BorrowPage() {
           </div>
 
           {/* Continue Button (not shown on review step) */}
-          <div className="flex-1 max-w-xs">
+          <div className="flex-1 min-w-0 max-w-xs">
             {currentStep < STEPS.length && (
               <Button
                 variant="primary"
@@ -780,7 +780,7 @@ export default function BorrowPage() {
           </div>
 
           {/* Spacer for alignment */}
-          <div className="w-28" />
+          <div className="w-20 sm:w-28 flex-shrink-0" />
         </motion.div>
 
         {/* Microcopy */}
@@ -788,7 +788,7 @@ export default function BorrowPage() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.3 }}
-          className="text-center text-white/30 text-xs mt-4"
+          className="text-center text-white/30 text-xs mt-4 px-2"
         >
           Lock your crypto as collateral and receive funds. Your crypto is returned after full repayment.
         </motion.p>

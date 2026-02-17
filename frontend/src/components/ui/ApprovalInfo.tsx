@@ -5,9 +5,13 @@ import { Info, Shield } from 'lucide-react';
 
 interface ApprovalInfoProps {
   tokenSymbol: string;
+  safetyNote?: string;
 }
 
-export function ApprovalInfo({ tokenSymbol }: ApprovalInfoProps) {
+export function ApprovalInfo({
+  tokenSymbol,
+  safetyNote = 'Your funds remain safe in your account until your offer is accepted.',
+}: ApprovalInfoProps) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -24,7 +28,7 @@ export function ApprovalInfo({ tokenSymbol }: ApprovalInfoProps) {
           </p>
           <div className="flex items-center gap-2 text-xs text-white/50">
             <Shield className="w-3.5 h-3.5" />
-            <span>Your funds remain safe in your account until your offer is accepted.</span>
+            <span>{safetyNote}</span>
           </div>
         </div>
       </div>

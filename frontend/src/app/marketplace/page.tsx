@@ -719,14 +719,23 @@ function MarketplaceContent() {
           </p>
         </motion.div>
 
-        {/* Network Switcher */}
+        {/* Network Switcher + Refresh */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.05 }}
-          className="flex justify-center mb-6"
+          className="flex items-center justify-between mb-6"
         >
           <NetworkSwitcher />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => refetch()}
+            loading={isLoading}
+            icon={<RefreshCw className="w-4 h-4" />}
+          >
+            Refresh
+          </Button>
         </motion.div>
 
         {/* Tabs */}
@@ -734,19 +743,19 @@ function MarketplaceContent() {
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-8"
+          className="flex justify-center mb-8 overflow-x-auto"
         >
-          <div className="flex rounded-2xl p-1.5 bg-white/5 border border-white/10">
+          <div className="flex rounded-2xl p-1.5 bg-white/5 border border-white/10 flex-shrink-0">
             <button
               onClick={() => handleTabChange('borrow_requests')}
               className={cn(
-                'flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-medium transition-all',
+                'flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-medium transition-all whitespace-nowrap',
                 activeTab === 'borrow_requests'
                   ? 'bg-primary-500 text-white shadow-lg shadow-primary-500/25'
                   : 'text-gray-400 hover:text-white hover:bg-white/5'
               )}
             >
-              <FileText className="w-4 h-4" />
+              <FileText className="w-4 h-4 flex-shrink-0" />
               Loan Requests
               <span className={cn(
                 'px-2 py-0.5 rounded-full text-xs',
@@ -760,13 +769,13 @@ function MarketplaceContent() {
             <button
               onClick={() => handleTabChange('lending_offers')}
               className={cn(
-                'flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-medium transition-all',
+                'flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-medium transition-all whitespace-nowrap',
                 activeTab === 'lending_offers'
                   ? 'bg-accent-500 text-white shadow-lg shadow-accent-500/25'
                   : 'text-gray-400 hover:text-white hover:bg-white/5'
               )}
             >
-              <HandCoins className="w-4 h-4" />
+              <HandCoins className="w-4 h-4 flex-shrink-0" />
               Instant offers
               <span className={cn(
                 'px-2 py-0.5 rounded-full text-xs',
@@ -778,17 +787,6 @@ function MarketplaceContent() {
               </span>
             </button>
           </div>
-
-          {/* Refresh Button */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => refetch()}
-            loading={isLoading}
-            icon={<RefreshCw className="w-4 h-4" />}
-          >
-            Refresh
-          </Button>
         </motion.div>
 
         {/* Filter Bar */}

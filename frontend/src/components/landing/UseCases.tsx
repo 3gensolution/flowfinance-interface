@@ -92,7 +92,7 @@ export function UseCases() {
         <div className="absolute bottom-0 left-1/4 w-96 h-96 bg-teal-500/5 rounded-full blur-3xl" />
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+      <div className="max-w-7xl mx-auto px-4 sm:px-5 md:px-10 lg:px-20 relative z-10">
         {/* Section Header */}
         <motion.div
           className="text-center mb-16"

@@ -106,7 +106,7 @@ body {
 
   /* Section Container */
   .section-container {
-    @apply relative py-20 px-4 sm:px-6 lg:px-8;
+    @apply relative py-20 px-4 sm:px-5 md:px-10 lg:px-20;
   }
 
   .section-inner {

@@ -1,13 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { parseUnits, Address } from 'viem';
+import { parseUnits, Address, Abi } from 'viem';
 import { useAccount, useWaitForTransactionReceipt, usePublicClient } from 'wagmi';
 import { useRouter } from 'next/navigation';
 import { CollateralAsset } from './CollateralSelector';
 import { BorrowAsset, BorrowType } from './BorrowAssetSelector';
-import { ErrorMessage, SuccessModal, TransactionButton, ApprovalInfo } from '@/components/lender';
+import { TransactionFlow } from '@/components/ui/TransactionFlow';
 import {
   useApproveToken,
   useTokenAllowance,
@@ -17,7 +16,6 @@ import { useCreateFiatLoanRequest } from '@/hooks/useFiatLoan';
 import { CONTRACT_ADDRESSES } from '@/config/contracts';
 import { formatSimulationError } from '@/lib/contractSimulation';
 import LoanMarketPlaceABIJson from '@/contracts/LoanMarketPlaceABI.json';
-import { Abi } from 'viem';
 
 const LoanMarketPlaceABI = LoanMarketPlaceABIJson as Abi;
 
@@ -105,7 +103,7 @@ export function BorrowSubmitCTA({
     : BigInt(0);
 
   // Calculate borrow amount in wei (for crypto borrows)
-  const borrowDecimals = borrowAsset?.decimals || 6; // Default to 6 for stablecoins
+  const borrowDecimals = borrowAsset?.decimals || 6;
   const borrowAmountInWei = isCryptoBorrow
     ? parseUnits(loanAmount.toString(), borrowDecimals)
     : BigInt(0);
@@ -118,7 +116,6 @@ export function BorrowSubmitCTA({
 
   const isApproving = submitStep === 'approving' || isApprovePending;
   const isCreating = submitStep === 'creating' || isCreatePending || isFiatCreatePending;
-  const isProcessing = isApproving || isCreating;
 
   // Format display values
   const currencySymbol = borrowAsset ? getCurrencySymbol(borrowAsset.symbol) : '$';
@@ -176,7 +173,6 @@ export function BorrowSubmitCTA({
 
     try {
       if (isFiatBorrow) {
-        // Handle fiat/cash loan request
         if (!fiatAmountCents || !fiatCurrency) {
           setSubmitStep('idle');
           setErrorMessage('Fiat amount or currency is missing.');
@@ -191,7 +187,6 @@ export function BorrowSubmitCTA({
         console.log('Interest Rate (bps):', interestRateBps.toString());
         console.log('Duration (seconds):', durationSeconds.toString());
 
-        // Create the fiat loan request (simulation is handled inside the hook)
         await createFiatLoanRequest(
           collateral.address as Address,
           collateralAmountInWei,
@@ -201,14 +196,12 @@ export function BorrowSubmitCTA({
           durationSeconds
         );
       } else {
-        // Handle crypto-to-crypto loan request
         if (!isCryptoBorrow) {
           setSubmitStep('idle');
           setErrorMessage('Please select a valid borrow asset.');
           return;
         }
 
-        // Simulate the transaction first
         if (publicClient) {
           console.log('=== Crypto Loan Request Parameters ===');
           console.log('Collateral Token:', collateral.address);
@@ -244,7 +237,6 @@ export function BorrowSubmitCTA({
           }
         }
 
-        // Create the crypto loan request
         await createRequest(
           collateral.address as Address,
           collateralAmountInWei,
@@ -271,69 +263,26 @@ export function BorrowSubmitCTA({
     return null;
   };
 
-  const statusText = getStatusText();
-
   return (
-    <>
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-xl mx-auto space-y-4"
-      >
-        {/* Approval Info (if collateral needs approval) */}
-        {needsApproval && (
-          <ApprovalInfo tokenSymbol={collateral?.symbol || ''} />
-        )}
-
-        {/* Error Message */}
-        {errorMessage && (
-          <ErrorMessage
-            message={errorMessage}
-            title="Request Failed"
-            onDismiss={handleDismissError}
-          />
-        )}
-
-        {/* Buttons */}
-        <div className="space-y-3">
-          {needsApproval && (
-            <TransactionButton
-              type="approve"
-              tokenSymbol={collateral?.symbol}
-              isLoading={isApproving}
-              isDisabled={!isValid || isProcessing}
-              stepNumber={1}
-              onClick={handleApprove}
-            />
-          )}
-          <TransactionButton
-            type="submit"
-            isLoading={isCreating}
-            isDisabled={!isValid || needsApproval || isProcessing}
-            isSecondary={needsApproval}
-            stepNumber={needsApproval ? 2 : undefined}
-            onClick={handleSubmitRequest}
-            defaultText="Submit Borrow Request"
-            loadingText="Submitting..."
-          />
-        </div>
-
-        {/* Status Text */}
-        {statusText && (
-          <p className={`text-sm text-center ${isProcessing ? 'text-white/60' : 'text-white/40'}`}>
-            {statusText}
-          </p>
-        )}
-      </motion.div>
-
-      {/* Success Modal */}
-      <SuccessModal
-        isOpen={showSuccessModal}
-        amount={`${currencySymbol}${formatNumber(loanAmount)}`}
-        tokenSymbol={borrowAsset?.symbol || ''}
-        rate={interestRate}
-        onGoToMarketplace={handleGoToMarketplace}
-      />
-    </>
+    <TransactionFlow
+      needsApproval={needsApproval}
+      tokenSymbol={collateral?.symbol || ''}
+      approvalSafetyNote="Your collateral is held safely until you repay in full."
+      isApproving={isApproving}
+      isCreating={isCreating}
+      isValid={isValid}
+      errorMessage={errorMessage}
+      errorTitle="Request Failed"
+      onDismissError={handleDismissError}
+      onApprove={handleApprove}
+      onSubmit={handleSubmitRequest}
+      submitText="Submit Borrow Request"
+      submitLoadingText="Submitting..."
+      statusText={getStatusText()}
+      showSuccess={showSuccessModal}
+      successTitle="Borrow Request Submitted!"
+      successMessage={`Your borrow request for ${currencySymbol}${formatNumber(loanAmount)} ${borrowAsset?.symbol || ''} has been submitted to the marketplace.`}
+      onGoToMarketplace={handleGoToMarketplace}
+    />
   );
 }

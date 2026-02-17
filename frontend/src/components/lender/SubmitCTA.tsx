@@ -1,16 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
 import { parseUnits, Address } from 'viem';
 import { useAccount, useWaitForTransactionReceipt } from 'wagmi';
 import { useRouter } from 'next/navigation';
 import { Asset } from './AssetSelector';
 import { AssetType } from './AssetTypeSelector';
-import { ErrorMessage } from './ErrorMessage';
-import { ApprovalInfo } from './ApprovalInfo';
-import { SuccessModal } from './SuccessModal';
-import { TransactionButton } from './TransactionButton';
+import { TransactionFlow } from '@/components/ui/TransactionFlow';
 import {
   useCreateLenderOffer,
   useApproveToken,
@@ -66,7 +62,6 @@ export function SubmitCTA({ asset, amount, rate, isValid, assetType }: SubmitCTA
 
   const isApproving = submitStep === 'approving' || isApprovePending;
   const isCreating = submitStep === 'creating' || isCreatePending || isFiatCreatePending;
-  const isProcessing = isApproving || isCreating;
 
   // Effects
   useEffect(() => {
@@ -178,76 +173,25 @@ export function SubmitCTA({ asset, amount, rate, isValid, assetType }: SubmitCTA
     return null;
   };
 
-  const statusText = getStatusText();
-
   return (
-    <>
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-xl mx-auto space-y-4"
-      >
-        {/* Approval Info (crypto only) */}
-        {isCryptoAsset && needsApproval && <ApprovalInfo tokenSymbol={asset?.symbol || ''} />}
-
-        {/* Error Message */}
-        {errorMessage && (
-          <ErrorMessage
-            message={errorMessage}
-            title={isCryptoAsset ? 'Transaction Failed' : 'Error'}
-            onDismiss={handleDismissError}
-          />
-        )}
-
-        {/* Buttons */}
-        <div className="space-y-3">
-          {isCryptoAsset ? (
-            <>
-              {needsApproval && (
-                <TransactionButton
-                  type="approve"
-                  tokenSymbol={asset?.symbol}
-                  isLoading={isApproving}
-                  isDisabled={!isValid || isProcessing}
-                  stepNumber={1}
-                  onClick={handleApprove}
-                />
-              )}
-              <TransactionButton
-                type="submit"
-                isLoading={isCreating}
-                isDisabled={!isValid || needsApproval || isProcessing}
-                isSecondary={needsApproval}
-                stepNumber={needsApproval ? 2 : undefined}
-                onClick={handleCreateOffer}
-              />
-            </>
-          ) : (
-            <TransactionButton
-              type="submit"
-              isLoading={isCreating}
-              isDisabled={!isValid || isProcessing}
-              onClick={handleCreateFiatOffer}
-            />
-          )}
-        </div>
-
-        {/* Status Text */}
-        {statusText && (
-          <p className={`text-sm text-center ${isProcessing ? 'text-white/60' : 'text-white/40'}`}>
-            {statusText}
-          </p>
-        )}
-      </motion.div>
-
-      {/* Success Modal */}
-      <SuccessModal
-        isOpen={showSuccessModal}
-        amount={amount}
-        tokenSymbol={asset?.symbol || ''}
-        rate={rate}
-        onGoToMarketplace={handleGoToMarketplace}
-      />
-    </>
+    <TransactionFlow
+      needsApproval={isCryptoAsset && needsApproval}
+      tokenSymbol={asset?.symbol || ''}
+      approvalSafetyNote="Your funds remain safe in your account until your offer is accepted."
+      isApproving={isApproving}
+      isCreating={isCreating}
+      isValid={isValid}
+      errorMessage={errorMessage}
+      errorTitle={isCryptoAsset ? 'Transaction Failed' : 'Error'}
+      onDismissError={handleDismissError}
+      onApprove={handleApprove}
+      onSubmit={isCryptoAsset ? handleCreateOffer : handleCreateFiatOffer}
+      submitText="Start Lending"
+      statusText={getStatusText()}
+      showSuccess={showSuccessModal}
+      successTitle="Offer Created Successfully!"
+      successMessage={`Your lending offer of ${amount} ${asset?.symbol || ''} at ${rate}% APR is now live on the marketplace.`}
+      onGoToMarketplace={handleGoToMarketplace}
+    />
   );
 }

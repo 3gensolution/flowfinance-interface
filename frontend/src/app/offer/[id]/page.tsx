@@ -7,7 +7,6 @@ import { motion } from 'framer-motion';
 import { formatUnits, parseUnits } from 'viem';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Badge, RequestStatusBadge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import {
@@ -46,6 +45,11 @@ import {
   Info,
   AlertCircle,
   RefreshCw,
+  Percent,
+  Timer,
+  Coins,
+  Calendar,
+  Loader2,
 } from 'lucide-react';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
@@ -55,6 +59,38 @@ import LoanMarketPlaceABIJson from '@/contracts/LoanMarketPlaceABI.json';
 import { Abi } from 'viem';
 
 const LoanMarketPlaceABI = LoanMarketPlaceABIJson as Abi;
+
+// Status config
+const STATUS_CONFIG: Record<number, { label: string; color: string; bgColor: string; borderColor: string; icon: React.ReactNode }> = {
+  [LoanRequestStatus.PENDING]: {
+    label: 'Pending',
+    color: 'text-yellow-400',
+    bgColor: 'bg-yellow-500/15',
+    borderColor: 'border-yellow-500/30',
+    icon: <Clock className="w-4 h-4" />,
+  },
+  [LoanRequestStatus.FUNDED]: {
+    label: 'Funded',
+    color: 'text-green-400',
+    bgColor: 'bg-green-500/15',
+    borderColor: 'border-green-500/30',
+    icon: <CheckCircle className="w-4 h-4" />,
+  },
+  [LoanRequestStatus.EXPIRED]: {
+    label: 'Expired',
+    color: 'text-gray-400',
+    bgColor: 'bg-gray-500/15',
+    borderColor: 'border-gray-500/30',
+    icon: <Clock className="w-4 h-4" />,
+  },
+  [LoanRequestStatus.CANCELLED]: {
+    label: 'Cancelled',
+    color: 'text-red-400',
+    bgColor: 'bg-red-500/15',
+    borderColor: 'border-red-500/30',
+    icon: <XCircle className="w-4 h-4" />,
+  },
+};
 
 export default function OfferDetailPage() {
   const params = useParams();
@@ -77,9 +113,6 @@ export default function OfferDetailPage() {
   const { data: offerData, isLoading: offerLoading, refetch } = useLenderOffer(offerId);
 
   // Parse offer data from contract (it returns a tuple)
-  // Order: offerId, lender, lendAsset, lendAmount, remainingAmount, borrowedAmount,
-  //        requiredCollateralAsset, minCollateralAmount, duration, interestRate,
-  //        createdAt, expireAt, status, chainId
   const offerTuple = offerData as readonly unknown[];
   const offer = offerData ? {
     offerId: offerTuple[0] as bigint,
@@ -111,7 +144,7 @@ export default function OfferDetailPage() {
   // Parse borrow amount input (after lendDecimals is defined)
   const parsedBorrowAmount = borrowAmountInput
     ? parseUnits(borrowAmountInput, lendDecimals)
-    : remainingAmount; // Default to full remaining amount
+    : remainingAmount;
 
   // Initialize borrow amount when offer loads
   useEffect(() => {
@@ -154,23 +187,20 @@ export default function OfferDetailPage() {
   // Price refresh hook
   const { refreshPrice, isPending: isRefreshingPrice } = useRefreshMockPrice();
 
-  // Check price staleness (skip collateral price check if no token selected for flexible)
+  // Check price staleness
   const isPriceStale = lendPriceHook.isStale || (!isFlexibleCollateral && collateralPriceHook.isStale) ||
     (isFlexibleCollateral && selectedCollateralToken && collateralPriceHook.isStale);
 
   // Handle price refresh
   const handleRefreshPrices = async () => {
     try {
-      // Refresh lend asset price if stale
       if (lendPriceHook.isStale && lendPriceHook.priceFeedAddress && lendPrice) {
         await refreshPrice(lendPriceHook.priceFeedAddress as Address, BigInt(lendPrice), offer?.lendAsset);
       }
-      // Refresh collateral price if stale
       if (collateralPriceHook.isStale && collateralPriceHook.priceFeedAddress && collateralPrice && activeCollateralToken) {
         await refreshPrice(collateralPriceHook.priceFeedAddress as Address, BigInt(collateralPrice), activeCollateralToken);
       }
       toast.success('Price feeds refreshed!');
-      // Refetch price data
       lendPriceHook.refetch();
       collateralPriceHook.refetch();
     } catch (error) {
@@ -184,37 +214,27 @@ export default function OfferDetailPage() {
     ? (Number(offer.lendAmount) / Math.pow(10, Number(lendDecimals))) * Number(lendPrice) / 1e8
     : 0;
 
-  // Get LTV from contract (duration is in seconds, convert to days) - moved up for use in calculations
+  // Get LTV from contract
   const durationDays = offer ? Math.ceil(Number(offer.duration) / (24 * 60 * 60)) : 0;
   const { data: ltvBps } = useLTV(activeCollateralToken, durationDays);
-
-  // LTV from contract is in basis points (10000 = 100%) - fixed by contract, borrower cannot change
   const currentLTV = ltvBps ? Number(ltvBps) / 100 : 0;
 
-  // Calculate required collateral from contract LTV and prices based on borrow amount
-  // Formula: requiredCollateral = (borrowAmount * borrowPrice / collateralPrice) / (LTV / 100)
+  // Calculate required collateral from contract LTV and prices
   const calculatedCollateralAmount = (() => {
     const ltvValue = ltvBps ? Number(ltvBps) : 0;
     if (!offer || !lendPrice || !collateralPrice || ltvValue === 0 || parsedBorrowAmount === BigInt(0)) {
       return BigInt(0);
     }
-    // Use parsedBorrowAmount instead of offer.lendAmount for partial borrowing
     const borrowAmountBN = parsedBorrowAmount;
     const lendPriceBN = BigInt(lendPrice);
     const collateralPriceBN = BigInt(collateralPrice);
     const ltvBpsBN = BigInt(ltvValue);
-
-    // Calculate: (borrowAmount * lendPrice * 10000 * 10^collateralDecimals) / (ltvBps * collateralPrice * 10^lendDecimals)
     const numerator = borrowAmountBN * lendPriceBN * BigInt(10000) * BigInt(10 ** collateralDecimals);
     const denominator = ltvBpsBN * collateralPriceBN * BigInt(10 ** lendDecimals);
-
     if (denominator === BigInt(0)) return BigInt(0);
-
     return numerator / denominator;
   })();
 
-  // For flexible collateral, use calculated amount
-  // For fixed collateral, calculate proportional to borrow amount: (minCollateral * borrowAmount) / lendAmount
   const collateralAmountBigInt = (() => {
     if (isFlexibleCollateral) {
       return calculatedCollateralAmount;
@@ -222,7 +242,6 @@ export default function OfferDetailPage() {
     if (!offer || offer.lendAmount === BigInt(0)) {
       return offer?.minCollateralAmount || BigInt(0);
     }
-    // Proportional collateral for partial borrowing
     const proportionalCollateral = (offer.minCollateralAmount * parsedBorrowAmount) / offer.lendAmount;
     return proportionalCollateral;
   })();
@@ -231,7 +250,6 @@ export default function OfferDetailPage() {
     ? (Number(collateralAmountBigInt) / Math.pow(10, Number(collateralDecimals))) * Number(collateralPrice) / 1e8
     : 0;
 
-  // The collateral amount - formatted for display
   const requiredCollateralFormatted = collateralAmountBigInt > BigInt(0)
     ? formatTokenAmount(collateralAmountBigInt, collateralDecimals)
     : '0';
@@ -242,7 +260,6 @@ export default function OfferDetailPage() {
     : '0';
   const maxCollateralBalanceNumber = parseFloat(maxCollateralBalance);
 
-  // Check balance status - for flexible collateral, check against user's input
   const hasZeroBalance = maxCollateralBalanceNumber === 0;
   const hasInsufficientBalance = isFlexibleCollateral
     ? (borrowerCollateralBalance && collateralAmountBigInt
@@ -252,7 +269,6 @@ export default function OfferDetailPage() {
       ? (borrowerCollateralBalance as bigint) < offer.minCollateralAmount
       : false);
 
-  // Check if already approved - for flexible collateral, check against user's input
   const hasApproval = isFlexibleCollateral
     ? (borrowerCollateralAllowance && collateralAmountBigInt
       ? (borrowerCollateralAllowance as bigint) >= collateralAmountBigInt
@@ -261,7 +277,6 @@ export default function OfferDetailPage() {
       ? (borrowerCollateralAllowance as bigint) >= offer.minCollateralAmount
       : false);
 
-  // For flexible collateral, check if user has selected token and collateral is calculated
   const hasValidFlexibleInput = isFlexibleCollateral
     ? Boolean(selectedCollateralToken && collateralAmountBigInt > BigInt(0))
     : true;
@@ -290,7 +305,7 @@ export default function OfferDetailPage() {
     }
   }, [acceptSuccess, router, refetch]);
 
-  // Handler to open accept modal with validation
+  // Handler to open accept modal
   const openAcceptModal = () => {
     if (!offer) {
       toast.error('Offer data not available. Please refresh the page.');
@@ -300,37 +315,18 @@ export default function OfferDetailPage() {
       toast.error('Invalid offer ID.');
       return;
     }
-    console.log('Opening accept modal with data:', {
-      offerId: offerId.toString(),
-      lender: offer.lender,
-      lendAmount: offer.lendAmount.toString(),
-      lendAsset: offer.lendAsset,
-      isFlexibleCollateral,
-    });
     setShowAcceptModal(true);
   };
 
   // Reset step when opening modal
   useEffect(() => {
     if (showAcceptModal) {
-      console.log('Accept modal opened - checking approval status:', {
-        hasApproval,
-        borrowerCollateralAllowance: borrowerCollateralAllowance ? borrowerCollateralAllowance.toString() : 'undefined',
-        collateralAmountBigInt: collateralAmountBigInt.toString(),
-        borrowerCollateralBalance: borrowerCollateralBalance ? borrowerCollateralBalance.toString() : 'undefined',
-        hasZeroBalance,
-        hasInsufficientBalance,
-        isPriceStale,
-        acceptStep: hasApproval ? 'accept' : 'approve',
-      });
       setAcceptStep(hasApproval ? 'accept' : 'approve');
       setSimulationError('');
     }
   }, [showAcceptModal, hasApproval, borrowerCollateralAllowance, collateralAmountBigInt, borrowerCollateralBalance, hasZeroBalance, hasInsufficientBalance, isPriceStale]);
 
   const handleApprove = async () => {
-    console.log('handleApprove called', { offer, address, selectedCollateralToken });
-
     if (!offer) {
       toast.error('Offer data not available');
       return;
@@ -354,13 +350,6 @@ export default function OfferDetailPage() {
       : offer.requiredCollateralAsset;
 
     try {
-      console.log('Simulating approve...', {
-        token: tokenToApprove,
-        spender: CONTRACT_ADDRESSES.loanMarketPlace,
-        amount: collateralAmountBigInt.toString()
-      });
-
-      // Simulate approval first with explicit account
       const simulation = await simulateContractWrite({
         address: tokenToApprove,
         abi: [
@@ -380,20 +369,14 @@ export default function OfferDetailPage() {
         account: address,
       });
 
-      console.log('Approval simulation result:', simulation);
-
       if (!simulation.success) {
         setSimulationError(simulation.errorMessage || 'Simulation failed');
         toast.error(simulation.errorMessage || 'Transaction will fail');
         return;
       }
 
-      console.log('Calling approveAsync...');
       await approveAsync(tokenToApprove, CONTRACT_ADDRESSES.loanMarketPlace, collateralAmountBigInt);
-      console.log('approveAsync completed');
-      // Transaction submitted - useEffect will handle success
     } catch (error: unknown) {
-      console.error('handleApprove error:', error);
       const errorMsg = formatSimulationError(error);
       setSimulationError(errorMsg);
       toast.error(errorMsg);
@@ -401,15 +384,11 @@ export default function OfferDetailPage() {
   };
 
   const handleAccept = async () => {
-    console.log('handleAccept called', { offer, offerId: offerId?.toString(), address });
-
     if (!offer || offerId === undefined) {
-      console.error('handleAccept: Missing offer or offerId', { offer, offerId: offerId?.toString() });
       toast.error('Unable to accept: Missing offer data');
       return;
     }
     if (!address) {
-      console.error('handleAccept: No wallet connected');
       toast.error('Please connect your wallet first');
       return;
     }
@@ -424,28 +403,11 @@ export default function OfferDetailPage() {
     setIsAccepting(true);
     setSimulationError('');
 
-    // Get the collateral asset - for flexible it's the selected token, otherwise it's from offer
     const collateralAssetToUse = isFlexibleCollateral
       ? (selectedCollateralToken as Address)
       : offer.requiredCollateralAsset;
 
-    // Debug logging
-    console.log('Accept Offer Debug:', {
-      offerId: offerId.toString(),
-      collateralAsset: collateralAssetToUse,
-      collateralAmount: collateralAmountBigInt.toString(),
-      collateralAmountFormatted: formatUnits(collateralAmountBigInt, collateralDecimals),
-      isFlexibleCollateral,
-      offerMinCollateral: offer.minCollateralAmount.toString(),
-      offerMinCollateralFormatted: formatUnits(offer.minCollateralAmount, collateralDecimals),
-      allowance: borrowerCollateralAllowance?.toString(),
-      balance: borrowerCollateralBalance?.toString(),
-      borrowAmount: parsedBorrowAmount.toString(),
-    });
-
     try {
-      console.log('Simulating acceptLenderOffer...');
-      // Simulate first with explicit account
       const simulation = await simulateContractWrite({
         address: CONTRACT_ADDRESSES.loanMarketPlace,
         abi: LoanMarketPlaceABI,
@@ -454,23 +416,16 @@ export default function OfferDetailPage() {
         account: address,
       });
 
-      console.log('Simulation result:', simulation);
-
       if (!simulation.success) {
         const errorMsg = simulation.errorMessage || 'Transaction would fail';
-        console.error('Simulation failed:', errorMsg);
         setSimulationError(errorMsg);
         toast.error(errorMsg);
         setIsAccepting(false);
         return;
       }
 
-      console.log('Calling acceptOfferAsync...');
       await acceptOfferAsync(offerId, collateralAssetToUse, collateralAmountBigInt, parsedBorrowAmount);
-      console.log('acceptOfferAsync completed');
-      // Transaction submitted - useEffect will handle success
     } catch (error: unknown) {
-      console.error('handleAccept error:', error);
       const errorMsg = formatSimulationError(error);
       setSimulationError(errorMsg);
       toast.error(errorMsg);
@@ -483,7 +438,7 @@ export default function OfferDetailPage() {
     toast.success('Address copied!');
   };
 
-  // Check if the main "Accept This Offer" button (that opens modal) should be disabled
+  // Disabled states
   const isOpenModalDisabled =
     !offer ||
     !isBorrowAmountValid ||
@@ -499,7 +454,6 @@ export default function OfferDetailPage() {
     approveIsPending ||
     isApprovalConfirming;
 
-  // Check if approve button in modal should be disabled
   const isApproveDisabled =
     !offer ||
     !isBorrowAmountValid ||
@@ -512,7 +466,6 @@ export default function OfferDetailPage() {
     approveIsPending ||
     isApprovalConfirming;
 
-  // Check if accept button in modal should be disabled (separate from approve)
   const isAcceptDisabled =
     !offer ||
     !isBorrowAmountValid ||
@@ -529,12 +482,14 @@ export default function OfferDetailPage() {
   if (offerLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full" />
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-8 h-8 animate-spin text-primary-400" />
+          <p className="text-sm text-gray-400">Loading offer details...</p>
+        </div>
       </div>
     );
   }
 
-  // Check if offer exists (invalid/empty slot will have zero address lender or zero lend amount)
   if (!offer || !offer.lender || offer.lender === '0x0000000000000000000000000000000000000000' || offer.lendAmount === BigInt(0)) {
     return (
       <div className="min-h-screen flex items-center justify-center py-12 px-4">
@@ -552,50 +507,133 @@ export default function OfferDetailPage() {
     );
   }
 
+  const statusConfig = STATUS_CONFIG[offer.status] || STATUS_CONFIG[LoanRequestStatus.PENDING];
   const canAccept = offer.status === LoanRequestStatus.PENDING && !isLender && isConnected;
 
   return (
-    <div className="min-h-screen py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen py-8 sm:py-12 px-4 sm:px-5 md:px-10 lg:px-20">
       <div className="max-w-[1920px] mx-auto">
         {/* Back Button */}
-        <Link href="/marketplace" className="inline-flex items-center gap-2 text-gray-400 hover:text-white mb-6 transition-colors">
-          <ArrowLeft className="w-4 h-4" />
-          Back to Marketplace
-        </Link>
+        <motion.div
+          initial={{ opacity: 0, x: -10 }}
+          animate={{ opacity: 1, x: 0 }}
+        >
+          <Link href="/marketplace" className="inline-flex items-center gap-2 text-gray-400 hover:text-white mb-6 transition-colors text-sm">
+            <ArrowLeft className="w-4 h-4" />
+            Back to Marketplace
+          </Link>
+        </motion.div>
 
-        {/* Header */}
+        {/* Hero Header Card */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8"
+          transition={{ delay: 0.05 }}
+          className="relative overflow-hidden rounded-2xl border border-primary-500/20 bg-gradient-to-br from-primary-500/10 via-accent-500/5 to-transparent p-6 sm:p-8 mb-8"
         >
-          <div>
-            <div className="flex items-center gap-3 mb-2">
-              <h1 className="text-3xl font-bold">Lender Offer #{offer.offerId.toString()}</h1>
-              <RequestStatusBadge status={offer.status} />
-            </div>
-            <p className="text-gray-400">
-              {isLender ? 'Your offer to lend' : 'Lender offering'}{' '}
-              <span className="text-white font-medium">
-                {formatTokenAmount(offer.lendAmount, lendDecimals)} {lendSymbol}
-              </span>
-            </p>
-          </div>
+          {/* Background decoration */}
+          <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
+          <div className="absolute bottom-0 left-0 w-48 h-48 bg-accent-500/5 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2" />
 
-          {canAccept && (
-            <Button
-              onClick={openAcceptModal}
-              icon={<Wallet className="w-4 h-4" />}
-              size="lg"
-              disabled={isOpenModalDisabled}
-            >
-              Accept This Offer
-            </Button>
-          )}
+          <div className="relative z-10">
+            {/* Top row: ID + Status */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-primary-500/20 border border-primary-500/30 flex items-center justify-center">
+                  <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6 text-primary-400" />
+                </div>
+                <div>
+                  <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold">
+                    Lender Offer <span className="text-primary-400">#{offer.offerId.toString()}</span>
+                  </h1>
+                  <p className="text-sm text-gray-400 mt-0.5">
+                    {isLender ? 'Your lending offer' : 'Lending offer available'}
+                  </p>
+                </div>
+              </div>
+
+              <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium ${statusConfig.bgColor} ${statusConfig.borderColor} border ${statusConfig.color} self-start sm:self-auto`}>
+                {statusConfig.icon}
+                {statusConfig.label}
+              </div>
+            </div>
+
+            {/* Key Metrics Row */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+              <div className="bg-white/5 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-white/5">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <Coins className="w-3.5 h-3.5 text-primary-400" />
+                  <span className="text-xs text-gray-400">Lend Amount</span>
+                </div>
+                <p className="text-lg sm:text-xl font-bold text-primary-400 truncate">
+                  {formatTokenAmount(offer.lendAmount, lendDecimals)} <span className="text-sm text-gray-300">{lendSymbol}</span>
+                </p>
+                {lendUSD > 0 && (
+                  <p className="text-xs text-gray-500 mt-0.5">~${lendUSD.toFixed(2)}</p>
+                )}
+              </div>
+
+              <div className="bg-white/5 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-white/5">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <Percent className="w-3.5 h-3.5 text-yellow-400" />
+                  <span className="text-xs text-gray-400">Interest Rate</span>
+                </div>
+                <p className="text-lg sm:text-xl font-bold text-yellow-400">
+                  {formatPercentage(offer.interestRate)}
+                  <span className="text-xs font-normal text-gray-400 ml-1">APY</span>
+                </p>
+              </div>
+
+              <div className="bg-white/5 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-white/5">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <Timer className="w-3.5 h-3.5 text-blue-400" />
+                  <span className="text-xs text-gray-400">Duration</span>
+                </div>
+                <p className="text-lg sm:text-xl font-bold text-white">
+                  {formatDuration(offer.duration)}
+                </p>
+              </div>
+
+              <div className="bg-white/5 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-white/5">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <Wallet className="w-3.5 h-3.5 text-purple-400" />
+                  <span className="text-xs text-gray-400">Collateral</span>
+                </div>
+                {isFlexibleCollateral ? (
+                  <p className="text-lg sm:text-xl font-bold text-accent-400">
+                    Any Token
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-lg sm:text-xl font-bold text-white truncate">
+                      {formatTokenAmount(offer.minCollateralAmount, collateralDecimals)} <span className="text-sm text-gray-300">{collateralSymbol}</span>
+                    </p>
+                    {minCollateralUSD > 0 && (
+                      <p className="text-xs text-gray-500 mt-0.5">~${minCollateralUSD.toFixed(2)}</p>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            {canAccept && (
+              <div className="flex flex-wrap gap-3 mt-6">
+                <Button
+                  onClick={openAcceptModal}
+                  icon={<Wallet className="w-4 h-4" />}
+                  size="lg"
+                  disabled={isOpenModalDisabled}
+                >
+                  Accept This Offer
+                </Button>
+              </div>
+            )}
+          </div>
         </motion.div>
 
         <div className="grid lg:grid-cols-3 gap-6">
-          {/* Main Info */}
+          {/* Main Content */}
           <div className="lg:col-span-2 space-y-6">
             {/* Offer Details Card */}
             <motion.div
@@ -604,308 +642,292 @@ export default function OfferDetailPage() {
               transition={{ delay: 0.1 }}
             >
               <Card>
-                <h2 className="text-xl font-bold mb-6">Offer Details</h2>
-                <div className="grid sm:grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <div>
-                      <p className="text-sm text-gray-400 mb-1">Lend Amount</p>
-                      <p className="text-lg font-semibold">
+                <div className="flex items-center gap-2 mb-5">
+                  <Coins className="w-5 h-5 text-primary-400" />
+                  <h2 className="text-lg font-bold">Offer Details</h2>
+                </div>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between py-3 border-b border-white/5">
+                    <span className="text-sm text-gray-400">Lend Amount</span>
+                    <div className="text-right">
+                      <span className="font-semibold">
                         {formatTokenAmount(offer.lendAmount, lendDecimals)} {lendSymbol}
-                      </p>
+                      </span>
                       {lendUSD > 0 && (
-                        <p className="text-sm text-gray-500">~${lendUSD.toFixed(2)} USD</p>
+                        <p className="text-xs text-gray-500">~${lendUSD.toFixed(2)} USD</p>
                       )}
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-400 mb-1">Interest Rate</p>
-                      <p className="text-lg font-semibold text-green-400">
-                        {formatPercentage(offer.interestRate)} APY
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-400 mb-1">Duration</p>
-                      <p className="text-lg font-semibold">
-                        {formatDuration(offer.duration)}
-                      </p>
                     </div>
                   </div>
-
-                  <div className="space-y-4">
-                    <div>
-                      <p className="text-sm text-gray-400 mb-1">Required Collateral</p>
-                      {isFlexibleCollateral ? (
-                        <p className="text-lg font-semibold text-accent-400">
-                          Borrower chooses
-                        </p>
-                      ) : (
-                        <>
-                          <p className="text-lg font-semibold">
-                            {formatTokenAmount(offer.minCollateralAmount, collateralDecimals)} {collateralSymbol}
-                          </p>
-                          {minCollateralUSD > 0 && (
-                            <p className="text-sm text-gray-500">~${minCollateralUSD.toFixed(2)} USD</p>
-                          )}
-                        </>
-                      )}
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-400 mb-1">Collateral Token</p>
-                      {isFlexibleCollateral ? (
-                        <p className="text-lg font-semibold text-accent-400">
-                          Any supported token
-                        </p>
-                      ) : (
-                        <p className="text-lg font-semibold">
-                          {collateralSymbol}
-                        </p>
-                      )}
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-400 mb-1">LTV Ratio</p>
-                      {isFlexibleCollateral ? (
-                        <p className="text-sm text-gray-500">
-                          Depends on collateral chosen
-                        </p>
-                      ) : (
-                        <p className={`text-lg font-semibold ${currentLTV > 80 ? 'text-red-400' : currentLTV > 70 ? 'text-yellow-400' : 'text-green-400'}`}>
-                          {currentLTV.toFixed(1)}%
-                        </p>
-                      )}
-                    </div>
+                  <div className="flex items-center justify-between py-3 border-b border-white/5">
+                    <span className="text-sm text-gray-400">Remaining Available</span>
+                    <span className="font-semibold text-primary-400">
+                      {formatTokenAmount(remainingAmount, lendDecimals)} {lendSymbol}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between py-3 border-b border-white/5">
+                    <span className="text-sm text-gray-400">Interest Rate</span>
+                    <span className="font-semibold text-yellow-400">
+                      {formatPercentage(offer.interestRate)} APY
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between py-3 border-b border-white/5">
+                    <span className="text-sm text-gray-400">Duration</span>
+                    <span className="font-semibold">{formatDuration(offer.duration)}</span>
+                  </div>
+                  <div className="flex items-center justify-between py-3 border-b border-white/5">
+                    <span className="text-sm text-gray-400">Required Collateral</span>
+                    {isFlexibleCollateral ? (
+                      <span className="font-semibold text-accent-400">Borrower chooses</span>
+                    ) : (
+                      <div className="text-right">
+                        <span className="font-semibold">
+                          {formatTokenAmount(offer.minCollateralAmount, collateralDecimals)} {collateralSymbol}
+                        </span>
+                        {minCollateralUSD > 0 && (
+                          <p className="text-xs text-gray-500">~${minCollateralUSD.toFixed(2)} USD</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between py-3">
+                    <span className="text-sm text-gray-400">LTV Ratio</span>
+                    {isFlexibleCollateral ? (
+                      <span className="text-sm text-gray-500">Depends on collateral chosen</span>
+                    ) : (
+                      <span className={`font-semibold ${currentLTV > 80 ? 'text-red-400' : currentLTV > 70 ? 'text-yellow-400' : 'text-green-400'}`}>
+                        {currentLTV.toFixed(1)}%
+                      </span>
+                    )}
                   </div>
                 </div>
               </Card>
             </motion.div>
 
-            {/* Lender Info */}
+            {/* Lender */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
+              transition={{ delay: 0.15 }}
             >
               <Card>
-                <h2 className="text-xl font-bold mb-6">Lender</h2>
-                <div className="flex items-center justify-between p-4 glass-card rounded-xl">
+                <div className="flex items-center gap-2 mb-5">
+                  <User className="w-5 h-5 text-accent-400" />
+                  <h2 className="text-lg font-bold">Lender</h2>
+                </div>
+                <div className="flex items-center justify-between p-4 rounded-xl bg-white/[0.03] border border-white/5 hover:border-white/10 transition-colors">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-accent-500/20 flex items-center justify-center">
+                    <div className="w-10 h-10 rounded-full bg-accent-500/15 flex items-center justify-center">
                       <User className="w-5 h-5 text-accent-400" />
                     </div>
                     <div>
-                      <p className="text-sm text-gray-400">Wallet Address</p>
-                      <p className="font-mono">{formatAddress(offer.lender, 6)}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs text-gray-400">Wallet Address</p>
+                        {isLender && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary-500/20 text-primary-400">You</span>
+                        )}
+                      </div>
+                      <p className="font-mono text-sm mt-0.5">{formatAddress(offer.lender, 6)}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {isLender && <Badge variant="info" size="sm">You</Badge>}
-                    <button onClick={() => copyAddress(offer.lender)} className="p-2 hover:bg-white/10 rounded-lg">
-                      <Copy className="w-4 h-4" />
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => copyAddress(offer.lender)} className="p-2 hover:bg-white/10 rounded-lg transition-colors">
+                      <Copy className="w-4 h-4 text-gray-400" />
                     </button>
                     <a
                       href={`${DEFAULT_CHAIN.blockExplorer}/address/${offer.lender}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="p-2 hover:bg-white/10 rounded-lg"
+                      className="p-2 hover:bg-white/10 rounded-lg transition-colors"
                     >
-                      <ExternalLink className="w-4 h-4" />
+                      <ExternalLink className="w-4 h-4 text-gray-400" />
                     </a>
                   </div>
                 </div>
               </Card>
             </motion.div>
 
-            {/* Borrowing Opportunity (for borrowers) */}
+            {/* Borrowing Opportunity */}
             {!isLender && offer.status === LoanRequestStatus.PENDING && (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3 }}
+                transition={{ delay: 0.2 }}
               >
-                <Card className="border border-accent-500/30 bg-accent-500/5">
-                  <div className="flex items-center gap-2 mb-4">
-                    <TrendingUp className="w-5 h-5 text-accent-400" />
-                    <h3 className="font-semibold">Borrowing Opportunity</h3>
-                  </div>
-                  <div className="space-y-3">
-                    {/* Borrow Amount Input for Partial Borrowing */}
-                    <div className="py-2 border-b border-white/10">
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="text-gray-400">Amount to Borrow</span>
-                        <span className="text-xs text-gray-500">
-                          Max: {formatTokenAmount(remainingAmount, lendDecimals)} {lendSymbol}
+                <div className="relative overflow-hidden rounded-2xl border border-accent-500/20 bg-gradient-to-br from-accent-500/10 via-accent-500/5 to-transparent p-6">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-accent-500/10 rounded-full blur-2xl" />
+                  <div className="relative z-10">
+                    <div className="flex items-center gap-2 mb-5">
+                      <TrendingUp className="w-5 h-5 text-accent-400" />
+                      <h3 className="text-lg font-bold">Borrowing Opportunity</h3>
+                    </div>
+                    <div className="space-y-0">
+                      {/* Borrow Amount Input */}
+                      <div className="py-3 border-b border-white/5">
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="text-sm text-gray-400">Amount to Borrow</span>
+                          <span className="text-xs text-gray-500">
+                            Max: {formatTokenAmount(remainingAmount, lendDecimals)} {lendSymbol}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            step="any"
+                            min="0"
+                            value={borrowAmountInput}
+                            onChange={(e) => setBorrowAmountInput(e.target.value)}
+                            placeholder="0.0"
+                            className="input-field flex-1"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setBorrowAmountInput(formatUnits(remainingAmount, lendDecimals))}
+                            className="px-3 py-2 text-xs font-semibold text-accent-400 hover:text-accent-300 bg-accent-400/10 hover:bg-accent-400/20 rounded-lg transition-colors"
+                          >
+                            MAX
+                          </button>
+                          <span className="text-sm text-gray-400 min-w-[50px]">{lendSymbol}</span>
+                        </div>
+                        {!isBorrowAmountValid && borrowAmountInput && (
+                          <p className="text-xs text-red-400 mt-1">
+                            {parsedBorrowAmount > remainingAmount
+                              ? 'Amount exceeds available'
+                              : 'Enter a valid amount'}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex justify-between items-center py-3 border-b border-white/5">
+                        <span className="text-sm text-gray-400">You Will Receive</span>
+                        <span className="font-semibold text-accent-400">
+                          {borrowAmountInput || '0'} {lendSymbol}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="number"
-                          step="any"
-                          min="0"
-                          value={borrowAmountInput}
-                          onChange={(e) => setBorrowAmountInput(e.target.value)}
-                          placeholder="0.0"
-                          className="input-field flex-1"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setBorrowAmountInput(formatUnits(remainingAmount, lendDecimals))}
-                          className="px-3 py-2 text-xs font-semibold text-accent-400 hover:text-accent-300 bg-accent-400/10 hover:bg-accent-400/20 rounded-lg transition-colors"
-                        >
-                          MAX
-                        </button>
-                        <span className="text-sm text-gray-400 min-w-[50px]">{lendSymbol}</span>
-                      </div>
-                      {!isBorrowAmountValid && borrowAmountInput && (
-                        <p className="text-xs text-red-400 mt-1">
-                          {parsedBorrowAmount > remainingAmount
-                            ? 'Amount exceeds available'
-                            : 'Enter a valid amount'}
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex justify-between items-center py-2 border-b border-white/10">
-                      <span className="text-gray-400">You Will Receive</span>
-                      <span className="font-medium text-accent-400">
-                        {borrowAmountInput || '0'} {lendSymbol}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center py-2 border-b border-white/10">
-                      <span className="text-gray-400">Interest Rate</span>
-                      <span className="font-medium text-yellow-400">
-                        {formatPercentage(offer.interestRate)} APY
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center py-2 border-b border-white/10">
-                      <span className="text-gray-400">Collateral Required</span>
-                      {isFlexibleCollateral ? (
-                        <span className="font-medium text-accent-400">You choose</span>
-                      ) : (
-                        <span className="font-medium">
-                          {formatTokenAmount(offer.minCollateralAmount, collateralDecimals)} {collateralSymbol}
+                      <div className="flex justify-between items-center py-3 border-b border-white/5">
+                        <span className="text-sm text-gray-400">Interest Rate</span>
+                        <span className="font-semibold text-yellow-400">
+                          {formatPercentage(offer.interestRate)} APY
                         </span>
-                      )}
-                    </div>
-                    <div className="flex justify-between items-center py-2">
-                      <span className="text-gray-400">Loan Duration</span>
-                      <span className="font-medium">
-                        {formatDuration(offer.duration)}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Flexible Collateral Selection */}
-                  {isFlexibleCollateral && isConnected && (
-                    <div className="mt-4 pt-4 border-t border-white/10 space-y-4">
-                      <div className="bg-accent-500/10 border border-accent-500/30 rounded-lg p-3">
-                        <p className="text-sm text-accent-400 font-medium">Flexible Collateral</p>
-                        <p className="text-xs text-gray-400 mt-1">
-                          This offer accepts any supported collateral. Select your token and the required amount will be calculated.
-                        </p>
                       </div>
-
-                      {/* Token Selection */}
-                      <div>
-                        <label className="block text-sm text-gray-400 mb-2">Select Collateral Token</label>
-                        <select
-                          value={selectedCollateralToken}
-                          onChange={(e) => {
-                            setSelectedCollateralToken(e.target.value as Address);
-                          }}
-                          className="w-full input-field bg-gray-800 border border-gray-700 rounded-lg px-4 py-3"
-                        >
-                          <option value="">Select a token</option>
-                          {TOKEN_LIST.filter(t => t.symbol !== 'USDC' && t.symbol !== 'USDT' && t.symbol !== 'DAI').map((token) => (
-                            <option key={token.address} value={token.address}>
-                              {token.symbol}
-                            </option>
-                          ))}
-                        </select>
+                      <div className="flex justify-between items-center py-3 border-b border-white/5">
+                        <span className="text-sm text-gray-400">Collateral Required</span>
+                        {isFlexibleCollateral ? (
+                          <span className="font-semibold text-accent-400">You choose</span>
+                        ) : (
+                          <span className="font-semibold">
+                            {requiredCollateralFormatted} {collateralSymbol}
+                          </span>
+                        )}
                       </div>
+                      <div className="flex justify-between items-center py-3">
+                        <span className="text-sm text-gray-400">Loan Duration</span>
+                        <span className="font-semibold">{formatDuration(offer.duration)}</span>
+                      </div>
+                    </div>
 
-                      {/* Calculated Amount Display */}
-                      {selectedCollateralToken && (
+                    {/* Flexible Collateral Selection */}
+                    {isFlexibleCollateral && isConnected && (
+                      <div className="mt-5 pt-5 border-t border-white/5 space-y-4">
+                        <div className="p-3 rounded-xl bg-accent-500/10 border border-accent-500/20">
+                          <p className="text-sm text-accent-400 font-medium">Flexible Collateral</p>
+                          <p className="text-xs text-gray-400 mt-1">
+                            This offer accepts any supported collateral. Select your token and the required amount will be calculated.
+                          </p>
+                        </div>
+
                         <div>
-                          <label className="block text-sm text-gray-400 mb-2">Required Collateral (calculated)</label>
-                          <div className="p-4 bg-gray-800/50 border border-gray-700 rounded-lg">
-                            {collateralAmountBigInt > BigInt(0) ? (
-                              <div className="flex justify-between items-center">
-                                <span className="text-xl font-bold text-white">
-                                  {requiredCollateralFormatted} {collateralSymbol}
-                                </span>
-                                {minCollateralUSD > 0 && (
-                                  <span className="text-sm text-gray-400">~${minCollateralUSD.toFixed(2)} USD</span>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="text-gray-400">Loading prices...</span>
-                            )}
-                            <p className="text-xs text-gray-500 mt-2">
-                              Based on {currentLTV.toFixed(1)}% LTV
-                            </p>
-                          </div>
-                          <div className="flex justify-between text-xs text-gray-400 mt-2">
-                            <span>Your Balance: {maxCollateralBalance} {collateralSymbol}</span>
-                            {hasInsufficientBalance && (
-                              <span className="text-red-400">Insufficient balance</span>
-                            )}
-                          </div>
+                          <label className="block text-sm text-gray-400 mb-2">Select Collateral Token</label>
+                          <select
+                            value={selectedCollateralToken}
+                            onChange={(e) => setSelectedCollateralToken(e.target.value as Address)}
+                            className="w-full input-field bg-gray-800 border border-gray-700 rounded-lg px-4 py-3"
+                          >
+                            <option value="">Select a token</option>
+                            {TOKEN_LIST.filter(t => t.symbol !== 'USDC' && t.symbol !== 'USDT' && t.symbol !== 'DAI').map((token) => (
+                              <option key={token.address} value={token.address}>
+                                {token.symbol}
+                              </option>
+                            ))}
+                          </select>
                         </div>
-                      )}
-                    </div>
-                  )}
 
-                  {/* Balance Status - for fixed collateral offers */}
-                  {!isFlexibleCollateral && isConnected && (
-                    <div className="mt-4 pt-4 border-t border-white/10">
-                      <div className="flex justify-between items-center text-sm">
-                        <span className="text-gray-400">Your {collateralSymbol} Balance</span>
-                        <span className={hasInsufficientBalance ? 'text-red-400' : 'text-green-400'}>
-                          {borrowerCollateralBalance ? formatTokenAmount(borrowerCollateralBalance as bigint, collateralDecimals) : '0'} {collateralSymbol}
-                        </span>
+                        {selectedCollateralToken && (
+                          <div>
+                            <label className="block text-sm text-gray-400 mb-2">Required Collateral (calculated)</label>
+                            <div className="p-4 rounded-xl bg-white/[0.03] border border-white/5">
+                              {collateralAmountBigInt > BigInt(0) ? (
+                                <div className="flex justify-between items-center">
+                                  <span className="text-xl font-bold text-white">
+                                    {requiredCollateralFormatted} {collateralSymbol}
+                                  </span>
+                                  {minCollateralUSD > 0 && (
+                                    <span className="text-sm text-gray-400">~${minCollateralUSD.toFixed(2)} USD</span>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-gray-400">Loading prices...</span>
+                              )}
+                              <p className="text-xs text-gray-500 mt-2">
+                                Based on {currentLTV.toFixed(1)}% LTV
+                              </p>
+                            </div>
+                            <div className="flex justify-between text-xs text-gray-400 mt-2">
+                              <span>Your Balance: {maxCollateralBalance} {collateralSymbol}</span>
+                              {hasInsufficientBalance && (
+                                <span className="text-red-400">Insufficient balance</span>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </div>
+                    )}
 
-                      {/* Zero Balance Warning */}
-                      {hasZeroBalance && (
-                        <div className="mt-3 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-                          <div className="flex gap-2 items-start">
-                            <AlertCircle className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
-                            <div className="text-sm">
-                              <p className="text-yellow-400 font-medium">No {collateralSymbol} Balance</p>
-                              <p className="text-gray-400 mt-1">
-                                You need {collateralSymbol} tokens to accept this offer.{' '}
-                                <Link
-                                  href="/faucet"
-                                  className="text-primary-400 hover:text-primary-300 hover:underline font-medium"
-                                >
-                                  Get test tokens from the faucet
-                                </Link>
-                              </p>
+                    {/* Balance Status - for fixed collateral offers */}
+                    {!isFlexibleCollateral && isConnected && (
+                      <div className="mt-5 pt-5 border-t border-white/5">
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-gray-400">Your {collateralSymbol} Balance</span>
+                          <span className={hasInsufficientBalance ? 'text-red-400' : 'text-green-400'}>
+                            {borrowerCollateralBalance ? formatTokenAmount(borrowerCollateralBalance as bigint, collateralDecimals) : '0'} {collateralSymbol}
+                          </span>
+                        </div>
+
+                        {hasZeroBalance && (
+                          <div className="mt-3 p-3 rounded-xl bg-yellow-500/10 border border-yellow-500/20">
+                            <div className="flex gap-2 items-start">
+                              <AlertCircle className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
+                              <div className="text-sm">
+                                <p className="text-yellow-400 font-medium">No {collateralSymbol} Balance</p>
+                                <p className="text-gray-400 mt-1">
+                                  You need {collateralSymbol} tokens to accept this offer.{' '}
+                                  <Link href="/faucet" className="text-primary-400 hover:text-primary-300 hover:underline font-medium">
+                                    Get test tokens from the faucet
+                                  </Link>
+                                </p>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      )}
+                        )}
 
-                      {/* Insufficient Balance Warning */}
-                      {hasInsufficientBalance && !hasZeroBalance && (
-                        <div className="mt-3 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
-                          <div className="flex gap-2 items-start">
-                            <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
-                            <div className="text-sm">
-                              <p className="text-red-400 font-medium">Insufficient Balance</p>
-                              <p className="text-gray-400 mt-1">
-                                You need {formatTokenAmount(offer.minCollateralAmount, collateralDecimals)} {collateralSymbol} but only have {formatTokenAmount(borrowerCollateralBalance as bigint, collateralDecimals)}.{' '}
-                                <Link
-                                  href="/faucet"
-                                  className="text-primary-400 hover:text-primary-300 hover:underline font-medium"
-                                >
-                                  Get more tokens from the faucet
-                                </Link>
-                              </p>
+                        {hasInsufficientBalance && !hasZeroBalance && (
+                          <div className="mt-3 p-3 rounded-xl bg-red-500/10 border border-red-500/20">
+                            <div className="flex gap-2 items-start">
+                              <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+                              <div className="text-sm">
+                                <p className="text-red-400 font-medium">Insufficient Balance</p>
+                                <p className="text-gray-400 mt-1">
+                                  You need {formatTokenAmount(offer.minCollateralAmount, collateralDecimals)} {collateralSymbol} but only have {formatTokenAmount(borrowerCollateralBalance as bigint, collateralDecimals)}.{' '}
+                                  <Link href="/faucet" className="text-primary-400 hover:text-primary-300 hover:underline font-medium">
+                                    Get more tokens from the faucet
+                                  </Link>
+                                </p>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </Card>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </motion.div>
             )}
 
@@ -914,9 +936,9 @@ export default function OfferDetailPage() {
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.35 }}
+                transition={{ delay: 0.25 }}
               >
-                <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
+                <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl">
                   <div className="flex gap-3">
                     <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
                     <div className="flex-1 space-y-2 text-sm">
@@ -942,88 +964,113 @@ export default function OfferDetailPage() {
 
           {/* Sidebar */}
           <div className="space-y-6">
-            {/* Status & Timeline */}
+            {/* Status Card */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4 }}
+              transition={{ delay: 0.3 }}
             >
               <Card>
-                <div className="flex items-center gap-2 mb-4">
-                  <Clock className="w-5 h-5 text-yellow-400" />
-                  <h3 className="font-semibold">Timeline</h3>
-                </div>
-                <div className="space-y-3 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Created</span>
-                    <span>{new Date(Number(offer.createdAt) * 1000).toLocaleDateString()}</span>
+                <h3 className="text-lg font-bold mb-4">Status</h3>
+                {offer.status === LoanRequestStatus.PENDING && !isLender && (
+                  <div className="text-center py-6">
+                    {isConnected ? (
+                      <>
+                        <div className="w-16 h-16 rounded-full bg-primary-500/10 border border-primary-500/20 flex items-center justify-center mx-auto mb-3">
+                          <Wallet className="w-8 h-8 text-primary-400" />
+                        </div>
+                        <p className="text-primary-400 font-semibold">Available to Borrow</p>
+                        <p className="text-gray-400 text-sm mt-1 max-w-[200px] mx-auto">
+                          You can accept this offer by providing collateral
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <div className="w-16 h-16 rounded-full bg-gray-500/10 border border-gray-500/20 flex items-center justify-center mx-auto mb-3">
+                          <Wallet className="w-8 h-8 text-gray-400" />
+                        </div>
+                        <p className="text-gray-400 font-semibold">Connect Wallet</p>
+                        <p className="text-gray-500 text-sm mt-1">Connect wallet to accept this offer</p>
+                      </>
+                    )}
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Expires</span>
-                    <span>{formatTimeUntil(offer.expireAt)}</span>
+                )}
+                {offer.status === LoanRequestStatus.PENDING && isLender && (
+                  <div className="text-center py-6">
+                    <div className="w-16 h-16 rounded-full bg-yellow-500/10 border border-yellow-500/20 flex items-center justify-center mx-auto mb-3">
+                      <Clock className="w-8 h-8 text-yellow-400" />
+                    </div>
+                    <p className="text-yellow-400 font-semibold">Awaiting Acceptance</p>
+                    <p className="text-gray-400 text-sm mt-1 max-w-[200px] mx-auto">
+                      Your offer is visible to borrowers
+                    </p>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Loan Duration</span>
-                    <span>{formatDuration(offer.duration)}</span>
+                )}
+                {offer.status === LoanRequestStatus.FUNDED && (
+                  <div className="text-center py-6">
+                    <div className="w-16 h-16 rounded-full bg-green-500/10 border border-green-500/20 flex items-center justify-center mx-auto mb-3">
+                      <CheckCircle className="w-8 h-8 text-green-400" />
+                    </div>
+                    <p className="text-green-400 font-semibold">Offer Accepted</p>
+                    <p className="text-gray-400 text-sm mt-1">This loan is now active</p>
                   </div>
-                </div>
+                )}
+                {offer.status === LoanRequestStatus.CANCELLED && (
+                  <div className="text-center py-6">
+                    <div className="w-16 h-16 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto mb-3">
+                      <XCircle className="w-8 h-8 text-red-400" />
+                    </div>
+                    <p className="text-red-400 font-semibold">Offer Cancelled</p>
+                  </div>
+                )}
               </Card>
             </motion.div>
 
-            {/* Actions */}
+            {/* Timeline */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.5 }}
+              transition={{ delay: 0.35 }}
             >
               <Card>
-                <h3 className="font-semibold mb-4">Actions</h3>
-                <div className="space-y-3">
-                  {offer.status === LoanRequestStatus.PENDING && !isLender && (
-                    <>
-                      {isConnected ? (
-                        <Button
-                          onClick={openAcceptModal}
-                          className="w-full"
-                          icon={<Wallet className="w-4 h-4" />}
-                          disabled={isOpenModalDisabled}
-                        >
-                          Accept This Offer
-                        </Button>
-                      ) : (
-                        <p className="text-center text-gray-400 text-sm">
-                          Connect wallet to accept this offer
-                        </p>
-                      )}
-                    </>
-                  )}
+                <div className="flex items-center gap-2 mb-5">
+                  <Calendar className="w-5 h-5 text-blue-400" />
+                  <h3 className="text-lg font-bold">Timeline</h3>
+                </div>
+                <div className="space-y-4">
+                  <div className="relative pl-6">
+                    <div className="absolute left-[7px] top-1 w-0.5 h-[calc(100%-8px)] bg-white/10" />
 
-                  {offer.status === LoanRequestStatus.PENDING && isLender && (
-                    <div className="text-center py-4">
-                      <Clock className="w-12 h-12 text-yellow-400 mx-auto mb-2" />
-                      <p className="text-yellow-400 font-semibold">Awaiting Acceptance</p>
-                      <p className="text-gray-400 text-sm mt-1">
-                        Your offer is visible to borrowers
-                      </p>
+                    <div className="relative pb-4">
+                      <div className="absolute -left-6 top-1 w-4 h-4 rounded-full bg-green-500/20 border-2 border-green-500 flex items-center justify-center">
+                        <div className="w-1.5 h-1.5 rounded-full bg-green-400" />
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-400">Created</span>
+                        <span className="text-sm font-medium">{new Date(Number(offer.createdAt) * 1000).toLocaleDateString()}</span>
+                      </div>
                     </div>
-                  )}
 
-                  {offer.status === LoanRequestStatus.FUNDED && (
-                    <div className="text-center py-4">
-                      <CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-2" />
-                      <p className="text-green-400 font-semibold">Offer Accepted</p>
-                      <p className="text-gray-400 text-sm mt-1">
-                        This loan is now active
-                      </p>
+                    <div className="relative pb-4">
+                      <div className="absolute -left-6 top-1 w-4 h-4 rounded-full bg-yellow-500/20 border-2 border-yellow-500 flex items-center justify-center">
+                        <div className="w-1.5 h-1.5 rounded-full bg-yellow-400" />
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-400">Expires</span>
+                        <span className="text-sm font-medium">{formatTimeUntil(offer.expireAt)}</span>
+                      </div>
                     </div>
-                  )}
 
-                  {offer.status === LoanRequestStatus.CANCELLED && (
-                    <div className="text-center py-4">
-                      <XCircle className="w-12 h-12 text-red-400 mx-auto mb-2" />
-                      <p className="text-red-400 font-semibold">Offer Cancelled</p>
+                    <div className="relative">
+                      <div className="absolute -left-6 top-1 w-4 h-4 rounded-full bg-gray-500/20 border-2 border-gray-500 flex items-center justify-center">
+                        <div className="w-1.5 h-1.5 rounded-full bg-gray-400" />
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-400">Duration</span>
+                        <span className="text-sm font-medium">{formatDuration(offer.duration)}</span>
+                      </div>
                     </div>
-                  )}
+                  </div>
                 </div>
               </Card>
             </motion.div>
@@ -1032,31 +1079,39 @@ export default function OfferDetailPage() {
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.6 }}
+              transition={{ delay: 0.4 }}
             >
               <Card>
                 <div className="flex items-center gap-2 mb-4">
                   <Shield className="w-5 h-5 text-accent-400" />
-                  <h3 className="font-semibold">Security</h3>
+                  <h3 className="text-lg font-bold">Security</h3>
                 </div>
-                <div className="space-y-2 text-sm text-gray-400">
+                <div className="space-y-3">
                   {isFlexibleCollateral ? (
                     <>
-                      <p>
+                      <p className="text-sm text-gray-400 leading-relaxed">
                         This offer accepts any supported collateral token. Select your token and the required amount will be calculated based on current market prices and LTV ratios.
                       </p>
-                      <p className="text-accent-400 font-medium">
-                        Collateral: Calculated from LTV
-                      </p>
+                      <div className="p-3 rounded-lg bg-accent-500/10 border border-accent-500/15">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-gray-400">Collateral</span>
+                          <span className="text-sm font-bold text-accent-400">Calculated from LTV</span>
+                        </div>
+                      </div>
                     </>
                   ) : (
                     <>
-                      <p>
+                      <p className="text-sm text-gray-400 leading-relaxed">
                         The collateral amount is fixed by the lender&apos;s offer terms. Your collateral is secured by smart contract.
                       </p>
-                      <p className="text-accent-400 font-medium">
-                        Required: {formatTokenAmount(offer.minCollateralAmount, collateralDecimals)} {collateralSymbol}
-                      </p>
+                      <div className="p-3 rounded-lg bg-primary-500/10 border border-primary-500/15">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-gray-400">Required</span>
+                          <span className="text-sm font-bold text-primary-400">
+                            {formatTokenAmount(offer.minCollateralAmount, collateralDecimals)} {collateralSymbol}
+                          </span>
+                        </div>
+                      </div>
                     </>
                   )}
                 </div>
@@ -1110,14 +1165,11 @@ export default function OfferDetailPage() {
           {/* Collateral Display/Selection */}
           {isFlexibleCollateral ? (
             <div className="space-y-4">
-              {/* Token Selection */}
               <div>
                 <label className="block text-sm text-gray-400 mb-2">Select Collateral Token</label>
                 <select
                   value={selectedCollateralToken}
-                  onChange={(e) => {
-                    setSelectedCollateralToken(e.target.value as Address);
-                  }}
+                  onChange={(e) => setSelectedCollateralToken(e.target.value as Address)}
                   className="w-full input-field bg-gray-800 border border-gray-700 rounded-lg px-4 py-3"
                 >
                   <option value="">Select a token</option>
@@ -1129,7 +1181,6 @@ export default function OfferDetailPage() {
                 </select>
               </div>
 
-              {/* Calculated Amount Display */}
               {selectedCollateralToken && (
                 <div>
                   <label className="block text-sm text-gray-400 mb-2">Required Collateral (calculated)</label>
@@ -1193,7 +1244,7 @@ export default function OfferDetailPage() {
             </div>
           )}
 
-          {/* Zero Balance Warning - only show for fixed collateral or when flexible token is selected */}
+          {/* Zero Balance Warning */}
           {((!isFlexibleCollateral && hasZeroBalance) || (isFlexibleCollateral && selectedCollateralToken && hasZeroBalance)) && (
             <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
               <div className="flex gap-2 items-start">
@@ -1272,11 +1323,10 @@ export default function OfferDetailPage() {
             </div>
           )}
 
-          {/* Steps - Only show when balance is sufficient and (for flexible) token is selected */}
+          {/* Steps */}
           {((!isFlexibleCollateral && !hasZeroBalance && !hasInsufficientBalance && !isPriceStale) ||
             (isFlexibleCollateral && hasValidFlexibleInput && !hasZeroBalance && !hasInsufficientBalance && !isPriceStale)) && (
             <div className="space-y-4">
-              {/* Step Indicator */}
               <div className="flex items-center gap-4">
                 <div className={`flex items-center gap-2 ${acceptStep === 'approve' || hasApproval ? 'text-primary-400' : 'text-gray-500'}`}>
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center ${hasApproval ? 'bg-green-500' : acceptStep === 'approve' ? 'bg-primary-500' : 'bg-gray-700'}`}>
@@ -1293,7 +1343,6 @@ export default function OfferDetailPage() {
                 </div>
               </div>
 
-              {/* Approval Explanation */}
               {!hasApproval && (
                 <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
                   <p className="text-xs text-gray-300">
@@ -1302,7 +1351,6 @@ export default function OfferDetailPage() {
                 </div>
               )}
 
-              {/* Action Button */}
               {!hasApproval ? (
                 <Button
                   onClick={handleApprove}

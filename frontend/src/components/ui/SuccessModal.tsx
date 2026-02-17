@@ -6,13 +6,12 @@ import { Button } from '@/components/ui/Button';
 
 interface SuccessModalProps {
   isOpen: boolean;
-  amount: string;
-  tokenSymbol: string;
-  rate: number;
+  title: string;
+  message: string;
   onGoToMarketplace: () => void;
 }
 
-export function SuccessModal({ isOpen, amount, tokenSymbol, rate, onGoToMarketplace }: SuccessModalProps) {
+export function SuccessModal({ isOpen, title, message, onGoToMarketplace }: SuccessModalProps) {
   return (
     <AnimatePresence>
       {isOpen && (
@@ -37,10 +36,10 @@ export function SuccessModal({ isOpen, amount, tokenSymbol, rate, onGoToMarketpl
               <PartyPopper className="w-8 h-8 text-green-400" />
             </motion.div>
             <h3 className="text-xl font-bold text-white mb-2">
-              Offer Created Successfully!
+              {title}
             </h3>
             <p className="text-white/60 mb-6">
-              Your lending offer of {amount} {tokenSymbol} at {rate}% APR is now live on the marketplace.
+              {message}
             </p>
             <Button
               variant="primary"

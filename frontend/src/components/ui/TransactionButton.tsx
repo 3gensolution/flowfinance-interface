@@ -39,13 +39,11 @@ export function TransactionButton({
     if (isLoading) {
       return loadingText || (type === 'approve' ? 'Authorizing...' : 'Processing...');
     }
-    if (defaultText) {
-      return defaultText;
-    }
     if (type === 'approve') {
       return stepNumber ? `Step ${stepNumber}: Authorize ${tokenSymbol}` : `Authorize ${tokenSymbol}`;
     }
-    return stepNumber ? `Step ${stepNumber}: Start Lending` : 'Start Lending';
+    const text = defaultText || 'Confirm';
+    return stepNumber ? `Step ${stepNumber}: ${text}` : text;
   };
 
   return (

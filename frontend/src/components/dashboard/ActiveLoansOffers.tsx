@@ -22,7 +22,7 @@ import {
   useFiatLenderOffersByLender,
 } from '@/stores/contractStore';
 import { useUIStore } from '@/stores/uiStore';
-import { Plus } from 'lucide-react';
+import { Plus, Coins, Banknote, HandCoins, Wallet } from 'lucide-react';
 
 type Tab = 'crypto_borrow' | 'cash_borrow' | 'crypto_lend' | 'cash_lend';
 
@@ -74,38 +74,38 @@ export function ActiveLoansOffers() {
     [fiatOffers]
   );
 
-  // Combine all active loans for "Borrowing Activity" tab
-  const allActiveLoans = useMemo(() => {
-    return [
-      ...activeBorrowedLoans.map(loan => ({ loan, isBorrower: true, type: 'crypto' as const })),
-      ...activeLentLoans.map(loan => ({ loan, isBorrower: false, type: 'crypto' as const })),
-    ];
-  }, [activeBorrowedLoans, activeLentLoans]);
-
-  const tabs = [
+  const tabs: { id: Tab; label: string; shortLabel: string; icon: React.ReactNode; count: number; activeColor: string }[] = [
     {
-      id: 'crypto_borrow' as const,
+      id: 'crypto_borrow',
       label: 'Crypto Loans',
-      description: 'Borrow requests & active crypto loans',
-      count: pendingCryptoRequests.length + allActiveLoans.filter(l => l.isBorrower).length,
+      shortLabel: 'Crypto',
+      icon: <Coins className="w-4 h-4 flex-shrink-0" />,
+      count: pendingCryptoRequests.length + activeBorrowedLoans.length,
+      activeColor: 'bg-primary-500 shadow-primary-500/25',
     },
     {
-      id: 'cash_borrow' as const,
+      id: 'cash_borrow',
       label: 'Cash Loans',
-      description: 'Fiat/cash loan requests & active loans',
+      shortLabel: 'Cash',
+      icon: <Banknote className="w-4 h-4 flex-shrink-0" />,
       count: activeFiatLoans.length,
+      activeColor: 'bg-green-600 shadow-green-600/25',
     },
     {
-      id: 'crypto_lend' as const,
+      id: 'crypto_lend',
       label: 'Crypto Offers',
-      description: 'My crypto lending offers',
-      count: pendingCryptoOffers.length,
+      shortLabel: 'Offers',
+      icon: <HandCoins className="w-4 h-4 flex-shrink-0" />,
+      count: pendingCryptoOffers.length + activeLentLoans.length,
+      activeColor: 'bg-accent-500 shadow-accent-500/25',
     },
     {
-      id: 'cash_lend' as const,
+      id: 'cash_lend',
       label: 'Cash Offers',
-      description: 'My fiat/cash lending offers',
+      shortLabel: 'Fiat',
+      icon: <Wallet className="w-4 h-4 flex-shrink-0" />,
       count: activeFiatOffers.length,
+      activeColor: 'bg-orange-500 shadow-orange-500/25',
     },
   ];
 
@@ -118,31 +118,33 @@ export function ActiveLoansOffers() {
     >
       <h2 className="text-xl font-semibold mb-4">Active Loans & Offers</h2>
 
-      {/* Tab Pills */}
-      <div className="flex gap-3 mb-6 flex-wrap">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`px-5 py-3 rounded-xl text-sm font-medium transition-all duration-200 flex flex-col items-start ${
-              activeTab === tab.id
-                ? 'bg-primary-600 text-white shadow-lg shadow-primary-500/30'
-                : 'bg-white/10 text-gray-400 hover:bg-white/15'
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <span>{tab.label}</span>
+      {/* Tab Bar — marketplace style */}
+      <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 mb-6 scrollbar-hide">
+        <div className="inline-flex rounded-2xl p-1.5 bg-white/5 border border-white/10 flex-shrink-0">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`
+                flex items-center gap-2 px-3 sm:px-5 py-2.5 rounded-xl text-sm font-medium
+                transition-all whitespace-nowrap
+                ${activeTab === tab.id
+                  ? `${tab.activeColor} text-white shadow-lg`
+                  : 'text-gray-400 hover:text-white hover:bg-white/5'
+                }
+              `}
+            >
+              {tab.icon}
+              <span className="hidden sm:inline">{tab.label}</span>
+              <span className="sm:hidden">{tab.shortLabel}</span>
               <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
                 activeTab === tab.id ? 'bg-white/20' : 'bg-white/10'
               }`}>
                 {tab.count}
               </span>
-            </div>
-            <span className={`text-xs mt-1 ${activeTab === tab.id ? 'text-white/80' : 'text-gray-500'}`}>
-              {tab.description}
-            </span>
-          </button>
-        ))}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Tab Content */}
@@ -151,15 +153,15 @@ export function ActiveLoansOffers() {
         {activeTab === 'crypto_borrow' && (
           <motion.div
             key="crypto_borrow"
-            initial={{ opacity: 0, x: -10 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 10 }}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.2 }}
           >
-            {pendingCryptoRequests.length === 0 && allActiveLoans.filter(l => l.isBorrower).length === 0 ? (
+            {pendingCryptoRequests.length === 0 && activeBorrowedLoans.length === 0 ? (
               <EmptyState
                 title="No Crypto Loans"
-                description="You don't have any active crypto loans or borrow requests. Start borrowing crypto to see your activity here."
+                description="You don't have any active crypto loans or borrow requests."
                 lottieUrl="/empty.json"
                 lottieWidth={180}
                 lottieHeight={180}
@@ -173,16 +175,16 @@ export function ActiveLoansOffers() {
             ) : (
               <div className="space-y-6">
                 {/* Active Crypto Loans */}
-                {allActiveLoans.filter(l => l.isBorrower).length > 0 && (
+                {activeBorrowedLoans.length > 0 && (
                   <div>
-                    <h3 className="text-sm font-medium text-gray-400 mb-3">Active Crypto Loans</h3>
+                    <h3 className="text-sm font-medium text-gray-400 mb-3">Active Loans</h3>
                     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {allActiveLoans.filter(l => l.isBorrower).map(({ loan, isBorrower }) => (
-                        <LoanCard
+                      {activeBorrowedLoans.map((loan) => (
+                        <ActiveLoanCardWithData
                           key={loan.loanId.toString()}
                           loan={loan as LoanData}
-                          isBorrower={isBorrower}
-                          onRepay={isBorrower ? () => openRepayModal(loan.loanId) : undefined}
+                          isBorrower={true}
+                          onRepay={() => openRepayModal(loan.loanId)}
                         />
                       ))}
                     </div>
@@ -212,15 +214,15 @@ export function ActiveLoansOffers() {
         {activeTab === 'cash_borrow' && (
           <motion.div
             key="cash_borrow"
-            initial={{ opacity: 0, x: -10 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 10 }}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.2 }}
           >
             {activeFiatLoans.length === 0 ? (
               <EmptyState
                 title="No Cash Loans"
-                description="You don't have any active cash/fiat loans. Start borrowing cash to see your activity here."
+                description="You don't have any active cash/fiat loans."
                 lottieUrl="/empty.json"
                 lottieWidth={180}
                 lottieHeight={180}
@@ -248,15 +250,15 @@ export function ActiveLoansOffers() {
         {activeTab === 'crypto_lend' && (
           <motion.div
             key="crypto_lend"
-            initial={{ opacity: 0, x: -10 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 10 }}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.2 }}
           >
-            {pendingCryptoOffers.length === 0 ? (
+            {pendingCryptoOffers.length === 0 && activeLentLoans.length === 0 ? (
               <EmptyState
                 title="No Crypto Lending Offers"
-                description="You don't have any crypto lending offers yet. Start earning interest by creating crypto loan offers."
+                description="You don't have any crypto lending offers yet."
                 lottieUrl="/empty.json"
                 lottieWidth={180}
                 lottieHeight={180}
@@ -268,13 +270,37 @@ export function ActiveLoansOffers() {
                 size="md"
               />
             ) : (
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {pendingCryptoOffers.map((offer) => (
-                  <DashboardLenderOfferCard
-                    key={offer.offerId.toString()}
-                    offer={offer}
-                  />
-                ))}
+              <div className="space-y-6">
+                {/* Active Lent Loans */}
+                {activeLentLoans.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-400 mb-3">Active Lending</h3>
+                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {activeLentLoans.map((loan) => (
+                        <ActiveLoanCardWithData
+                          key={loan.loanId.toString()}
+                          loan={loan as LoanData}
+                          isBorrower={false}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Pending Crypto Offers */}
+                {pendingCryptoOffers.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-400 mb-3">Pending Offers</h3>
+                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {pendingCryptoOffers.map((offer) => (
+                        <DashboardLenderOfferCard
+                          key={offer.offerId.toString()}
+                          offer={offer}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </motion.div>
@@ -284,15 +310,15 @@ export function ActiveLoansOffers() {
         {activeTab === 'cash_lend' && (
           <motion.div
             key="cash_lend"
-            initial={{ opacity: 0, x: -10 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 10 }}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.2 }}
           >
             {activeFiatOffers.length === 0 ? (
               <EmptyState
                 title="No Cash Lending Offers"
-                description="You don't have any cash/fiat lending offers yet. Start earning interest by creating cash loan offers."
+                description="You don't have any cash/fiat lending offers yet."
                 lottieUrl="/empty.json"
                 lottieWidth={180}
                 lottieHeight={180}
@@ -317,22 +343,5 @@ export function ActiveLoansOffers() {
         )}
       </AnimatePresence>
     </motion.div>
-  );
-}
-
-// Internal Loan Card Component
-interface LoanCardProps {
-  loan: LoanData;
-  isBorrower: boolean;
-  onRepay?: () => void;
-}
-
-function LoanCard({ loan, isBorrower, onRepay }: LoanCardProps) {
-  return (
-    <ActiveLoanCardWithData
-      loan={loan}
-      isBorrower={isBorrower}
-      onRepay={onRepay}
-    />
   );
 }

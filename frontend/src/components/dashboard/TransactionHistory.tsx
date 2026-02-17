@@ -10,8 +10,8 @@ import { getTokenByAddress } from '@/config/contracts';
 import { formatCurrency as formatFiatCurrency } from '@/hooks/useFiatOracle';
 import { EmptyState } from '@/components/ui/EmptyState';
 
-// Format address helper (local version for string type)
-function formatAddress(address: string, chars: number = 4): string {
+// Format address helper
+function formatAddress(address: string, chars: number = 6): string {
   if (!address || address.length < 10) return address;
   return `${address.slice(0, chars + 2)}...${address.slice(-chars)}`;
 }
@@ -73,7 +73,6 @@ export function TransactionHistory() {
       const decimals = tokenInfo?.decimals || 18;
       const amount = Number(formatUnits(loan.principalAmount, decimals));
 
-      // Initial borrow transaction
       txList.push({
         id: `borrow-${loan.loanId.toString()}`,
         type: 'borrow',
@@ -87,7 +86,6 @@ export function TransactionHistory() {
         counterpartyRole: 'Lender',
       });
 
-      // Repayment transaction (if repaid)
       if (loan.status === LoanStatus.REPAID) {
         const repaidAmount = Number(formatUnits(loan.amountRepaid, decimals));
         txList.push({
@@ -104,7 +102,6 @@ export function TransactionHistory() {
         });
       }
 
-      // Liquidation transaction
       if (loan.status === LoanStatus.LIQUIDATED) {
         txList.push({
           id: `liquidation-${loan.loanId.toString()}`,
@@ -128,7 +125,6 @@ export function TransactionHistory() {
       const decimals = tokenInfo?.decimals || 18;
       const amount = Number(formatUnits(loan.principalAmount, decimals));
 
-      // Initial lend transaction
       txList.push({
         id: `lend-${loan.loanId.toString()}`,
         type: 'lend',
@@ -142,7 +138,6 @@ export function TransactionHistory() {
         counterpartyRole: 'Borrower',
       });
 
-      // Receive repayment transaction (if repaid)
       if (loan.status === LoanStatus.REPAID) {
         const repaidAmount = Number(formatUnits(loan.amountRepaid, decimals));
         txList.push({
@@ -195,7 +190,6 @@ export function TransactionHistory() {
       }
     });
 
-    // Sort by date descending
     return txList.sort((a, b) => b.date.getTime() - a.date.getTime());
   }, [borrowedLoans, lentLoans, fiatLoans]);
 
@@ -272,14 +266,29 @@ export function TransactionHistory() {
     }
   };
 
-  const getStatusIcon = (status: Transaction['status']) => {
+  const getStatusBadge = (status: Transaction['status']) => {
     switch (status) {
       case 'completed':
-        return <Check className="w-3 h-3 text-green-400" />;
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/10 text-green-400">
+            <Check className="w-3 h-3" />
+            Done
+          </span>
+        );
       case 'pending':
-        return <Clock className="w-3 h-3 text-amber-400" />;
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-500/10 text-amber-400">
+            <Clock className="w-3 h-3" />
+            Pending
+          </span>
+        );
       case 'failed':
-        return <AlertTriangle className="w-3 h-3 text-red-400" />;
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-500/10 text-red-400">
+            <AlertTriangle className="w-3 h-3" />
+            Failed
+          </span>
+        );
       default:
         return null;
     }
@@ -298,7 +307,6 @@ export function TransactionHistory() {
     { id: '90days', label: '90 Days' },
   ];
 
-  // Reset to page 1 when filters change
   const handleFilterChange = (newFilter: FilterType) => {
     setFilter(newFilter);
     setCurrentPage(1);
@@ -316,54 +324,58 @@ export function TransactionHistory() {
       transition={{ delay: 0.4 }}
       className="mb-8"
     >
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-        <h2 className="text-xl font-semibold">Transaction History</h2>
+      <h2 className="text-xl font-semibold mb-4">Transaction History</h2>
 
-        {/* Filters */}
-        <div className="flex flex-wrap items-center gap-3">
-          {/* Type Filter */}
-          <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-gray-400" />
-            <div className="flex gap-1">
-              {filterOptions.map((option) => (
-                <button
-                  key={option.id}
-                  onClick={() => handleFilterChange(option.id)}
-                  className={`px-3 py-1 rounded-full text-xs font-medium transition-all duration-200 ${
-                    filter === option.id
-                      ? 'bg-primary-600 text-white'
-                      : 'bg-white/10 text-gray-400 hover:bg-white/15'
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Date Filter */}
-          <div className="flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-gray-400" />
-            <div className="flex gap-1">
-              {dateFilterOptions.map((option) => (
-                <button
-                  key={option.id}
-                  onClick={() => handleDateFilterChange(option.id)}
-                  className={`px-3 py-1 rounded-full text-xs font-medium transition-all duration-200 ${
-                    dateFilter === option.id
-                      ? 'bg-primary-600 text-white'
-                      : 'bg-white/10 text-gray-400 hover:bg-white/15'
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
+      {/* Filters — marketplace style */}
+      <div className="flex flex-wrap items-center gap-3 mb-5">
+        {/* Type Filter */}
+        <div className="flex items-center gap-2">
+          <Filter className="w-4 h-4 text-gray-500 flex-shrink-0" />
+          <div className="inline-flex rounded-xl p-1 bg-white/5 border border-white/10">
+            {filterOptions.map((option) => (
+              <button
+                key={option.id}
+                onClick={() => handleFilterChange(option.id)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
+                  filter === option.id
+                    ? 'bg-primary-500 text-white shadow-lg shadow-primary-500/25'
+                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
           </div>
         </div>
+
+        {/* Date Filter */}
+        <div className="flex items-center gap-2">
+          <Calendar className="w-4 h-4 text-gray-500 flex-shrink-0" />
+          <div className="inline-flex rounded-xl p-1 bg-white/5 border border-white/10">
+            {dateFilterOptions.map((option) => (
+              <button
+                key={option.id}
+                onClick={() => handleDateFilterChange(option.id)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
+                  dateFilter === option.id
+                    ? 'bg-primary-500 text-white shadow-lg shadow-primary-500/25'
+                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Result count */}
+        <span className="text-xs text-gray-500 ml-auto">
+          {filteredTransactions.length} transaction{filteredTransactions.length !== 1 ? 's' : ''}
+        </span>
       </div>
 
-      <div className="glass-card overflow-hidden">
+      {/* Table */}
+      <div className="rounded-2xl border border-white/10 bg-white/[0.02] overflow-hidden">
         {filteredTransactions.length === 0 ? (
           <EmptyState
             title="No Transactions Yet"
@@ -379,146 +391,113 @@ export function TransactionHistory() {
           />
         ) : (
           <>
-            {/* Table Header */}
-            <div className="hidden md:grid grid-cols-12 gap-4 px-4 py-3 border-b border-white/10 text-xs font-medium text-gray-400 uppercase">
-              <div className="col-span-4">Transaction</div>
-              <div className="col-span-3">Counterparty</div>
-              <div className="col-span-2 text-right">Amount</div>
-              <div className="col-span-2 text-right">Date</div>
-              <div className="col-span-1 text-right">Status</div>
-            </div>
+            {/* Scrollable table */}
+            <div className="overflow-x-auto scrollbar-hide">
+              <table className="w-full min-w-[700px]">
+                <thead>
+                  <tr className="border-b border-white/10">
+                    <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">Transaction</th>
+                    <th className="text-left text-xs font-medium text-gray-500 uppercase px-4 py-3">Counterparty</th>
+                    <th className="text-right text-xs font-medium text-gray-500 uppercase px-4 py-3">Amount</th>
+                    <th className="text-right text-xs font-medium text-gray-500 uppercase px-4 py-3">Date</th>
+                    <th className="text-right text-xs font-medium text-gray-500 uppercase px-4 py-3">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  <AnimatePresence mode="wait">
+                    {paginatedTransactions.map((tx, index) => (
+                      <motion.tr
+                        key={tx.id}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ delay: index * 0.02 }}
+                        className="hover:bg-white/[0.03] transition-colors"
+                      >
+                        {/* Transaction */}
+                        <td className="px-4 py-3.5">
+                          <div className="flex items-center gap-3">
+                            <div className={`p-2 rounded-lg flex-shrink-0 ${getTransactionColor(tx.type)}`}>
+                              {getTransactionIcon(tx.type)}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-medium text-white text-sm whitespace-nowrap">{tx.description}</p>
+                              {tx.isFiat && (
+                                <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-500/15 text-green-400">Fiat</span>
+                              )}
+                            </div>
+                          </div>
+                        </td>
 
-            {/* Transaction List */}
-            <div className="divide-y divide-white/5">
-              <AnimatePresence mode="wait">
-                {paginatedTransactions.map((tx, index) => (
-                  <motion.div
-                    key={tx.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ delay: index * 0.02 }}
-                    className="p-4 hover:bg-white/5 transition-colors"
-                  >
-                    {/* Mobile Layout */}
-                    <div className="md:hidden space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className={`p-2 rounded-lg ${getTransactionColor(tx.type)}`}>
-                            {getTransactionIcon(tx.type)}
-                          </div>
-                          <div>
-                            <p className="font-medium text-white text-sm">{tx.description}</p>
-                            {tx.isFiat && (
-                              <span className="px-1.5 py-0.5 rounded text-xs bg-green-500/20 text-green-400">Fiat</span>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          {getStatusIcon(tx.status)}
-                        </div>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <div className="text-gray-400">
+                        {/* Counterparty */}
+                        <td className="px-4 py-3.5">
                           {tx.counterpartyAddress ? (
-                            <span>{tx.counterpartyRole}: {formatAddress(tx.counterpartyAddress)}</span>
+                            <div>
+                              <span className="text-gray-500 text-xs">{tx.counterpartyRole}</span>
+                              <p className="text-gray-300 font-mono text-xs whitespace-nowrap">{formatAddress(tx.counterpartyAddress)}</p>
+                            </div>
                           ) : (
-                            <span className="text-gray-500">-</span>
+                            <span className="text-gray-600 text-sm">—</span>
                           )}
-                        </div>
-                        <span className={`font-medium ${
-                          tx.type === 'borrow' || tx.type === 'receive_repayment' ? 'text-green-400' : 'text-primary-400'
-                        }`}>
-                          {tx.type === 'borrow' || tx.type === 'receive_repayment' ? '+' : '-'}
-                          {tx.amount} {!tx.isFiat && tx.asset}
-                        </span>
-                      </div>
-                      <p className="text-xs text-gray-500">
-                        {tx.date.toLocaleDateString('en-US', {
-                          month: 'short', day: 'numeric', year: 'numeric'
-                        })}
-                      </p>
-                    </div>
+                        </td>
 
-                    {/* Desktop Layout */}
-                    <div className="hidden md:grid grid-cols-12 gap-4 items-center">
-                      <div className="col-span-4 flex items-center gap-3">
-                        <div className={`p-2 rounded-lg ${getTransactionColor(tx.type)}`}>
-                          {getTransactionIcon(tx.type)}
-                        </div>
-                        <div>
-                          <p className="font-medium text-white text-sm">{tx.description}</p>
-                          {tx.isFiat && (
-                            <span className="px-1.5 py-0.5 rounded text-xs bg-green-500/20 text-green-400">Fiat</span>
-                          )}
-                        </div>
-                      </div>
+                        {/* Amount */}
+                        <td className="px-4 py-3.5 text-right">
+                          <span className={`font-semibold text-sm whitespace-nowrap ${
+                            tx.type === 'borrow' || tx.type === 'receive_repayment'
+                              ? 'text-green-400'
+                              : tx.type === 'liquidation'
+                              ? 'text-red-400'
+                              : 'text-primary-400'
+                          }`}>
+                            {tx.type === 'borrow' || tx.type === 'receive_repayment' ? '+' : '-'}
+                            {tx.amount} {!tx.isFiat && tx.asset}
+                          </span>
+                        </td>
 
-                      <div className="col-span-3">
-                        {tx.counterpartyAddress ? (
-                          <div className="text-sm">
-                            <span className="text-gray-500 text-xs">{tx.counterpartyRole}</span>
-                            <p className="text-gray-300 font-mono text-xs">{formatAddress(tx.counterpartyAddress)}</p>
-                          </div>
-                        ) : (
-                          <span className="text-gray-500 text-sm">-</span>
-                        )}
-                      </div>
+                        {/* Date */}
+                        <td className="px-4 py-3.5 text-right">
+                          <span className="text-sm text-gray-400 whitespace-nowrap">
+                            {tx.date.toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric',
+                            })}
+                          </span>
+                        </td>
 
-                      <div className="col-span-2 text-right">
-                        <span className={`font-medium ${
-                          tx.type === 'borrow' || tx.type === 'receive_repayment'
-                            ? 'text-green-400'
-                            : tx.type === 'lend' || tx.type === 'repay'
-                            ? 'text-primary-400'
-                            : 'text-red-400'
-                        }`}>
-                          {tx.type === 'borrow' || tx.type === 'receive_repayment' ? '+' : '-'}
-                          {tx.amount} {!tx.isFiat && tx.asset}
-                        </span>
-                      </div>
-
-                      <div className="col-span-2 text-right text-sm text-gray-400">
-                        {tx.date.toLocaleDateString('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric',
-                        })}
-                      </div>
-
-                      <div className="col-span-1 flex items-center justify-end gap-1">
-                        {getStatusIcon(tx.status)}
-                        <span className="text-xs text-gray-500 capitalize">{tx.status}</span>
-                      </div>
-                    </div>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
+                        {/* Status */}
+                        <td className="px-4 py-3.5 text-right">
+                          {getStatusBadge(tx.status)}
+                        </td>
+                      </motion.tr>
+                    ))}
+                  </AnimatePresence>
+                </tbody>
+              </table>
             </div>
 
             {/* Pagination */}
             {totalPages > 1 && (
-              <div className="p-4 border-t border-white/5 flex items-center justify-between">
-                <span className="text-sm text-gray-400">
-                  Showing {(currentPage - 1) * ITEMS_PER_PAGE + 1} to{' '}
-                  {Math.min(currentPage * ITEMS_PER_PAGE, filteredTransactions.length)} of{' '}
-                  {filteredTransactions.length} transactions
+              <div className="px-4 py-3 border-t border-white/5 flex items-center justify-between gap-4">
+                <span className="text-xs text-gray-500 whitespace-nowrap">
+                  {(currentPage - 1) * ITEMS_PER_PAGE + 1}–{Math.min(currentPage * ITEMS_PER_PAGE, filteredTransactions.length)} of {filteredTransactions.length}
                 </span>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                   <button
                     onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                     disabled={currentPage === 1}
-                    className="p-2 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                   >
                     <ChevronLeft className="w-4 h-4" />
                   </button>
-                  <span className="text-sm text-gray-400">
-                    Page {currentPage} of {totalPages}
+                  <span className="text-xs text-gray-400 px-2 whitespace-nowrap">
+                    {currentPage} / {totalPages}
                   </span>
                   <button
                     onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                     disabled={currentPage === totalPages}
-                    className="p-2 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                   >
                     <ChevronRight className="w-4 h-4" />
                   </button>

@@ -59,7 +59,7 @@ export function Hero() {
         <div className="absolute bottom-1/4 right-0 w-40 h-[1px] bg-gradient-to-r from-transparent via-orange-400/30 to-transparent" />
       </div>
 
-      <div className="section-inner w-full relative z-10 pt-28 pb-20">
+      <div className="section-inner w-full relative z-10 pt-28 pb-20 px-4 sm:px-5 md:px-10 lg:px-20">
         <div className="grid lg:grid-cols-2 gap-16 lg:gap-24 items-center">
           {/* Left side - Content */}
           <div className="space-y-8">

@@ -365,12 +365,22 @@ export default function LendPage() {
         );
       case 5:
         return (
-          <SummaryPanel
-            assetType={assetType}
-            asset={selectedAsset}
-            amount={amount}
-            rate={interestRate}
-          />
+          <div className="space-y-6">
+            <SummaryPanel
+              assetType={assetType}
+              asset={selectedAsset}
+              amount={amount}
+              rate={interestRate}
+            />
+            <SubmitCTA
+              asset={selectedAsset}
+              amount={amount}
+              rate={interestRate}
+              isValid={isStepComplete()}
+              assetType={assetType}
+              onSubmit={handleSubmit}
+            />
+          </div>
         );
       default:
         return null;
@@ -378,7 +388,7 @@ export default function LendPage() {
   };
 
   return (
-    <div className="min-h-screen bg-navy-900 pt-20 pb-8 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-navy-900 pt-20 pb-8 px-4 sm:px-5 md:px-10 lg:px-20 overflow-x-hidden">
       <div className="max-w-4xl mx-auto">
         {/* Header with Step Counter */}
         <motion.div
@@ -400,7 +410,7 @@ export default function LendPage() {
           </h1>
 
           {/* Subtitle */}
-          <p className="text-base text-white/60 max-w-2xl mx-auto">
+          <p className="text-sm sm:text-base text-white/60 max-w-2xl mx-auto">
             Supply funds and set your own interest rate.
           </p>
         </motion.div>
@@ -426,10 +436,10 @@ export default function LendPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          className="flex items-center justify-between max-w-xl mx-auto mt-4"
+          className="flex items-center justify-between gap-3 max-w-xl mx-auto mt-4"
         >
           {/* Back Button */}
-          <div className="w-28">
+          <div className="w-20 sm:w-28 flex-shrink-0">
             {currentStep > 1 && (
               <motion.div
                 initial={{ opacity: 0, x: -20 }}
@@ -448,11 +458,9 @@ export default function LendPage() {
             )}
           </div>
 
-          {/* Continue / Submit Button */}
-          <div className="flex-1 max-w-xs">
-            {isCashFlowUnverified ? (
-              <div className="h-12" />
-            ) : currentStep < STEPS.length ? (
+          {/* Continue Button (not shown on review step) */}
+          <div className="flex-1 min-w-0 max-w-xs">
+            {!isCashFlowUnverified && currentStep < STEPS.length && (
               <Button
                 variant="primary"
                 size="lg"
@@ -464,20 +472,11 @@ export default function LendPage() {
               >
                 Continue
               </Button>
-            ) : (
-              <SubmitCTA
-                asset={selectedAsset}
-                amount={amount}
-                rate={interestRate}
-                isValid={isStepComplete()}
-                assetType={assetType}
-                onSubmit={handleSubmit}
-              />
             )}
           </div>
 
           {/* Spacer for alignment */}
-          <div className="w-28" />
+          <div className="w-20 sm:w-28 flex-shrink-0" />
         </motion.div>
 
         {/* Microcopy */}
