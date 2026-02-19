@@ -133,20 +133,20 @@ export function normalizeHealthFactor(
 }
 
 // Calculate health factor from USD values (for fiat loans computed on frontend)
-// Returns percentage (e.g., 170 means 170%)
+// Returns ratio (e.g., 1.7 means 170%)
 export function calculateHealthFactorFromUSD(
   collateralUSD: number,
   debtUSD: number
 ): number {
   if (debtUSD <= 0) return 0;
-  return (collateralUSD / debtUSD) * 100;
+  return collateralUSD / debtUSD;
 }
 
-// Calculate health factor color from percentage value
-export function getHealthFactorColor(healthFactorPercent: number): string {
-  if (healthFactorPercent >= 150) return 'text-green-400';
-  if (healthFactorPercent >= 120) return 'text-yellow-400';
-  if (healthFactorPercent >= 100) return 'text-orange-400';
+// Calculate health factor color from ratio value (e.g., 1.5 = 150%)
+export function getHealthFactorColor(healthFactor: number): string {
+  if (healthFactor >= 1.5) return 'text-green-400';
+  if (healthFactor >= 1.2) return 'text-yellow-400';
+  if (healthFactor >= 1.0) return 'text-orange-400';
   return 'text-red-400';
 }
 

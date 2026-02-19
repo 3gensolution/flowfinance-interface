@@ -1,36 +1,26 @@
 'use client';
 
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { CHAIN_CONFIG, CONTRACT_ADDRESSES } from '@/config/contracts';
+import { CHAIN_CONFIG, setActiveChainId } from '@/config/contracts';
+import { useContractStore } from '@/stores/contractStore';
 
-// Networks with deployed contracts (only these are enabled)
-// For now, only Base Sepolia has contracts deployed
+// Networks with deployed contracts
 export const NETWORKS_WITH_CONTRACTS = [
   CHAIN_CONFIG.baseSepolia.id,
-  // Add other network IDs here as contracts are deployed
+  CHAIN_CONFIG.polygonAmoy.id,
 ] as const;
 
 // Check if a network has contracts deployed
 export function hasContracts(chainId: number): boolean {
-  // Check if chainId is in the list of networks with contracts
-  if (NETWORKS_WITH_CONTRACTS.includes(chainId as typeof NETWORKS_WITH_CONTRACTS[number])) {
-    return true;
-  }
-
-  // Also check if contract addresses are configured (not zero address)
-  const isConfigured = CONTRACT_ADDRESSES.loanMarketPlace !== '0x0000000000000000000000000000000000000000';
-
-  // If we're on the network that matches env vars and it's configured, it's available
-  if (isConfigured && chainId === CHAIN_CONFIG.baseSepolia.id) {
-    return true;
-  }
-
-  return false;
+  return (NETWORKS_WITH_CONTRACTS as readonly number[]).includes(chainId);
 }
 
-// Available networks
+// Available networks (networks with contracts listed first)
 export const AVAILABLE_NETWORKS = [
+  // Networks with contracts first
   CHAIN_CONFIG.baseSepolia,
+  CHAIN_CONFIG.polygonAmoy,
+  // Networks without contracts
   CHAIN_CONFIG.sepolia,
   CHAIN_CONFIG.arbitrumSepolia,
   CHAIN_CONFIG.optimismSepolia,
@@ -58,6 +48,7 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
   // Determine if current network is testnet
   const testnetIds: number[] = [
     CHAIN_CONFIG.baseSepolia.id,
+    CHAIN_CONFIG.polygonAmoy.id,
     CHAIN_CONFIG.sepolia.id,
     CHAIN_CONFIG.arbitrumSepolia.id,
     CHAIN_CONFIG.optimismSepolia.id,
@@ -71,17 +62,19 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
     const savedNetworkId = localStorage.getItem('selectedNetworkId');
     if (savedNetworkId) {
       const network = AVAILABLE_NETWORKS.find(n => n.id === parseInt(savedNetworkId));
-      // Only restore if network exists and has contracts AND is Base Sepolia
-      if (network && hasContracts(network.id) && network.id === CHAIN_CONFIG.baseSepolia.id) {
+      // Restore if network exists and has contracts deployed
+      if (network && hasContracts(network.id)) {
+        setActiveChainId(network.id);
         setSelectedNetworkState(network);
       } else {
-        // Always fall back to Base Sepolia for any other network
-        console.warn(`Saved network is not Base Sepolia. Defaulting to Base Sepolia.`);
+        // Fall back to Base Sepolia
+        setActiveChainId(CHAIN_CONFIG.baseSepolia.id);
         setSelectedNetworkState(CHAIN_CONFIG.baseSepolia);
         localStorage.setItem('selectedNetworkId', CHAIN_CONFIG.baseSepolia.id.toString());
       }
     } else {
       // No saved network, default to Base Sepolia
+      setActiveChainId(CHAIN_CONFIG.baseSepolia.id);
       localStorage.setItem('selectedNetworkId', CHAIN_CONFIG.baseSepolia.id.toString());
     }
   }, []);
@@ -93,6 +86,10 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
       console.warn(`Network ${network.name} does not have contracts deployed. Cannot switch to this network.`);
       return;
     }
+    // Update global contract addresses & token list BEFORE React re-render
+    setActiveChainId(network.id);
+    // Clear stale data from the previous network
+    useContractStore.getState().clearAll();
     setSelectedNetworkState(network);
     if (typeof window !== 'undefined') {
       localStorage.setItem('selectedNetworkId', network.id.toString());

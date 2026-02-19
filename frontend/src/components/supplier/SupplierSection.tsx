@@ -512,11 +512,11 @@ export function SupplierSection() {
           <p className={`text-sm ${isVerified ? 'text-green-400' : 'text-yellow-400'}`}>
             {generatedLink ? (
               isVerified
-                ? 'Click Continue to deposit or withdraw your fiat funds.'
+                ? 'Click Continue to fund or claim your fiat funds.'
                 : 'Click Continue to complete your KYC verification.'
             ) : (
               isVerified
-                ? 'Click below to deposit or withdraw your fiat funds.'
+                ? 'Click below to fund or claim your fiat funds.'
                 : 'Complete KYC verification to start providing fiat liquidity.'
             )}
           </p>
@@ -545,14 +545,14 @@ export function SupplierSection() {
             icon={<Wallet className="w-4 h-4" />}
             className="w-full"
           >
-            {isVerified ? 'Deposit / Withdraw' : 'Complete Verification'}
+            {isVerified ? 'Fund / Claim' : 'Complete Verification'}
           </Button>
         )}
 
               {/* Additional info for unverified suppliers */}
               {!isVerified && !generatedLink && (
                 <p className="text-xs text-gray-500 text-center mt-3">
-                  KYC verification is required before you can deposit or withdraw fiat.
+                  KYC verification is required before you can fund or claim fiat.
                 </p>
               )}
             </Card>

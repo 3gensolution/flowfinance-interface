@@ -19,7 +19,7 @@ import {
 } from '@/components/lender';
 import { useIsVerifiedSupplier } from '@/hooks/useSupplyAssets';
 import { useLoanConfigLimits } from '@/hooks/useContracts';
-import { CONTRACT_ADDRESSES } from '@/config/contracts';
+import { CONTRACT_ADDRESSES, isFiatSupportedChain } from '@/config/contracts';
 import { useNetwork } from '@/contexts/NetworkContext';
 import { config as wagmiConfig } from '@/config/wagmi';
 import { LoanRequestStatus } from '@/types';
@@ -78,17 +78,20 @@ export default function LendPage() {
     },
   });
 
+  const fiatSupported = isFiatSupportedChain(selectedNetwork.id);
+
   const { data: pendingFiatLoanIds } = useReadContract({
     address: CONTRACT_ADDRESSES.fiatLoanBridge,
     abi: FiatLoanBridgeABI,
     functionName: 'getPendingFiatLoans',
     chainId: selectedNetwork.id,
     config: wagmiConfig,
+    query: { enabled: fiatSupported },
   });
 
   const fiatLoanIds = useMemo(() => (pendingFiatLoanIds as bigint[]) || [], [pendingFiatLoanIds]);
 
-  // Fetch fiat requests to filter out user's own requests
+  // Fetch fiat requests to filter out user's own requests (Base only)
   const { data: fiatRequestsData } = useReadContracts({
     contracts: fiatLoanIds.map((id) => ({
       address: CONTRACT_ADDRESSES.fiatLoanBridge,
@@ -99,7 +102,7 @@ export default function LendPage() {
     })),
     config: wagmiConfig,
     query: {
-      enabled: fiatLoanIds.length > 0 && isConnected,
+      enabled: fiatSupported && fiatLoanIds.length > 0 && isConnected,
     },
   });
 

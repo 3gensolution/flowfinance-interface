@@ -10,7 +10,7 @@ import { Badge, LoanStatusBadge } from '@/components/ui/Badge';
 import {
   useTokenPrice,
   useRepaymentInfo,
-  useLoanHealthFactor,
+  useHealthFactor,
 } from '@/hooks/useContracts';
 import { LoanStatus } from '@/types';
 import {
@@ -20,7 +20,6 @@ import {
   formatAddress,
   getTokenSymbol,
   getTokenDecimals,
-  normalizeHealthFactor,
 } from '@/lib/utils';
 import {
   ArrowLeft,
@@ -84,10 +83,24 @@ export default function ActiveLoanDetailPage() {
   const remainingCollateral = repaymentInfo ? repaymentInfo[3] : BigInt(0);
   const collateralReleased = repaymentInfo ? repaymentInfo[4] : BigInt(0);
 
-  // Get health factor — normalize for decimal mismatch between collateral and borrow tokens
-  const { data: healthFactorData } = useLoanHealthFactor(loanId);
-  const healthFactor = healthFactorData
-    ? normalizeHealthFactor(healthFactorData as bigint, collateralDecimals, borrowDecimals)
+  // Compute debt in USD (8 decimals) for LTVConfig.getHealthFactor
+  const debtUSD8 = useMemo(() => {
+    if (!outstandingDebt || outstandingDebt === BigInt(0) || !borrowPrice) return undefined;
+    return (outstandingDebt * (borrowPrice as bigint)) / BigInt(10 ** borrowDecimals);
+  }, [outstandingDebt, borrowPrice, borrowDecimals]);
+
+  const durationDays = loan ? Math.round(Number(loan.duration) / 86400) : 0;
+
+  // Health factor from LTVConfig.getHealthFactor (returns 1e18 = 100%)
+  const { data: healthFactorRaw } = useHealthFactor(
+    loan?.collateralAsset,
+    remainingCollateral > BigInt(0) ? remainingCollateral : undefined,
+    collateralPrice as bigint | undefined,
+    debtUSD8,
+    durationDays > 0 ? durationDays : undefined
+  );
+  const healthFactor = healthFactorRaw
+    ? Number(healthFactorRaw as bigint) / 1e18
     : 0;
 
   // Calculate USD values
@@ -103,8 +116,8 @@ export default function ActiveLoanDetailPage() {
 
   // Health status
   const getHealthStatus = () => {
-    if (healthFactor >= 150) return { status: 'healthy', color: 'text-green-400', bgColor: 'bg-green-500/20' };
-    if (healthFactor >= 120) return { status: 'warning', color: 'text-yellow-400', bgColor: 'bg-yellow-500/20' };
+    if (healthFactor >= 1.5) return { status: 'healthy', color: 'text-green-400', bgColor: 'bg-green-500/20' };
+    if (healthFactor >= 1.2) return { status: 'warning', color: 'text-yellow-400', bgColor: 'bg-yellow-500/20' };
     return { status: 'danger', color: 'text-red-400', bgColor: 'bg-red-500/20' };
   };
   const healthStatus = getHealthStatus();
@@ -242,7 +255,7 @@ export default function ActiveLoanDetailPage() {
                     <div>
                       <p className="text-sm text-gray-400 mb-1">Health Factor</p>
                       <p className={`text-lg font-semibold ${healthStatus.color}`}>
-                        {healthFactor.toFixed(0)}%
+                        {healthFactor.toFixed(2)}
                       </p>
                     </div>
                   </div>
@@ -383,7 +396,7 @@ export default function ActiveLoanDetailPage() {
                     <h3 className="font-semibold">Health Factor</h3>
                   </div>
                   <div className={`text-4xl font-bold ${healthStatus.color} mb-2`}>
-                    {healthFactor.toFixed(0)}%
+                    {healthFactor.toFixed(2)}
                   </div>
                   <p className="text-sm text-gray-400">
                     {healthStatus.status === 'healthy' && 'Your loan is well-collateralized'}
@@ -498,10 +511,10 @@ export default function ActiveLoanDetailPage() {
                 </div>
                 <div className="space-y-2 text-sm text-gray-400">
                   <p>
-                    Collateral is held in escrow and can be liquidated if the health factor drops below 100%.
+                    Collateral is held in escrow and can be liquidated if the health factor drops below 1.0.
                   </p>
                   <p className="text-accent-400 font-medium">
-                    Current Health: {healthFactor.toFixed(0)}%
+                    Current Health: {healthFactor.toFixed(2)}
                   </p>
                 </div>
               </Card>

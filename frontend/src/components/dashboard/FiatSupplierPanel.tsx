@@ -409,15 +409,15 @@ export function FiatSupplierPanel() {
                     </div>
                   </div>
 
-                  {/* Deposit/Withdraw Actions */}
+                  {/* Fund/Claim Actions */}
                   <AnimatePresence mode="wait">
                     {actionState === 'idle' ? (
                       <motion.div key="buttons" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex gap-2">
                         <Button onClick={() => handleGenerateLink('deposit')} loading={isGeneratingLink && currentAction === 'deposit'} size="sm" className="flex-1">
-                          Deposit
+                          Fund
                         </Button>
                         <Button variant="secondary" onClick={() => handleGenerateLink('withdraw')} loading={isGeneratingLink && currentAction === 'withdraw'} size="sm" className="flex-1">
-                          Withdraw
+                          Claim
                         </Button>
                       </motion.div>
                     ) : (
@@ -425,7 +425,7 @@ export function FiatSupplierPanel() {
                         <p className="text-sm text-green-400">Your link is ready.</p>
                         <div className="flex gap-2">
                           <Button onClick={handleContinueToLink} icon={<ArrowRight className="w-4 h-4" />} size="sm" className="flex-1 bg-green-600 hover:bg-green-700">
-                            Continue to {currentAction === 'deposit' ? 'Deposit' : 'Withdraw'}
+                            Continue to {currentAction === 'deposit' ? 'Fund' : 'Claim'}
                           </Button>
                           <Button variant="ghost" onClick={resetActionState} size="sm">Cancel</Button>
                         </div>
@@ -434,8 +434,8 @@ export function FiatSupplierPanel() {
                   </AnimatePresence>
 
                   {/* Trust Message */}
-                  <div className="mt-3 flex items-center gap-2 text-xs text-gray-500">
-                    <Shield className="w-3 h-3" />
+                  <div className="mt-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/20 text-sm text-blue-400">
+                    <Shield className="w-4 h-4 flex-shrink-0" />
                     <span>Fiat transactions handled by our licensed partner.</span>
                   </div>
                 </div>

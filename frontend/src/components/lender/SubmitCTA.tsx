@@ -14,7 +14,7 @@ import {
   useLoanConfigLimits,
 } from '@/hooks/useContracts';
 import { useCreateFiatLenderOffer } from '@/hooks/useFiatLoan';
-import { CONTRACT_ADDRESSES, TOKEN_LIST } from '@/config/contracts';
+import { CONTRACT_ADDRESSES } from '@/config/contracts';
 import { formatSimulationError } from '@/lib/contractSimulation';
 
 interface SubmitCTAProps {
@@ -65,7 +65,10 @@ export function SubmitCTA({ asset, amount, rate, isValid, assetType }: SubmitCTA
 
   // Effects
   useEffect(() => {
-    if (isApproveConfirmed) refetchAllowance();
+    if (isApproveConfirmed) {
+      refetchAllowance();
+      setSubmitStep('idle');
+    }
   }, [isApproveConfirmed, refetchAllowance]);
 
   useEffect(() => {
@@ -113,13 +116,13 @@ export function SubmitCTA({ asset, amount, rate, isValid, assetType }: SubmitCTA
     try {
       const interestRateBps = BigInt(Math.round(rate * 100));
       const duration = BigInt(maxDurationSeconds || 30 * 24 * 60 * 60);
-      const defaultCollateralAsset = TOKEN_LIST[0]?.address || (asset.address as Address);
+      const flexibleCollateral = '0x0000000000000000000000000000000000000000' as Address;
 
       const simulation = await simulateCreateOffer(
         asset.address as Address,
         amountInWei,
-        defaultCollateralAsset as Address,
-        BigInt(1),
+        flexibleCollateral,
+        BigInt(0),
         interestRateBps,
         duration,
         userAddress
@@ -134,8 +137,8 @@ export function SubmitCTA({ asset, amount, rate, isValid, assetType }: SubmitCTA
       await createOfferAsync(
         asset.address as Address,
         amountInWei,
-        defaultCollateralAsset as Address,
-        BigInt(1),
+        flexibleCollateral,
+        BigInt(0),
         interestRateBps,
         duration
       );

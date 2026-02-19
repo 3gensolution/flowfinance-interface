@@ -3,7 +3,9 @@
 import { useMemo } from 'react';
 import { useAccount, useReadContracts, useBalance } from 'wagmi';
 import { Address, Abi } from 'viem';
-import { TOKEN_LIST, SUPPORTED_TOKENS } from '@/config/contracts';
+import { TOKEN_LIST, SUPPORTED_TOKENS, CONTRACT_ADDRESSES, getActiveChainId } from '@/config/contracts';
+import ConfigurationABIJson from '@/contracts/ConfigurationABI.json';
+import { useNetwork } from '@/contexts/NetworkContext';
 import {
   SUPPORTED_FIAT_CURRENCIES,
   useSupplierBalances,
@@ -14,6 +16,7 @@ import { formatTokenAmount } from '@/lib/utils';
 import ERC20ABIJson from '@/contracts/ERC20ABI.json';
 
 const ERC20ABI = ERC20ABIJson as Abi;
+const ConfigurationABI = ConfigurationABIJson as Abi;
 
 /**
  * Hook to check if current user is a verified supplier
@@ -57,6 +60,7 @@ export interface FiatAsset {
  */
 export function useCryptoAssets() {
   const { address, isConnected } = useAccount();
+  const { selectedNetwork } = useNetwork();
 
   // Get native ETH balance
   const { data: ethBalance, isLoading: isEthLoading } = useBalance({
@@ -65,6 +69,7 @@ export function useCryptoAssets() {
   });
 
   // Prepare contract calls for all ERC20 token balances
+  // selectedNetwork.id in deps ensures re-computation when chain switches
   const tokenContracts = useMemo(() => {
     if (!address) return [];
     return TOKEN_LIST.map((token) => ({
@@ -73,7 +78,7 @@ export function useCryptoAssets() {
       functionName: 'balanceOf' as const,
       args: [address] as const,
     }));
-  }, [address]);
+  }, [address, selectedNetwork.id]);
 
   // Batch fetch all token balances
   const { data: balancesData, isLoading: isTokensLoading } = useReadContracts({
@@ -81,25 +86,31 @@ export function useCryptoAssets() {
     query: { enabled: isConnected && tokenContracts.length > 0 },
   });
 
-  // Transform data into CryptoAsset format
+  // Batch check which tokens are supported by the Configuration contract
+  const supportedContracts = useMemo(() => {
+    return TOKEN_LIST.map((token) => ({
+      address: CONTRACT_ADDRESSES.configuration,
+      abi: ConfigurationABI,
+      functionName: 'isAssetSupported' as const,
+      args: [token.address] as const,
+      chainId: getActiveChainId(),
+    }));
+  }, [selectedNetwork.id]);
+
+  const { data: supportedData, isLoading: isSupportedLoading } = useReadContracts({
+    contracts: supportedContracts,
+    query: { enabled: supportedContracts.length > 0 },
+  });
+
+  // Transform data into CryptoAsset format (only supported tokens)
   const assets: CryptoAsset[] = useMemo(() => {
     const result: CryptoAsset[] = [];
 
-    // Add native ETH first
-    const ethRawBalance = ethBalance?.value ?? BigInt(0);
-    result.push({
-      symbol: SUPPORTED_TOKENS.ETH.symbol,
-      name: SUPPORTED_TOKENS.ETH.name,
-      address: SUPPORTED_TOKENS.ETH.address,
-      decimals: SUPPORTED_TOKENS.ETH.decimals,
-      balance: ethBalance ? formatTokenAmount(ethBalance.value, 18, 4) : '0',
-      rawBalance: ethRawBalance,
-      hasBalance: ethRawBalance > BigInt(0),
-      isLoading: isEthLoading,
-    });
-
-    // Add ERC20 tokens
+    // Add ERC20 tokens (only if supported by Configuration contract)
     TOKEN_LIST.forEach((token, index) => {
+      const isSupported = supportedData?.[index];
+      if (isSupported?.status !== 'success' || isSupported.result !== true) return;
+
       const balanceResult = balancesData?.[index];
       const rawBalance =
         balanceResult?.status === 'success'
@@ -119,11 +130,11 @@ export function useCryptoAssets() {
     });
 
     return result;
-  }, [ethBalance, isEthLoading, balancesData, isTokensLoading]);
+  }, [ethBalance, isEthLoading, balancesData, isTokensLoading, supportedData, selectedNetwork.id]);
 
   return {
     assets,
-    isLoading: isEthLoading || isTokensLoading,
+    isLoading: isEthLoading || isTokensLoading || isSupportedLoading,
     isConnected,
   };
 }

@@ -269,7 +269,7 @@ export default function FiatLoanDetailPage() {
   const healthFactorValue = collateralUSD > 0 && fiatAmountUSD > 0
     ? calculateHealthFactorFromUSD(collateralUSD, fiatAmountUSD)
     : 0;
-  const healthFactorDisplay = healthFactorValue > 0 ? `${healthFactorValue.toFixed(0)}%` : '--';
+  const healthFactorDisplay = healthFactorValue > 0 ? `${healthFactorValue.toFixed(2)}` : '--';
 
   // Format total debt
   const totalDebtCents = totalDebt ? Number(totalDebt as bigint) : 0;
@@ -465,13 +465,13 @@ export default function FiatLoanDetailPage() {
                       </p>
                       <div className="mt-2">
                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs ${
-                          healthFactorValue >= 150
+                          healthFactorValue >= 1.5
                             ? 'bg-green-500/15 text-green-400'
-                            : healthFactorValue >= 100
+                            : healthFactorValue >= 1.0
                             ? 'bg-yellow-500/15 text-yellow-400'
                             : 'bg-red-500/15 text-red-400'
                         }`}>
-                          {healthFactorValue >= 150 ? 'Healthy' : healthFactorValue >= 100 ? 'Warning' : 'At Risk'}
+                          {healthFactorValue >= 1.5 ? 'Healthy' : healthFactorValue >= 1.0 ? 'Warning' : 'At Risk'}
                         </span>
                       </div>
                     </div>

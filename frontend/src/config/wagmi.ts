@@ -2,6 +2,7 @@ import { getDefaultConfig } from '@rainbow-me/rainbowkit';
 import {
   // Testnets
   baseSepolia,
+  polygonAmoy,
   sepolia,
   arbitrumSepolia,
   optimismSepolia,
@@ -29,6 +30,7 @@ function createConfig() {
     chains: [
       // Testnets (Base Sepolia first as default)
       baseSepolia,
+      polygonAmoy,
       sepolia,
       arbitrumSepolia,
       optimismSepolia,
@@ -41,6 +43,7 @@ function createConfig() {
       [base.id]: http('https://mainnet.base.org'),
       // Testnet transports
       [baseSepolia.id]: http('https://sepolia.base.org'),
+      [polygonAmoy.id]: http('https://polygon-amoy.drpc.org'),
       [sepolia.id]: http('https://rpc.sepolia.org'),
       [arbitrumSepolia.id]: http('https://sepolia-rollup.arbitrum.io/rpc'),
       [optimismSepolia.id]: http('https://sepolia.optimism.io'),

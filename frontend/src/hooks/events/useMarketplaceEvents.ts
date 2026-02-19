@@ -2,7 +2,7 @@
 
 import { useWatchContractEvent } from 'wagmi';
 import { Address, Abi } from 'viem';
-import { CONTRACT_ADDRESSES } from '@/config/contracts';
+import { CONTRACT_ADDRESSES, getActiveChainId } from '@/config/contracts';
 import LoanMarketPlaceABIJson from '@/contracts/LoanMarketPlaceABI.json';
 import { useContractStore } from '@/stores/contractStore';
 import { LoanRequestStatus, LoanStatus } from '@/types';
@@ -53,7 +53,7 @@ export function useLoanRequestCreatedEvent(enabled = true) {
           status: LoanRequestStatus.PENDING,
           createdAt: BigInt(Math.floor(Date.now() / 1000)),
           expireAt: BigInt(Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60),
-          chainId: BigInt(84532), // Base Sepolia chain ID
+          chainId: BigInt(getActiveChainId()),
         });
 
         toast.success(`New loan request #${args.requestId.toString()} created`);
@@ -210,7 +210,7 @@ export function useLenderOfferCreatedEvent(enabled = true) {
           status: LoanRequestStatus.PENDING,
           createdAt: BigInt(Math.floor(Date.now() / 1000)),
           expireAt: BigInt(Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60),
-          chainId: BigInt(84532), // Base Sepolia chain ID
+          chainId: BigInt(getActiveChainId()),
         });
 
         toast.success(`New lender offer #${args.offerId.toString()} created`);

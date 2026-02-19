@@ -22,13 +22,15 @@ import {
   useFiatLenderOffersByLender,
 } from '@/stores/contractStore';
 import { useUIStore } from '@/stores/uiStore';
-import { Plus, Coins, Banknote, HandCoins, Wallet } from 'lucide-react';
+import { Plus, Coins, Banknote, HandCoins, Wallet, ArrowRightLeft } from 'lucide-react';
+import { isFiatSupportedOnActiveChain } from '@/config/contracts';
 
 type Tab = 'crypto_borrow' | 'cash_borrow' | 'crypto_lend' | 'cash_lend';
 
 export function ActiveLoansOffers() {
   const [activeTab, setActiveTab] = useState<Tab>('crypto_borrow');
   const { address } = useAccount();
+  const fiatSupported = isFiatSupportedOnActiveChain();
 
   // Crypto loans and offers
   const loanRequests = useLoanRequestsByBorrower(address);
@@ -74,7 +76,7 @@ export function ActiveLoansOffers() {
     [fiatOffers]
   );
 
-  const tabs: { id: Tab; label: string; shortLabel: string; icon: React.ReactNode; count: number; activeColor: string }[] = [
+  const allTabs: { id: Tab; label: string; shortLabel: string; icon: React.ReactNode; count: number; activeColor: string; fiatOnly?: boolean }[] = [
     {
       id: 'crypto_borrow',
       label: 'Crypto Loans',
@@ -90,6 +92,7 @@ export function ActiveLoansOffers() {
       icon: <Banknote className="w-4 h-4 flex-shrink-0" />,
       count: activeFiatLoans.length,
       activeColor: 'bg-green-600 shadow-green-600/25',
+      fiatOnly: true,
     },
     {
       id: 'crypto_lend',
@@ -106,8 +109,12 @@ export function ActiveLoansOffers() {
       icon: <Wallet className="w-4 h-4 flex-shrink-0" />,
       count: activeFiatOffers.length,
       activeColor: 'bg-orange-500 shadow-orange-500/25',
+      fiatOnly: true,
     },
   ];
+
+  // Hide fiat tabs on non-Base chains
+  const tabs = fiatSupported ? allTabs : allTabs.filter(t => !t.fiatOnly);
 
   return (
     <motion.div

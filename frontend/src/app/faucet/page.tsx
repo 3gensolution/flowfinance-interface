@@ -1,15 +1,16 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useAccount, useWriteContract, useWaitForTransactionReceipt, useChainId } from 'wagmi';
+import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import { parseUnits } from 'viem';
 import { motion } from 'framer-motion';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { ConnectButton } from '@/components/wallet/ConnectButton';
 import { getTokensForChain } from '@/config/contracts';
-import { Droplets, Wallet, CheckCircle, Loader2, AlertCircle } from 'lucide-react';
+import { Droplets, Wallet, CheckCircle, Loader2, AlertCircle, ExternalLink } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useNetwork } from '@/contexts/NetworkContext';
 
 // Mock ERC20 ABI - just the mint function
 const MOCK_TOKEN_ABI = [
@@ -118,7 +119,7 @@ function TokenFaucetCard({ token, onMint, isPending, pendingToken }: TokenFaucet
 
 export default function FaucetPage() {
   const { isConnected } = useAccount();
-  const chainId = useChainId();
+  const { selectedNetwork } = useNetwork();
   const [pendingToken, setPendingToken] = useState<string | null>(null);
   const [lastConfirmedHash, setLastConfirmedHash] = useState<string | null>(null);
 
@@ -128,8 +129,8 @@ export default function FaucetPage() {
     hash,
   });
 
-  // Get tokens for the current chain
-  const chainTokens = getTokensForChain(chainId);
+  // Get tokens for the selected network
+  const chainTokens = getTokensForChain(selectedNetwork.id);
   const tokenList = Object.values(chainTokens);
 
   const handleMint = async (tokenAddress: string, amount: bigint) => {
@@ -215,7 +216,7 @@ export default function FaucetPage() {
                 <h3 className="font-semibold text-primary-400 mb-1">Testnet Only</h3>
                 <p className="text-sm text-gray-400">
                   These are mock tokens deployed on testnets for development and testing.
-                  Make sure you&apos;re connected to a testnet (Base Sepolia, Sepolia, etc.) to use the faucet.
+                  Make sure you&apos;re connected to a testnet (Base Sepolia, Polygon Amoy, etc.) to use the faucet.
                 </p>
               </div>
             </div>
@@ -261,12 +262,13 @@ export default function FaucetPage() {
                     {isConfirming ? 'Confirming transaction...' : isSuccess ? 'Transaction confirmed!' : 'Transaction pending...'}
                   </p>
                   <a
-                    href={`https://sepolia.basescan.org/tx/${hash}`}
+                    href={`${selectedNetwork.blockExplorer}/tx/${hash}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-sm text-primary-400 hover:underline"
+                    className="text-sm text-primary-400 hover:underline flex items-center gap-1"
                   >
                     View on Explorer
+                    <ExternalLink className="w-3 h-3" />
                   </a>
                 </div>
               </div>
@@ -274,23 +276,31 @@ export default function FaucetPage() {
           </motion.div>
         )}
 
-        {/* Get Testnet ETH */}
+        {/* Get Testnet Gas Tokens */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
           className="mt-12"
         >
-          <h2 className="text-xl font-bold mb-4">Need Testnet ETH for Gas?</h2>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <h2 className="text-xl font-bold mb-4">Need Testnet Tokens for Gas?</h2>
+
+          {/* Base Sepolia Faucets */}
+          <h3 className="text-sm font-medium text-gray-400 mb-3">Base Sepolia (ETH)</h3>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
             <a
               href="https://www.alchemy.com/faucets/base-sepolia"
               target="_blank"
               rel="noopener noreferrer"
             >
               <Card hover className="p-4">
-                <h3 className="font-semibold mb-1">Alchemy Faucet</h3>
-                <p className="text-sm text-gray-400">Get Base Sepolia ETH</p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-semibold mb-1">Alchemy Faucet</h3>
+                    <p className="text-sm text-gray-400">Get Base Sepolia ETH</p>
+                  </div>
+                  <ExternalLink className="w-4 h-4 text-gray-500" />
+                </div>
               </Card>
             </a>
             <a
@@ -299,8 +309,13 @@ export default function FaucetPage() {
               rel="noopener noreferrer"
             >
               <Card hover className="p-4">
-                <h3 className="font-semibold mb-1">Coinbase Faucet</h3>
-                <p className="text-sm text-gray-400">Get Base testnet ETH</p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-semibold mb-1">Coinbase Faucet</h3>
+                    <p className="text-sm text-gray-400">Get Base testnet ETH</p>
+                  </div>
+                  <ExternalLink className="w-4 h-4 text-gray-500" />
+                </div>
               </Card>
             </a>
             <a
@@ -309,8 +324,48 @@ export default function FaucetPage() {
               rel="noopener noreferrer"
             >
               <Card hover className="p-4">
-                <h3 className="font-semibold mb-1">Sepolia Faucet</h3>
-                <p className="text-sm text-gray-400">Get Sepolia ETH</p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-semibold mb-1">Sepolia Faucet</h3>
+                    <p className="text-sm text-gray-400">Get Sepolia ETH</p>
+                  </div>
+                  <ExternalLink className="w-4 h-4 text-gray-500" />
+                </div>
+              </Card>
+            </a>
+          </div>
+
+          {/* Polygon Amoy Faucets */}
+          <h3 className="text-sm font-medium text-gray-400 mb-3">Polygon Amoy (POL)</h3>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <a
+              href="https://faucet.polygon.technology/"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Card hover className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-semibold mb-1">Polygon Faucet</h3>
+                    <p className="text-sm text-gray-400">Get Amoy POL (official)</p>
+                  </div>
+                  <ExternalLink className="w-4 h-4 text-gray-500" />
+                </div>
+              </Card>
+            </a>
+            <a
+              href="https://www.alchemy.com/faucets/polygon-amoy"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Card hover className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-semibold mb-1">Alchemy Faucet</h3>
+                    <p className="text-sm text-gray-400">Get Polygon Amoy POL</p>
+                  </div>
+                  <ExternalLink className="w-4 h-4 text-gray-500" />
+                </div>
               </Card>
             </a>
           </div>

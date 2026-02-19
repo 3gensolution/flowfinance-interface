@@ -13,15 +13,17 @@ import {
   useActiveFiatLenderOffersWithDetails,
 } from '@/hooks/useFiatLoan';
 import { useContractStore } from '@/stores/contractStore';
+import { useNetwork } from '@/contexts/NetworkContext';
 
 /**
  * Hook that loads marketplace data and populates the global store.
  * Isolates the data fetching and store population logic from components.
  */
 export function useMarketplaceDataLoader() {
-  // Refs to track if store has been populated (prevent re-population)
-  const hasCryptoPopulated = useRef(false);
-  const hasFiatPopulated = useRef(false);
+  const { selectedNetwork } = useNetwork();
+  // Track which chain was populated — reset when network changes
+  const populatedCryptoForChain = useRef<number | null>(null);
+  const populatedFiatForChain = useRef<number | null>(null);
 
   // Store actions
   const setLoanRequests = useContractStore((state) => state.setLoanRequests);
@@ -67,9 +69,9 @@ export function useMarketplaceDataLoader() {
     refetch: refetchFiatOffers
   } = useActiveFiatLenderOffersWithDetails();
 
-  // Populate store with crypto data (only once)
+  // Populate store with crypto data (once per network)
   useEffect(() => {
-    if (hasCryptoPopulated.current) return;
+    if (populatedCryptoForChain.current === selectedNetwork.id) return;
 
     const hasRequests = allRequests && allRequests.length > 0;
     const hasOffers = allOffers && allOffers.length > 0;
@@ -81,13 +83,13 @@ export function useMarketplaceDataLoader() {
       if (hasOffers) {
         setLenderOffers(allOffers);
       }
-      hasCryptoPopulated.current = true;
+      populatedCryptoForChain.current = selectedNetwork.id;
     }
-  }, [allRequests, allOffers, setLoanRequests, setLenderOffers]);
+  }, [allRequests, allOffers, setLoanRequests, setLenderOffers, selectedNetwork.id]);
 
-  // Populate store with fiat data (only once)
+  // Populate store with fiat data (once per network)
   useEffect(() => {
-    if (hasFiatPopulated.current) return;
+    if (populatedFiatForChain.current === selectedNetwork.id) return;
 
     const hasFiatLoans = pendingFiatLoans && pendingFiatLoans.length > 0;
     const hasFiatOffers = fiatLenderOffers && fiatLenderOffers.length > 0;
@@ -99,9 +101,9 @@ export function useMarketplaceDataLoader() {
       if (hasFiatOffers) {
         setFiatLenderOffers(fiatLenderOffers);
       }
-      hasFiatPopulated.current = true;
+      populatedFiatForChain.current = selectedNetwork.id;
     }
-  }, [pendingFiatLoans, fiatLenderOffers, setFiatLoans, setFiatLenderOffers]);
+  }, [pendingFiatLoans, fiatLenderOffers, setFiatLoans, setFiatLenderOffers, selectedNetwork.id]);
 
   const refetch = useCallback(() => {
     refetchRequestCount();

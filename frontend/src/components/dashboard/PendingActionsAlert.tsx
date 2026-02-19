@@ -12,6 +12,7 @@ import {
   useFiatLoansByBorrower,
 } from '@/stores/contractStore';
 import { Clock, ArrowRight, FileText, TrendingUp, Banknote } from 'lucide-react';
+import { isFiatSupportedOnActiveChain } from '@/config/contracts';
 import Link from 'next/link';
 
 interface PendingAction {
@@ -26,6 +27,7 @@ interface PendingAction {
 
 export function PendingActionsAlert() {
   const { address } = useAccount();
+  const fiatSupported = isFiatSupportedOnActiveChain();
 
   const loanRequests = useLoanRequestsByBorrower(address);
   const lenderOffers = useLenderOffersByLender(address);
@@ -63,36 +65,39 @@ export function PendingActionsAlert() {
       });
     }
 
-    // Pending fiat loan requests (user is borrower waiting for supplier)
-    const pendingFiatRequests = fiatLoanRequests.filter(r => r.status === FiatLoanStatus.PENDING_SUPPLIER);
-    if (pendingFiatRequests.length > 0) {
-      actions.push({
-        type: 'fiat_request',
-        count: pendingFiatRequests.length,
-        label: 'Your Fiat Loan Requests',
-        description: `${pendingFiatRequests.length} request${pendingFiatRequests.length > 1 ? 's' : ''} awaiting suppliers`,
-        subtext: 'Fiat suppliers can fund these loan requests',
-        link: '/marketplace',
-        icon: <Banknote className="w-4 h-4" />,
-      });
-    }
+    // Fiat actions only on Base
+    if (fiatSupported) {
+      // Pending fiat loan requests (user is borrower waiting for supplier)
+      const pendingFiatRequests = fiatLoanRequests.filter(r => r.status === FiatLoanStatus.PENDING_SUPPLIER);
+      if (pendingFiatRequests.length > 0) {
+        actions.push({
+          type: 'fiat_request',
+          count: pendingFiatRequests.length,
+          label: 'Your Fiat Loan Requests',
+          description: `${pendingFiatRequests.length} request${pendingFiatRequests.length > 1 ? 's' : ''} awaiting suppliers`,
+          subtext: 'Fiat suppliers can fund these loan requests',
+          link: '/marketplace',
+          icon: <Banknote className="w-4 h-4" />,
+        });
+      }
 
-    // Active fiat lender offers (user is supplier waiting for borrowers)
-    const activeFiatOffers = fiatLenderOffers.filter(o => o.status === FiatLenderOfferStatus.ACTIVE);
-    if (activeFiatOffers.length > 0) {
-      actions.push({
-        type: 'fiat_offer',
-        count: activeFiatOffers.length,
-        label: 'Your Fiat Lending Offers',
-        description: `${activeFiatOffers.length} offer${activeFiatOffers.length > 1 ? 's' : ''} available on marketplace`,
-        subtext: 'Borrowers can accept these fiat lending offers',
-        link: '/marketplace',
-        icon: <Banknote className="w-4 h-4" />,
-      });
+      // Active fiat lender offers (user is supplier waiting for borrowers)
+      const activeFiatOffers = fiatLenderOffers.filter(o => o.status === FiatLenderOfferStatus.ACTIVE);
+      if (activeFiatOffers.length > 0) {
+        actions.push({
+          type: 'fiat_offer',
+          count: activeFiatOffers.length,
+          label: 'Your Fiat Lending Offers',
+          description: `${activeFiatOffers.length} offer${activeFiatOffers.length > 1 ? 's' : ''} available on marketplace`,
+          subtext: 'Borrowers can accept these fiat lending offers',
+          link: '/marketplace',
+          icon: <Banknote className="w-4 h-4" />,
+        });
+      }
     }
 
     return actions;
-  }, [loanRequests, lenderOffers, fiatLenderOffers, fiatLoanRequests]);
+  }, [loanRequests, lenderOffers, fiatLenderOffers, fiatLoanRequests, fiatSupported]);
 
   if (pendingActions.length === 0) {
     return null;

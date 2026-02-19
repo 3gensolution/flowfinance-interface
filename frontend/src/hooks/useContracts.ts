@@ -3,7 +3,7 @@
 import { useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from 'wagmi';
 import { Address, Abi, formatUnits } from 'viem';
 import { useEffect, useCallback } from 'react';
-import { CONTRACT_ADDRESSES, getTokenByAddress, TOKEN_LIST } from '@/config/contracts';
+import { CONTRACT_ADDRESSES, getTokenByAddress, TOKEN_LIST, getActiveChainId } from '@/config/contracts';
 import { useContractStore } from '@/stores/contractStore';
 import { LoanRequest, LenderOffer, Loan } from '@/types';
 import LoanMarketPlaceABIJson from '@/contracts/LoanMarketPlaceABI.json';
@@ -24,6 +24,7 @@ export function useLoanRequest(requestId: bigint | undefined) {
     abi: LoanMarketPlaceABI,
     functionName: 'loanRequests',
     args: requestId !== undefined ? [requestId] : undefined,
+    chainId: getActiveChainId(),
     query: {
       enabled: requestId !== undefined,
     },
@@ -37,6 +38,7 @@ export function useLenderOffer(offerId: bigint | undefined) {
     abi: LoanMarketPlaceABI,
     functionName: 'lenderOffers',
     args: offerId !== undefined ? [offerId] : undefined,
+    chainId: getActiveChainId(),
     query: {
       enabled: offerId !== undefined,
     },
@@ -50,6 +52,7 @@ export function useLoan(loanId: bigint | undefined) {
     abi: LoanMarketPlaceABI,
     functionName: 'loans',
     args: loanId !== undefined ? [loanId] : undefined,
+    chainId: getActiveChainId(),
     query: {
       enabled: loanId !== undefined,
     },
@@ -63,6 +66,7 @@ export function useLoanHealthFactor(loanId: bigint | undefined) {
     abi: LoanMarketPlaceABI,
     functionName: 'getLoanHealthFactor',
     args: loanId !== undefined ? [loanId] : undefined,
+    chainId: getActiveChainId(),
     query: {
       enabled: loanId !== undefined,
     },
@@ -76,6 +80,7 @@ export function useRepaymentAmount(loanId: bigint | undefined) {
     abi: LoanMarketPlaceABI,
     functionName: 'calculateRepaymentAmount',
     args: loanId !== undefined ? [loanId] : undefined,
+    chainId: getActiveChainId(),
     query: {
       enabled: loanId !== undefined,
     },
@@ -90,6 +95,7 @@ export function useOutstandingDebt(loanId: bigint | undefined) {
     abi: LoanMarketPlaceABI,
     functionName: 'getOutstandingDebt',
     args: loanId !== undefined ? [loanId] : undefined,
+    chainId: getActiveChainId(),
     query: {
       enabled: loanId !== undefined,
     },
@@ -102,6 +108,7 @@ export function useNextLoanRequestId() {
     address: CONTRACT_ADDRESSES.loanMarketPlace,
     abi: LoanMarketPlaceABI,
     functionName: 'nextLoanRequestId',
+    chainId: getActiveChainId(),
   });
 }
 
@@ -111,6 +118,7 @@ export function useNextLenderOfferId() {
     address: CONTRACT_ADDRESSES.loanMarketPlace,
     abi: LoanMarketPlaceABI,
     functionName: 'nextLenderOfferId',
+    chainId: getActiveChainId(),
   });
 }
 
@@ -120,6 +128,7 @@ export function useNextLoanId() {
     address: CONTRACT_ADDRESSES.loanMarketPlace,
     abi: LoanMarketPlaceABI,
     functionName: 'nextLoanId',
+    chainId: getActiveChainId(),
   });
 }
 
@@ -130,6 +139,7 @@ export function useUserLoanRequests(address: Address | undefined, index: number)
     abi: LoanMarketPlaceABI,
     functionName: 'userLoanRequests',
     args: address ? [address, BigInt(index)] : undefined,
+    chainId: getActiveChainId(),
     query: {
       enabled: !!address,
     },
@@ -143,6 +153,7 @@ export function useBorrowerLoans(address: Address | undefined, index: number) {
     abi: LoanMarketPlaceABI,
     functionName: 'borrowerLoans',
     args: address ? [address, BigInt(index)] : undefined,
+    chainId: getActiveChainId(),
     query: {
       enabled: !!address,
     },
@@ -156,6 +167,7 @@ export function useLenderLoans(address: Address | undefined, index: number) {
     abi: LoanMarketPlaceABI,
     functionName: 'lenderLoans',
     args: address ? [address, BigInt(index)] : undefined,
+    chainId: getActiveChainId(),
     query: {
       enabled: !!address,
     },
@@ -168,6 +180,7 @@ export function useGracePeriod() {
     address: CONTRACT_ADDRESSES.configuration,
     abi: ConfigurationABI,
     functionName: 'gracePeriod',
+    chainId: getActiveChainId(),
   });
 }
 
@@ -176,6 +189,7 @@ export function useMinCollateralRatio() {
     address: CONTRACT_ADDRESSES.configuration,
     abi: ConfigurationABI,
     functionName: 'minCollateralRatio',
+    chainId: getActiveChainId(),
   });
 }
 
@@ -184,6 +198,7 @@ export function useMaxInterestRate() {
     address: CONTRACT_ADDRESSES.configuration,
     abi: ConfigurationABI,
     functionName: 'maxInterestRate',
+    chainId: getActiveChainId(),
   });
 }
 
@@ -193,6 +208,7 @@ export function useMinRepaymentAmount() {
     address: CONTRACT_ADDRESSES.configuration,
     abi: ConfigurationABI,
     functionName: 'minRepaymentAmount',
+    chainId: getActiveChainId(),
   });
 }
 
@@ -204,6 +220,7 @@ export function useRepaymentInfo(loanId: bigint | undefined) {
     abi: LoanMarketPlaceABI,
     functionName: 'getRepaymentInfo',
     args: loanId !== undefined ? [loanId] : undefined,
+    chainId: getActiveChainId(),
     query: {
       enabled: loanId !== undefined,
     },
@@ -218,6 +235,7 @@ export function useMinRepaymentInTokens(loanId: bigint | undefined) {
     abi: LoanMarketPlaceABI,
     functionName: 'getMinRepaymentInTokens',
     args: loanId !== undefined ? [loanId] : undefined,
+    chainId: getActiveChainId(),
     query: {
       enabled: loanId !== undefined,
     },
@@ -230,6 +248,7 @@ export function usePlatformFeeRate() {
     address: CONTRACT_ADDRESSES.configuration,
     abi: ConfigurationABI,
     functionName: 'platformFeeRate',
+    chainId: getActiveChainId(),
   });
 
   // Convert basis points to percentage for display
@@ -249,6 +268,7 @@ export function useMinLoanDuration() {
     address: CONTRACT_ADDRESSES.configuration,
     abi: ConfigurationABI,
     functionName: 'minLoanDuration',
+    chainId: getActiveChainId(),
   });
 }
 
@@ -258,6 +278,7 @@ export function useMaxLoanDuration() {
     address: CONTRACT_ADDRESSES.configuration,
     abi: ConfigurationABI,
     functionName: 'maxLoanDuration',
+    chainId: getActiveChainId(),
   });
 }
 
@@ -311,6 +332,7 @@ export function useIsAssetSupported(assetAddress: Address | undefined) {
     abi: ConfigurationABI,
     functionName: 'isAssetSupported',
     args: assetAddress ? [assetAddress] : undefined,
+    chainId: getActiveChainId(),
     query: {
       enabled: !!assetAddress,
     },
@@ -325,6 +347,7 @@ export function useSupportedAssets() {
       abi: ConfigurationABI,
       functionName: 'isAssetSupported',
       args: [token.address],
+      chainId: getActiveChainId(),
     })),
     query: {
       enabled: true,
@@ -352,6 +375,7 @@ export function useLTV(collateralAsset: Address | undefined, durationDays: numbe
     abi: LTVConfigABI,
     functionName: 'getLTV',
     args: collateralAsset && durationDays !== undefined ? [collateralAsset, BigInt(durationDays)] : undefined,
+    chainId: getActiveChainId(),
     query: {
       enabled: !!collateralAsset && durationDays !== undefined,
     },
@@ -364,6 +388,7 @@ export function useLiquidationThreshold(collateralAsset: Address | undefined, du
     abi: LTVConfigABI,
     functionName: 'getLiquidationThreshold',
     args: collateralAsset && durationDays !== undefined ? [collateralAsset, BigInt(durationDays)] : undefined,
+    chainId: getActiveChainId(),
     query: {
       enabled: !!collateralAsset && durationDays !== undefined,
     },
@@ -383,6 +408,7 @@ export function useMaxLoanAmount(
     args: collateralAsset && collateralAmount && collateralPriceUSD && loanDurationDays !== undefined
       ? [collateralAsset, collateralAmount, collateralPriceUSD, BigInt(loanDurationDays)]
       : undefined,
+    chainId: getActiveChainId(),
     query: {
       enabled: !!collateralAsset && !!collateralAmount && !!collateralPriceUSD && loanDurationDays !== undefined,
     },
@@ -403,6 +429,7 @@ export function useHealthFactor(
     args: collateralAsset && collateralAmount && collateralPriceUSD && loanAmountUSD && loanDurationDays !== undefined
       ? [collateralAsset, collateralAmount, collateralPriceUSD, loanAmountUSD, BigInt(loanDurationDays)]
       : undefined,
+    chainId: getActiveChainId(),
     query: {
       enabled: !!collateralAsset && !!collateralAmount && !!collateralPriceUSD && !!loanAmountUSD && loanDurationDays !== undefined,
     },
@@ -415,6 +442,7 @@ export function useAssetLTVData(asset: Address | undefined) {
     abi: LTVConfigABI,
     functionName: 'getAssetData',
     args: asset ? [asset] : undefined,
+    chainId: getActiveChainId(),
     query: {
       enabled: !!asset,
     },
@@ -463,6 +491,7 @@ export function useTokenPrice(tokenAddress: Address | undefined) {
     abi: ConfigurationABI,
     functionName: 'priceFeeds',
     args: tokenAddress ? [tokenAddress] : undefined,
+    chainId: getActiveChainId(),
     query: {
       enabled: !!tokenAddress,
     },
@@ -472,6 +501,7 @@ export function useTokenPrice(tokenAddress: Address | undefined) {
     address: priceFeedAddress.data as Address,
     abi: MockV3AggregatorABI,
     functionName: 'latestRoundData',
+    chainId: getActiveChainId(),
     query: {
       enabled: !!priceFeedAddress.data && priceFeedAddress.data !== '0x0000000000000000000000000000000000000000',
     },
@@ -976,6 +1006,7 @@ export function useBatchLoanRequests(startId: number, count: number) {
       abi: LoanMarketPlaceABI,
       functionName: 'loanRequests',
       args: [BigInt(startId + i)],
+      chainId: getActiveChainId(),
     })),
     query: {
       enabled: count > 0,
@@ -1074,6 +1105,7 @@ export function useBatchLenderOffers(startId: number, count: number) {
       abi: LoanMarketPlaceABI,
       functionName: 'lenderOffers',
       args: [BigInt(startId + i)],
+      chainId: getActiveChainId(),
     })),
     query: {
       enabled: count > 0,
@@ -1173,6 +1205,7 @@ export function useBatchLoans(startId: number, count: number) {
       abi: LoanMarketPlaceABI,
       functionName: 'loans',
       args: [BigInt(startId + i)],
+      chainId: getActiveChainId(),
     })),
     query: {
       enabled: count > 0,
@@ -1373,9 +1406,9 @@ export function usePlatformStats() {
 // Fetch user's loan requests - filters from all requests
 export function useUserLoanRequestsBatch(userAddress: Address | undefined) {
   const { data: nextRequestId, isLoading: isLoadingCount } = useNextLoanRequestId();
-  const requestCount = nextRequestId ? Number(nextRequestId) - 1 : 0;
+  const requestCount = nextRequestId ? Number(nextRequestId) : 0;
 
-  const { data: allRequests, isLoading: isLoadingRequests, isError, refetch } = useBatchLoanRequests(1, Math.min(requestCount, 50));
+  const { data: allRequests, isLoading: isLoadingRequests, isError, refetch } = useBatchLoanRequests(0, Math.min(requestCount, 50));
 
   // Filter for user's requests
   const userRequests = (allRequests || []).filter((r) =>
@@ -1393,9 +1426,9 @@ export function useUserLoanRequestsBatch(userAddress: Address | undefined) {
 // Fetch user's lender offers - filters from all offers
 export function useUserLenderOffersBatch(userAddress: Address | undefined) {
   const { data: nextOfferId, isLoading: isLoadingCount } = useNextLenderOfferId();
-  const offerCount = nextOfferId ? Number(nextOfferId) - 1 : 0;
+  const offerCount = nextOfferId ? Number(nextOfferId) : 0;
 
-  const { data: allOffers, isLoading: isLoadingOffers, isError, refetch } = useBatchLenderOffers(1, Math.min(offerCount, 50));
+  const { data: allOffers, isLoading: isLoadingOffers, isError, refetch } = useBatchLenderOffers(0, Math.min(offerCount, 50));
 
   // Filter for user's offers
   const userOffers = (allOffers || []).filter((o) =>
@@ -1413,9 +1446,9 @@ export function useUserLenderOffersBatch(userAddress: Address | undefined) {
 // Fetch user's borrowed loans (where user is borrower)
 export function useUserBorrowedLoans(userAddress: Address | undefined) {
   const { data: nextLoanId, isLoading: isLoadingCount } = useNextLoanId();
-  const loanCount = nextLoanId ? Number(nextLoanId) - 1 : 0;
+  const loanCount = nextLoanId ? Number(nextLoanId) : 0;
 
-  const { data: allLoans, isLoading: isLoadingLoans, isError, refetch } = useBatchLoans(1, Math.min(loanCount, 50));
+  const { data: allLoans, isLoading: isLoadingLoans, isError, refetch } = useBatchLoans(0, Math.min(loanCount, 50));
 
   // Filter for user's borrowed loans
   const userLoans = (allLoans || []).filter((l) =>
@@ -1433,9 +1466,9 @@ export function useUserBorrowedLoans(userAddress: Address | undefined) {
 // Fetch user's lent loans (where user is lender)
 export function useUserLentLoans(userAddress: Address | undefined) {
   const { data: nextLoanId, isLoading: isLoadingCount } = useNextLoanId();
-  const loanCount = nextLoanId ? Number(nextLoanId) - 1 : 0;
+  const loanCount = nextLoanId ? Number(nextLoanId) : 0;
 
-  const { data: allLoans, isLoading: isLoadingLoans, isError, refetch } = useBatchLoans(1, Math.min(loanCount, 50));
+  const { data: allLoans, isLoading: isLoadingLoans, isError, refetch } = useBatchLoans(0, Math.min(loanCount, 50));
 
   // Filter for user's lent loans
   const userLoans = (allLoans || []).filter((l) =>

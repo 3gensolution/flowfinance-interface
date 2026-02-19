@@ -2,10 +2,10 @@
 
 import { useState, useMemo, Suspense, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FileText, HandCoins, RefreshCw, Info } from 'lucide-react';
-import { useReadContracts, useReadContract, useAccount } from 'wagmi';
+import { FileText, HandCoins, RefreshCw, Info, ArrowRightLeft } from 'lucide-react';
+import { useReadContracts, useReadContract, useAccount, useSwitchChain } from 'wagmi';
 import { Abi, Address } from 'viem';
-import { CONTRACT_ADDRESSES, CHAIN_CONFIG } from '@/config/contracts';
+import { CONTRACT_ADDRESSES, CHAIN_CONFIG, isFiatSupportedChain, isFiatSupportedOnActiveChain } from '@/config/contracts';
 import { useNetwork } from '@/contexts/NetworkContext';
 import { config as wagmiConfig } from '@/config/wagmi';
 import { NetworkSwitcher } from '@/components/network/NetworkSwitcher';
@@ -242,9 +242,10 @@ function useCryptoLenderOffers() {
   return { data: offers, isLoading, refetch, error: errorCount || errorData };
 }
 
-// Hook to fetch pending fiat loans directly from contract
+// Hook to fetch pending fiat loans directly from contract (Base only)
 function useFiatLoanRequests() {
   const { selectedNetwork } = useNetwork();
+  const fiatSupported = isFiatSupportedChain(selectedNetwork.id);
 
   // Get pending loan IDs
   const { data: pendingIds, isLoading: isLoadingIds, refetch: refetchIds, error: errorIds } = useReadContract({
@@ -253,6 +254,7 @@ function useFiatLoanRequests() {
     functionName: 'getPendingFiatLoans',
     chainId: selectedNetwork.id,
     config: wagmiConfig,
+    query: { enabled: fiatSupported },
   });
 
   const loanIds = useMemo(() => (pendingIds as bigint[]) || [], [pendingIds]);
@@ -268,7 +270,7 @@ function useFiatLoanRequests() {
     })),
     config: wagmiConfig,
     query: {
-      enabled: loanIds.length > 0,
+      enabled: fiatSupported && loanIds.length > 0,
     },
   });
 
@@ -347,9 +349,10 @@ function useFiatLoanRequests() {
   return { data: loans, isLoading: isLoadingIds || isLoadingLoans, refetch, error: errorIds || errorLoans };
 }
 
-// Hook to fetch active fiat lender offers directly from contract
+// Hook to fetch active fiat lender offers directly from contract (Base only)
 function useFiatLenderOffersData() {
   const { selectedNetwork } = useNetwork();
+  const fiatSupported = isFiatSupportedChain(selectedNetwork.id);
 
   // Get active offer IDs
   const { data: activeIds, isLoading: isLoadingIds, refetch: refetchIds, error: errorIds } = useReadContract({
@@ -358,6 +361,7 @@ function useFiatLenderOffersData() {
     functionName: 'getActiveFiatLenderOffers',
     chainId: selectedNetwork.id,
     config: wagmiConfig,
+    query: { enabled: fiatSupported },
   });
 
   const offerIds = useMemo(() => (activeIds as bigint[]) || [], [activeIds]);
@@ -373,7 +377,7 @@ function useFiatLenderOffersData() {
     })),
     config: wagmiConfig,
     query: {
-      enabled: offerIds.length > 0,
+      enabled: fiatSupported && offerIds.length > 0,
     },
   });
 
@@ -444,7 +448,9 @@ function useFiatLenderOffersData() {
 
 function MarketplaceContent() {
   const { address: connectedAddress, isConnected } = useAccount();
-  const { selectedNetwork } = useNetwork();
+  const { selectedNetwork, setSelectedNetwork } = useNetwork();
+  const { switchChain } = useSwitchChain();
+  const fiatSupported = isFiatSupportedOnActiveChain();
   const [activeTab, setActiveTab] = useState<Tab>('borrow_requests');
   const [currentPage, setCurrentPage] = useState(1);
   const [showLoadingTimeout, setShowLoadingTimeout] = useState(false);
@@ -664,8 +670,35 @@ function MarketplaceContent() {
     return count;
   }, [cryptoOffers, fiatOffers, filters.assetType]);
 
+  const handleSwitchToBase = () => {
+    setSelectedNetwork(CHAIN_CONFIG.baseSepolia);
+    switchChain({ chainId: CHAIN_CONFIG.baseSepolia.id });
+  };
+
   // Render item based on type
   const renderItem = (item: MarketplaceItem, index: number) => {
+    // Wrap fiat cards in a click-blocking overlay when not on a fiat-supported chain
+    const wrapFiatCard = (card: React.ReactNode, key: string) => {
+      if (fiatSupported) return card;
+      return (
+        <div key={key} className="relative">
+          <div className="pointer-events-none opacity-50">{card}</div>
+          <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-2xl">
+            <div className="text-center px-4">
+              <p className="text-sm text-white/80 mb-2">Available on Base only</p>
+              <button
+                onClick={handleSwitchToBase}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500 text-white text-xs font-semibold hover:bg-blue-400 transition-colors pointer-events-auto"
+              >
+                <ArrowRightLeft className="w-3.5 h-3.5" />
+                Switch to Base
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
     switch (item.itemType) {
       case 'crypto_request':
         return (
@@ -676,12 +709,12 @@ function MarketplaceContent() {
           />
         );
       case 'fiat_request':
-        return (
+        return wrapFiatCard(
           <FiatBorrowRequestCard
-            key={`fiat-request-${item.loanId}`}
             loan={item}
             index={index}
-          />
+          />,
+          `fiat-request-${item.loanId}`
         );
       case 'crypto_offer':
         return (
@@ -692,12 +725,12 @@ function MarketplaceContent() {
           />
         );
       case 'fiat_offer':
-        return (
+        return wrapFiatCard(
           <FiatLendingOfferCard
-            key={`fiat-offer-${item.offerId}`}
             offer={item}
             index={index}
-          />
+          />,
+          `fiat-offer-${item.offerId}`
         );
     }
   };
@@ -795,6 +828,29 @@ function MarketplaceContent() {
           onFilterChange={handleFilterChange}
           resultCount={filteredData.length}
         />
+
+        {/* Fiat Base-only Banner */}
+        {!fiatSupported && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="flex items-center justify-between gap-3 px-4 py-3 mb-6 rounded-xl bg-blue-500/10 border border-blue-500/20"
+          >
+            <div className="flex items-center gap-3">
+              <ArrowRightLeft className="w-4 h-4 flex-shrink-0 text-blue-400" />
+              <p className="text-sm text-blue-300">
+                Fiat lending and borrowing is only available on <span className="font-semibold text-blue-400">Base</span>. Switch to Base to access fiat listings.
+              </p>
+            </div>
+            <button
+              onClick={handleSwitchToBase}
+              className="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500 text-white text-xs font-semibold hover:bg-blue-400 transition-colors"
+            >
+              <ArrowRightLeft className="w-3.5 h-3.5" />
+              Switch to Base
+            </button>
+          </motion.div>
+        )}
 
         {/* Error or Loading Timeout Message */}
         {(hasError || showLoadingTimeout) && (

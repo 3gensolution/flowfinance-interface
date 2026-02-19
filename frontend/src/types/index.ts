@@ -116,10 +116,10 @@ export interface CreateLenderOfferForm {
 // Health factor status
 export type HealthStatus = 'healthy' | 'warning' | 'danger' | 'liquidatable';
 
-export const getHealthStatus = (healthFactorPercent: number): HealthStatus => {
-  if (healthFactorPercent >= 150) return 'healthy';
-  if (healthFactorPercent >= 120) return 'warning';
-  if (healthFactorPercent >= 100) return 'danger';
+export const getHealthStatus = (healthFactor: number): HealthStatus => {
+  if (healthFactor >= 1.5) return 'healthy';
+  if (healthFactor >= 1.2) return 'warning';
+  if (healthFactor >= 1.0) return 'danger';
   return 'liquidatable';
 };
 

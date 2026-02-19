@@ -3,6 +3,7 @@
 import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, Network, Check, Lock } from 'lucide-react';
+import { useSwitchChain } from 'wagmi';
 import { useNetwork, AVAILABLE_NETWORKS, type AvailableNetwork, hasContracts } from '@/contexts/NetworkContext';
 import { TESTNET_CHAINS, MAINNET_CHAINS } from '@/config/contracts';
 import { cn } from '@/lib/utils';
@@ -11,6 +12,7 @@ type NetworkTab = 'testnet' | 'mainnet';
 
 export function NetworkSwitcher() {
   const { selectedNetwork, setSelectedNetwork, isTestnet } = useNetwork();
+  const { switchChain } = useSwitchChain();
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<NetworkTab>('testnet');
 
@@ -56,6 +58,8 @@ export function NetworkSwitcher() {
       return; // Don't allow selection of disabled networks
     }
     setSelectedNetwork(network);
+    // Also switch the wallet chain so wagmi reads from the correct network
+    switchChain({ chainId: network.id });
     setIsOpen(false);
   };
 

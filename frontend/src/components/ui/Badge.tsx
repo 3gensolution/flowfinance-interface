@@ -63,7 +63,7 @@ export function RequestStatusBadge({ status }: { status: LoanRequestStatus }) {
   return <Badge variant={variant}>{label}</Badge>;
 }
 
-export function HealthBadge({ status, value }: { status: HealthStatus; value: string }) {
+export function HealthBadge({ status }: { status: HealthStatus }) {
   const config = {
     healthy: { label: 'Healthy', variant: 'success' as const },
     warning: { label: 'Warning', variant: 'warning' as const },
@@ -75,7 +75,7 @@ export function HealthBadge({ status, value }: { status: HealthStatus; value: st
 
   return (
     <Badge variant={variant}>
-      {label} ({value})
+      {label}
     </Badge>
   );
 }

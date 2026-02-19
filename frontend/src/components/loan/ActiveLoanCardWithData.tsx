@@ -1,9 +1,10 @@
 'use client';
 
+import { useMemo } from 'react';
 import { Address } from 'viem';
 import { LoanStatus } from '@/types';
-import { useLoanHealthFactor, useOutstandingDebt } from '@/hooks/useContracts';
-import { normalizeHealthFactor, getTokenDecimals } from '@/lib/utils';
+import { useHealthFactor, useOutstandingDebt, useTokenPrice } from '@/hooks/useContracts';
+import { getTokenDecimals } from '@/lib/utils';
 import { ActiveLoanCard } from './LoanCard';
 
 export interface LoanData {
@@ -41,25 +42,48 @@ export function ActiveLoanCardWithData({
   isBorrower,
   onRepay,
 }: ActiveLoanCardWithDataProps) {
-  const { data: healthFactor, isLoading: isLoadingHealth } = useLoanHealthFactor(loan.loanId);
   const { data: outstandingDebt } = useOutstandingDebt(loan.loanId);
+
+  // Get token prices (Chainlink 8 decimals)
+  const { price: collateralPrice } = useTokenPrice(loan.collateralAsset);
+  const { price: borrowPrice } = useTokenPrice(loan.borrowAsset);
+
+  // Remaining collateral
+  const remainingCollateral = loan.collateralAmount - loan.collateralReleased;
+
+  // Convert outstanding debt to USD (8 decimals) for LTVConfig.getHealthFactor
+  const borrowDecimals = getTokenDecimals(loan.borrowAsset);
+  const debtUSD = useMemo(() => {
+    if (!outstandingDebt || !borrowPrice) return undefined;
+    return ((outstandingDebt as bigint) * (borrowPrice as bigint)) / BigInt(10 ** borrowDecimals);
+  }, [outstandingDebt, borrowPrice, borrowDecimals]);
+
+  // Duration in days
+  const durationDays = Number(loan.duration) / 86400;
+
+  // Health factor from LTVConfig.getHealthFactor (returns 1e18 = 100%)
+  const { data: healthFactorRaw, isLoading: isLoadingHealth } = useHealthFactor(
+    loan.collateralAsset,
+    remainingCollateral > BigInt(0) ? remainingCollateral : undefined,
+    collateralPrice as bigint | undefined,
+    debtUSD,
+    durationDays > 0 ? Math.round(durationDays) : undefined
+  );
+
+  // Convert from 1e18 scale to ratio (e.g., 1.5e18 → 1.5)
+  const healthFactor = healthFactorRaw
+    ? Number(healthFactorRaw as bigint) / 1e18
+    : undefined;
 
   const loanData = {
     ...loan,
     status: loan.status as LoanStatus,
   };
 
-  // Normalize health factor: contract value is inflated by 10^(collateralDecimals - borrowDecimals)
-  const collateralDec = getTokenDecimals(loan.collateralAsset);
-  const borrowDec = getTokenDecimals(loan.borrowAsset);
-  const normalizedHF = healthFactor
-    ? normalizeHealthFactor(healthFactor as bigint, collateralDec, borrowDec)
-    : undefined;
-
   return (
     <ActiveLoanCard
       loan={loanData}
-      healthFactor={normalizedHF}
+      healthFactor={healthFactor}
       isLoadingHealth={isLoadingHealth}
       repaymentAmount={outstandingDebt ? outstandingDebt as bigint : undefined}
       isBorrower={isBorrower}

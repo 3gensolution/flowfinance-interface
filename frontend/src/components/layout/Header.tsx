@@ -4,6 +4,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { ConnectButton } from '@/components/wallet/ConnectButton';
+// import { NetworkSwitcher } from '@/components/network/NetworkSwitcher';
 import { cn } from '@/lib/utils';
 import { Menu, X } from 'lucide-react';
 import { useState, useEffect } from 'react';
@@ -87,8 +88,11 @@ export function Header() {
               ))}
             </div>
 
-            {/* Wallet & Mobile Menu */}
+            {/* Network Switcher, Wallet & Mobile Menu */}
             <div className="flex items-center gap-3">
+              {/* <div className="hidden xl:block">
+                <NetworkSwitcher />
+              </div> */}
               <div className="hidden xl:block">
                 <ConnectButton />
               </div>
@@ -157,8 +161,9 @@ export function Header() {
               ))}
             </div>
 
-            {/* Connect Button - close to links on mobile, bottom on md+ */}
-            <div className="mt-6 md:mt-0 pt-4 border-t border-white/10">
+            {/* Network & Wallet - close to links on mobile, bottom on md+ */}
+            <div className="mt-6 md:mt-0 pt-4 border-t border-white/10 space-y-3">
+              {/* <NetworkSwitcher /> */}
               <ConnectButton stacked />
             </div>
           </div>

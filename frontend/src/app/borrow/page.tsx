@@ -27,7 +27,7 @@ import {
   useLiquidationThreshold,
 } from '@/hooks/useContracts';
 import { getCurrencySymbol, useExchangeRate, convertFromUSDCents } from '@/hooks/useFiatOracle';
-import { CONTRACT_ADDRESSES, TOKEN_LIST } from '@/config/contracts';
+import { CONTRACT_ADDRESSES, TOKEN_LIST, isFiatSupportedChain } from '@/config/contracts';
 import { useNetwork } from '@/contexts/NetworkContext';
 import { config as wagmiConfig } from '@/config/wagmi';
 import { LoanRequestStatus } from '@/types';
@@ -92,17 +92,20 @@ export default function BorrowPage() {
     },
   });
 
+  const fiatSupported = isFiatSupportedChain(selectedNetwork.id);
+
   const { data: activeFiatOfferIds } = useReadContract({
     address: CONTRACT_ADDRESSES.fiatLoanBridge,
     abi: FiatLoanBridgeABI,
     functionName: 'getActiveFiatLenderOffers',
     chainId: selectedNetwork.id,
     config: wagmiConfig,
+    query: { enabled: fiatSupported },
   });
 
   const fiatOfferIds = useMemo(() => (activeFiatOfferIds as bigint[]) || [], [activeFiatOfferIds]);
 
-  // Fetch fiat offers to filter out user's own offers
+  // Fetch fiat offers to filter out user's own offers (Base only)
   const { data: fiatOffersData } = useReadContracts({
     contracts: fiatOfferIds.map((id) => ({
       address: CONTRACT_ADDRESSES.fiatLoanBridge,
@@ -113,7 +116,7 @@ export default function BorrowPage() {
     })),
     config: wagmiConfig,
     query: {
-      enabled: fiatOfferIds.length > 0 && isConnected,
+      enabled: fiatSupported && fiatOfferIds.length > 0 && isConnected,
     },
   });
 

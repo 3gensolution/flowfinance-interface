@@ -226,13 +226,31 @@ export function LenderOfferCard({ offer, onAccept, onCancel, isOwner, loading }:
         </div>
       )}
 
+      {/* Borrowed / Remaining info when partially borrowed */}
+      {offer.borrowedAmount > BigInt(0) && (
+        <div className="mb-3 p-2 bg-yellow-500/10 border border-yellow-500/20 rounded-lg space-y-1">
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-gray-400">Borrowed</span>
+            <span className="font-medium text-yellow-400">
+              {formatTokenAmount(offer.borrowedAmount, lendDecimals)} {lendSymbol}
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-gray-400">Remaining</span>
+            <span className="font-medium text-green-400">
+              {formatTokenAmount(offer.remainingAmount, lendDecimals)} {lendSymbol}
+            </span>
+          </div>
+        </div>
+      )}
+
       <div className="mt-auto flex gap-2">
         {offer.status === LoanRequestStatus.PENDING && !isOwner && onAccept && (
           <Button onClick={onAccept} loading={loading} className="flex-1">
             Accept Offer
           </Button>
         )}
-        {offer.status === LoanRequestStatus.PENDING && isOwner && onCancel && (
+        {offer.status === LoanRequestStatus.PENDING && isOwner && offer.borrowedAmount === BigInt(0) && onCancel && (
           <Button variant="danger" onClick={onCancel} loading={loading} className="flex-1">
             Cancel
           </Button>
@@ -249,7 +267,7 @@ export function LenderOfferCard({ offer, onAccept, onCancel, isOwner, loading }:
 
 interface ActiveLoanCardProps {
   loan: Loan;
-  healthFactor?: number; // percentage (e.g., 170 = 170%)
+  healthFactor?: number; // ratio (e.g., 1.7 = 170%)
   isLoadingHealth?: boolean;
   repaymentAmount?: bigint;
   onRepay?: () => void;
@@ -278,7 +296,6 @@ export function ActiveLoanCard({
   const { price: collateralPrice } = useTokenPrice(loan.collateralAsset);
 
   const healthStatus = healthFactor !== undefined ? getHealthStatus(healthFactor) : undefined;
-  const healthFactorDisplay = isLoadingHealth ? 'Loading...' : healthFactor !== undefined ? `${healthFactor.toFixed(0)}%` : '--';
   const remainingCollateral = loan.collateralAmount - loan.collateralReleased;
 
   // Calculate USD values
@@ -341,7 +358,7 @@ export function ActiveLoanCard({
             {isLoadingHealth ? (
               <span className="text-xs text-gray-500 animate-pulse">Loading...</span>
             ) : healthStatus ? (
-              <HealthBadge status={healthStatus} value={healthFactorDisplay} />
+              <HealthBadge status={healthStatus} />
             ) : (
               <span className="text-xs text-gray-500">--</span>
             )}
@@ -496,7 +513,7 @@ export function FiatLoanRequestCard({ loan, onFund, onCancel, isOwner, isSupplie
           <div className="glass-card p-3 mb-3">
             <div className="flex items-center justify-between">
               <span className="text-sm text-gray-400">Health Factor</span>
-              <HealthBadge status={hfStatus} value={`${hf.toFixed(0)}%`} />
+              <HealthBadge status={hfStatus} />
             </div>
           </div>
         );
@@ -597,13 +614,31 @@ export function FiatLenderOfferCard({ offer, onAccept, onCancel, isOwner, loadin
         </div>
       </div>
 
+      {/* Borrowed / Remaining info when partially borrowed */}
+      {offer.borrowedAmountCents > BigInt(0) && (
+        <div className="mb-3 p-2 bg-yellow-500/10 border border-yellow-500/20 rounded-lg space-y-1">
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-gray-400">Borrowed</span>
+            <span className="font-medium text-yellow-400">
+              {formatCurrency(offer.borrowedAmountCents, offer.currency)}
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-gray-400">Remaining</span>
+            <span className="font-medium text-green-400">
+              {formatCurrency(offer.remainingAmountCents, offer.currency)}
+            </span>
+          </div>
+        </div>
+      )}
+
       <div className="mt-auto flex gap-2">
         {offer.status === FiatLenderOfferStatus.ACTIVE && !isOwner && onAccept && (
           <Button onClick={onAccept} loading={loading} className="flex-1 bg-green-600 hover:bg-green-700">
             Accept Offer
           </Button>
         )}
-        {offer.status === FiatLenderOfferStatus.ACTIVE && isOwner && onCancel && (
+        {offer.status === FiatLenderOfferStatus.ACTIVE && isOwner && offer.borrowedAmountCents === BigInt(0) && onCancel && (
           <Button variant="danger" onClick={onCancel} loading={loading} className="flex-1">
             Cancel
           </Button>
