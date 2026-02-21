@@ -22,7 +22,7 @@ import {
   useFiatLenderOffersByLender,
 } from '@/stores/contractStore';
 import { useUIStore } from '@/stores/uiStore';
-import { Plus, Coins, Banknote, HandCoins, Wallet, ArrowRightLeft } from 'lucide-react';
+import { Plus, Coins, Banknote, HandCoins, Wallet } from 'lucide-react';
 import { isFiatSupportedOnActiveChain } from '@/config/contracts';
 
 type Tab = 'crypto_borrow' | 'cash_borrow' | 'crypto_lend' | 'cash_lend';

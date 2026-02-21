@@ -1,6 +1,6 @@
 'use client';
 
-import { useAccount, useSwitchChain } from 'wagmi';
+import { useAccount } from 'wagmi';
 import { motion } from 'framer-motion';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -15,21 +15,21 @@ import {
   ExpandedStatsAccordion,
   TransactionHistory,
 } from '@/components/dashboard';
-import { Wallet, RefreshCw, Loader2, ArrowRightLeft, Banknote } from 'lucide-react';
-import { isFiatSupportedOnActiveChain, CHAIN_CONFIG } from '@/config/contracts';
-import { useNetwork } from '@/contexts/NetworkContext';
+import { Wallet, RefreshCw, Loader2 } from 'lucide-react';
+// import { isFiatSupportedOnActiveChain } from '@/config/contracts';
+// import { useNetwork } from '@/contexts/NetworkContext';
 
 export default function DashboardPage() {
   const { address, isConnected } = useAccount();
   const { isLoading, refetch } = useDashboardDataLoader(address);
-  const { setSelectedNetwork } = useNetwork();
-  const { switchChain } = useSwitchChain();
-  const fiatSupported = isFiatSupportedOnActiveChain();
+  // const { setSelectedNetwork } = useNetwork();
+  // const { switchChain } = useSwitchChain();
+  // const fiatSupported = isFiatSupportedOnActiveChain();
 
-  const handleSwitchToBase = () => {
-    setSelectedNetwork(CHAIN_CONFIG.baseSepolia);
-    switchChain({ chainId: CHAIN_CONFIG.baseSepolia.id });
-  };
+  // const handleSwitchToBase = () => {
+  //   setSelectedNetwork(CHAIN_CONFIG.baseSepolia);
+  //   switchChain({ chainId: CHAIN_CONFIG.baseSepolia.id });
+  // };
 
   // Wallet not connected state
   if (!isConnected) {
@@ -77,34 +77,8 @@ export default function DashboardPage() {
         {/* Section 1: Summary Cards */}
         <SummaryCards />
 
-        {/* Section 2: Fiat Supplier Panel (Base only) */}
-        {fiatSupported ? (
-          <FiatSupplierPanel />
-        ) : (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="mb-8"
-          >
-            <div className="p-4 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-start gap-3">
-              <Banknote className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <h4 className="font-semibold text-blue-400 mb-1">Fiat Supplier Features</h4>
-                <p className="text-sm text-white/70 mb-3">
-                  To register as a supplier, view your supplier details, or manage fiat balances, you need to be on the Base network.
-                </p>
-                <button
-                  onClick={handleSwitchToBase}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-500 text-white font-semibold text-sm hover:bg-blue-400 transition-colors"
-                >
-                  <ArrowRightLeft className="w-4 h-4" />
-                  Switch to Base Sepolia
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        )}
+        {/* Section 2: Fiat Supplier Panel (Conditional) */}
+        <FiatSupplierPanel />
 
         {/* Section 3: Active Loans & Offers */}
         <ActiveLoansOffers />

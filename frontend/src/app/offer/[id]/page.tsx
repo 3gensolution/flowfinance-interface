@@ -41,7 +41,6 @@ import {
   ExternalLink,
   Copy,
   Wallet,
-  Info,
   AlertCircle,
   RefreshCw,
   Percent,

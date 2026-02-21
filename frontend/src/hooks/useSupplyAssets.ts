@@ -3,7 +3,7 @@
 import { useMemo } from 'react';
 import { useAccount, useReadContracts, useBalance } from 'wagmi';
 import { Address, Abi } from 'viem';
-import { TOKEN_LIST, SUPPORTED_TOKENS, CONTRACT_ADDRESSES, getActiveChainId } from '@/config/contracts';
+import { TOKEN_LIST, CONTRACT_ADDRESSES, getActiveChainId } from '@/config/contracts';
 import ConfigurationABIJson from '@/contracts/ConfigurationABI.json';
 import { useNetwork } from '@/contexts/NetworkContext';
 import {

@@ -8,7 +8,7 @@ import { formatTokenAmount, formatPercentage, formatDuration, getTokenSymbol, ge
 import { useTokenPrice, useLTV } from '@/hooks/useContracts';
 import { FiatLoan, FiatLoanStatus, FiatLenderOffer, FiatLenderOfferStatus } from '@/hooks/useFiatLoan';
 import { formatCurrency } from '@/hooks/useFiatOracle';
-import { Clock, TrendingUp, Shield, ExternalLink, DollarSign, Banknote } from 'lucide-react';
+import { Clock, TrendingUp, Shield, ExternalLink, Banknote } from 'lucide-react';
 import Link from 'next/link';
 
 // Helper to format USD values
@@ -458,7 +458,7 @@ export function FiatLoanRequestCard({ loan, onFund, onCancel, isOwner, isSupplie
       <div className="flex items-start justify-between mb-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <DollarSign className="w-5 h-5 text-green-400" />
+            {/* <DollarSign className="w-5 h-5 text-green-400" /> */}
             <span className="text-lg font-bold text-green-400">
               {formatCurrency(loan.fiatAmountCents, loan.currency)}
             </span>

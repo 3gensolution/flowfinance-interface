@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { useAccount } from 'wagmi';
 import { useNetwork, AVAILABLE_NETWORKS, hasContracts } from '@/contexts/NetworkContext';
-import { setActiveChainId } from '@/config/contracts';
+// import { setActiveChainId } from '@/config/contracts';
 
 /**
  * Syncs wallet chain changes (e.g. from RainbowKit chain modal) with NetworkContext.
