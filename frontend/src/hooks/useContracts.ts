@@ -3,7 +3,7 @@
 import { useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from 'wagmi';
 import { Address, Abi, formatUnits } from 'viem';
 import { useEffect, useCallback } from 'react';
-import { CONTRACT_ADDRESSES, getTokenByAddress, TOKEN_LIST, getActiveChainId, getContractAddresses } from '@/config/contracts';
+import { CONTRACT_ADDRESSES, getTokenByAddress, TOKEN_LIST, getActiveChainId, getContractAddresses, CONTRACT_ADDRESSES_BY_CHAIN } from '@/config/contracts';
 import { useContractStore } from '@/stores/contractStore';
 import { LoanRequest, LenderOffer, Loan } from '@/types';
 import LoanMarketPlaceABIJson from '@/contracts/LoanMarketPlaceABI.json';
@@ -29,6 +29,70 @@ export function useLoanRequest(requestId: bigint | undefined) {
       enabled: requestId !== undefined,
     },
   });
+}
+
+// Read loan request by ID across ALL configured chains.
+// Returns the first valid result (non-zero borrower) and the chainId it was found on.
+// Prioritises the active chain so same-chain requests resolve instantly.
+export function useLoanRequestMultiChain(requestId: bigint | undefined) {
+  const activeChainId = getActiveChainId();
+
+  // Build one read call per chain that has a non-zero marketplace address
+  const ZERO = '0x0000000000000000000000000000000000000000';
+  const chainIds = Object.keys(CONTRACT_ADDRESSES_BY_CHAIN).map(Number);
+  const validChains = chainIds.filter((cid) => {
+    const addrs = getContractAddresses(cid);
+    return addrs.loanMarketPlace && addrs.loanMarketPlace !== ZERO;
+  });
+
+  // Put active chain first so it gets priority
+  const orderedChains = [
+    ...validChains.filter((c) => c === activeChainId),
+    ...validChains.filter((c) => c !== activeChainId),
+  ];
+
+  const contracts = orderedChains.map((cid) => ({
+    address: getContractAddresses(cid).loanMarketPlace,
+    abi: LoanMarketPlaceABI,
+    functionName: 'loanRequests' as const,
+    args: [requestId!] as const,
+    chainId: cid,
+  }));
+
+  const result = useReadContracts({
+    contracts: requestId !== undefined ? contracts : [],
+    query: {
+      enabled: requestId !== undefined,
+    },
+  });
+
+  // Find first valid (non-zero borrower) result
+  let data: unknown = undefined;
+  let foundChainId: number = activeChainId;
+
+  if (result.data) {
+    for (let i = 0; i < orderedChains.length; i++) {
+      const entry = result.data[i];
+      if (entry?.status === 'success' && entry.result) {
+        const tuple = entry.result as readonly unknown[];
+        const borrower = tuple[1] as string;
+        if (borrower && borrower !== ZERO) {
+          data = entry.result;
+          foundChainId = orderedChains[i];
+          break;
+        }
+      }
+    }
+  }
+
+  return {
+    data,
+    foundChainId,
+    isLoading: result.isLoading,
+    isError: result.isError,
+    error: result.error,
+    refetch: result.refetch,
+  };
 }
 
 // Read lender offer by ID
@@ -578,12 +642,13 @@ export function useRefreshMockPrice() {
 }
 
 // Token balance
-export function useTokenBalance(tokenAddress: Address | undefined, userAddress: Address | undefined) {
+export function useTokenBalance(tokenAddress: Address | undefined, userAddress: Address | undefined, chainId?: number) {
   return useReadContract({
     address: tokenAddress,
     abi: ERC20ABI,
     functionName: 'balanceOf',
     args: userAddress ? [userAddress] : undefined,
+    chainId: chainId ?? getActiveChainId(),
     query: {
       enabled: !!tokenAddress && !!userAddress,
     },
@@ -594,13 +659,15 @@ export function useTokenBalance(tokenAddress: Address | undefined, userAddress: 
 export function useTokenAllowance(
   tokenAddress: Address | undefined,
   ownerAddress: Address | undefined,
-  spenderAddress: Address | undefined
+  spenderAddress: Address | undefined,
+  chainId?: number
 ) {
   return useReadContract({
     address: tokenAddress,
     abi: ERC20ABI,
     functionName: 'allowance',
     args: ownerAddress && spenderAddress ? [ownerAddress, spenderAddress] : undefined,
+    chainId: chainId ?? getActiveChainId(),
     query: {
       enabled: !!tokenAddress && !!ownerAddress && !!spenderAddress,
     },
@@ -1508,6 +1575,70 @@ export function useUserDashboardData(userAddress: Address | undefined) {
     isLoading: isLoadingBorrowed || isLoadingLent || isLoadingRequests || isLoadingOffers,
     refetch,
   };
+}
+
+// ── Cross-Chain Lending ──────────────────────────────────────────────
+
+import CrossChainLoanManagerABIJson from '@/contracts/CrossChainLoanManagerABI.json';
+const CrossChainLoanManagerABI = CrossChainLoanManagerABIJson as Abi;
+
+export function useFundCrossChainLoanRequest() {
+  const { writeContract, writeContractAsync, data: hash, isPending, error } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+
+  const fundRequest = (
+    requestId: bigint,
+    sourceChainId: bigint,
+    sourceLoanId: bigint,
+    crossChainManagerAddress?: Address,
+  ) => {
+    writeContract({
+      address: crossChainManagerAddress || CONTRACT_ADDRESSES.crossChainManager,
+      abi: CrossChainLoanManagerABI,
+      functionName: 'fundCrossChainLoanRequest',
+      args: [requestId, sourceChainId, sourceLoanId],
+    });
+  };
+
+  const fundRequestAsync = async (
+    requestId: bigint,
+    sourceChainId: bigint,
+    sourceLoanId: bigint,
+    crossChainManagerAddress?: Address,
+  ) => {
+    return writeContractAsync({
+      address: crossChainManagerAddress || CONTRACT_ADDRESSES.crossChainManager,
+      abi: CrossChainLoanManagerABI,
+      functionName: 'fundCrossChainLoanRequest',
+      args: [requestId, sourceChainId, sourceLoanId],
+    });
+  };
+
+  return { fundRequest, fundRequestAsync, hash, isPending, isConfirming, isSuccess, error };
+}
+
+export function useInitiateCrossChainLoanRequest() {
+  const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+
+  const initiateRequest = async (
+    targetChainId: bigint,
+    collateralToken: Address,
+    collateralAmount: bigint,
+    borrowAsset: Address,
+    borrowAmount: bigint,
+    interestRate: bigint,
+    duration: bigint
+  ) => {
+    return await writeContractAsync({
+      address: CONTRACT_ADDRESSES.crossChainManager,
+      abi: CrossChainLoanManagerABI,
+      functionName: 'initiateCrossChainLoanRequest',
+      args: [targetChainId, collateralToken, collateralAmount, borrowAsset, borrowAmount, interestRate, duration],
+    });
+  };
+
+  return { initiateRequest, hash, isPending, isConfirming, isSuccess, error };
 }
 
 // NOTE: useInvalidateContractQueries, useContractEventListener, and useAutoRefreshOnTx

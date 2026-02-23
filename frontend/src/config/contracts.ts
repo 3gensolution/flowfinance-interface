@@ -12,6 +12,7 @@ export type ContractAddresses = {
   supplierRegistry: Address;
   fiatOracle: Address;
   fiatLoanBridge: Address;
+  crossChainManager: Address;
 };
 
 // Base Sepolia contract addresses (default)
@@ -23,6 +24,7 @@ const BASE_SEPOLIA_CONTRACT_ADDRESSES: ContractAddresses = {
   supplierRegistry: process.env.NEXT_PUBLIC_SUPPLIER_REGISTRY_ADDRESS as Address || ZERO_ADDRESS,
   fiatOracle: process.env.NEXT_PUBLIC_FIAT_ORACLE_ADDRESS as Address || ZERO_ADDRESS,
   fiatLoanBridge: process.env.NEXT_PUBLIC_FIAT_LOAN_BRIDGE_ADDRESS as Address || ZERO_ADDRESS,
+  crossChainManager: process.env.NEXT_PUBLIC_CROSS_CHAIN_MANAGER_ADDRESS as Address || ZERO_ADDRESS,
 };
 
 // Dynamic CONTRACT_ADDRESSES — mutated in-place when chain switches via setActiveChainId()
@@ -39,6 +41,7 @@ export const POLYGON_AMOY_CONTRACT_ADDRESSES: ContractAddresses = {
   supplierRegistry: process.env.NEXT_PUBLIC_POLYGON_AMOY_SUPPLIER_REGISTRY_ADDRESS as Address || ZERO_ADDRESS,
   fiatOracle: ZERO_ADDRESS,
   fiatLoanBridge: ZERO_ADDRESS,
+  crossChainManager: process.env.NEXT_PUBLIC_POLYGON_AMOY_CROSS_CHAIN_MANAGER_ADDRESS as Address || ZERO_ADDRESS,
 };
 
 // Contract addresses indexed by chain ID
@@ -213,6 +216,21 @@ export const getTokenBySymbol = (symbol: string) => {
 export function getTokenBySymbolForChain(symbol: string, chainId: number) {
   const tokens = getTokenListForChain(chainId);
   return tokens.find(token => token.symbol.toLowerCase() === symbol.toLowerCase());
+}
+
+// Find which chain a token address belongs to (returns chainId or undefined).
+// Skips Anvil (31337) since it reuses Base Sepolia addresses and would
+// shadow the real chain during lookups (JS numeric keys sort 31337 < 84532).
+export function findTokenChainId(address: Address | undefined): number | undefined {
+  if (!address) return undefined;
+  const addrLower = address.toLowerCase();
+  for (const [chainIdStr, tokens] of Object.entries(TOKENS_BY_CHAIN)) {
+    const chainId = Number(chainIdStr);
+    if (chainId === 31337) continue; // skip Anvil — duplicate addresses
+    const match = Object.values(tokens).find(t => t.address.toLowerCase() === addrLower);
+    if (match) return chainId;
+  }
+  return undefined;
 }
 
 // Chain configuration

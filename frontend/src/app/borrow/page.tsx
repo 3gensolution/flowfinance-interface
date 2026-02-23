@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, ArrowRight, Info, Sparkles } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Info, Sparkles, Globe } from 'lucide-react';
 import { useAccount, useReadContracts, useReadContract } from 'wagmi';
 import Link from 'next/link';
 import { Address, formatUnits, parseUnits, Abi } from 'viem';
@@ -27,8 +27,8 @@ import {
   useLiquidationThreshold,
 } from '@/hooks/useContracts';
 import { getCurrencySymbol, useExchangeRate, convertFromUSDCents } from '@/hooks/useFiatOracle';
-import { CONTRACT_ADDRESSES, TOKEN_LIST, isFiatSupportedChain } from '@/config/contracts';
-import { useNetwork } from '@/contexts/NetworkContext';
+import { CONTRACT_ADDRESSES, TOKEN_LIST, isFiatSupportedChain, getTokenListForChain, getChainById } from '@/config/contracts';
+import { useNetwork, NETWORKS_WITH_CONTRACTS } from '@/contexts/NetworkContext';
 import { config as wagmiConfig } from '@/config/wagmi';
 import { LoanRequestStatus } from '@/types';
 import LoanMarketPlaceABIJson from '@/contracts/LoanMarketPlaceABI.json';
@@ -65,6 +65,23 @@ export default function BorrowPage() {
   const [interestRate, setInterestRate] = useState(10);
   const [duration, setDuration] = useState(30);
   const [customDate, setCustomDate] = useState<Date | null>(null);
+
+  // Cross-chain: target chain for receiving funds (defaults to current chain = same-chain)
+  const [targetChainId, setTargetChainId] = useState<number>(selectedNetwork.id);
+  const isCrossChain = targetChainId !== selectedNetwork.id;
+
+  // Available target chains (chains with deployed contracts)
+  const targetChainOptions = useMemo(() => {
+    return NETWORKS_WITH_CONTRACTS
+      .map(cid => getChainById(cid))
+      .filter((c): c is NonNullable<typeof c> => !!c);
+  }, []);
+
+  // Reset stablecoin selection when target chain changes
+  useEffect(() => {
+    setSelectedStablecoin(null);
+    setSelectedBorrowAsset(null);
+  }, [targetChainId]);
 
   // Fetch available lender offers count for informational banner
   const { data: nextCryptoOfferId } = useReadContract({
@@ -244,9 +261,11 @@ export default function BorrowPage() {
   }, [availableTokens, balancesData]);
 
   // Filter stablecoins for borrowing (USDC, USDT, DAI, etc.)
+  // For cross-chain: stablecoins come from the TARGET chain (funds are received there)
   const stablecoinSymbols = ['USDC', 'USDT', 'DAI'];
   const stablecoins: StablecoinAsset[] = useMemo(() => {
-    return availableTokens
+    const tokenSource = isCrossChain ? getTokenListForChain(targetChainId) : availableTokens;
+    return tokenSource
       .filter(token => stablecoinSymbols.includes(token.symbol))
       .map(token => ({
         symbol: token.symbol,
@@ -255,7 +274,7 @@ export default function BorrowPage() {
         decimals: token.decimals,
         icon: token.icon,
       }));
-  }, [availableTokens]);
+  }, [availableTokens, isCrossChain, targetChainId]);
 
   // Sync selectedBorrowAsset with selectedStablecoin
   useEffect(() => {
@@ -278,8 +297,18 @@ export default function BorrowPage() {
   const collateralPrice = collateralPriceHook.price;
 
   // Get borrow asset price
-  const borrowAssetAddress = selectedBorrowAsset?.address as Address | undefined;
-  const borrowPriceHook = useTokenPrice(borrowAssetAddress);
+  // For cross-chain: borrow asset is on the target chain, but price feeds are on the source chain.
+  // Look up the source chain's equivalent token by symbol for the price query.
+  const borrowPriceAddress = useMemo(() => {
+    if (!selectedBorrowAsset) return undefined;
+    if (!isCrossChain) return selectedBorrowAsset.address as Address;
+    // Find the same-symbol token on the source chain
+    const sourceToken = availableTokens.find(
+      t => t.symbol.toLowerCase() === selectedBorrowAsset.symbol.toLowerCase()
+    );
+    return sourceToken?.address as Address | undefined;
+  }, [selectedBorrowAsset, isCrossChain, availableTokens]);
+  const borrowPriceHook = useTokenPrice(borrowPriceAddress);
   const borrowPrice = borrowPriceHook.price;
 
   // Get LTV from contract
@@ -493,6 +522,46 @@ export default function BorrowPage() {
               </motion.div>
             )}
 
+            {/* Target Chain Selector */}
+            {targetChainOptions.length > 1 && (
+              <div className="max-w-2xl mx-auto">
+                <div className="p-4 rounded-2xl bg-white/5 border border-white/10">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Globe className="w-4 h-4 text-primary-400" />
+                    <span className="text-sm font-medium text-white/70">Receive funds on</span>
+                  </div>
+                  <div className="flex gap-2">
+                    {targetChainOptions.map(chain => (
+                      <button
+                        key={chain.id}
+                        onClick={() => setTargetChainId(chain.id)}
+                        className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                          targetChainId === chain.id
+                            ? 'bg-primary-500 text-white shadow-lg shadow-primary-500/25'
+                            : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'
+                        }`}
+                      >
+                        {chain.name}
+                        {chain.id === selectedNetwork.id && (
+                          <span className="text-xs opacity-60 ml-1">(current)</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                  {isCrossChain && (
+                    <motion.p
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      className="text-xs text-accent-400 mt-2 flex items-center gap-1.5"
+                    >
+                      <Info className="w-3.5 h-3.5 flex-shrink-0" />
+                      Cross-chain: collateral locked on {selectedNetwork.name}, funds received on {getChainById(targetChainId)?.name}
+                    </motion.p>
+                  )}
+                </div>
+              </div>
+            )}
+
             <StablecoinSelector
               selected={selectedStablecoin}
               onSelect={setSelectedStablecoin}
@@ -638,13 +707,26 @@ export default function BorrowPage() {
                 isStale: borrowPriceHook.isStale,
                 priceFeedAddress: borrowPriceHook.priceFeedAddress,
                 price: borrowPrice,
-                tokenAddress: selectedBorrowAsset?.address as Address | undefined,
+                tokenAddress: borrowPriceAddress,
                 refetch: borrowPriceHook.refetch,
               },
             ];
 
         return (
           <div className="space-y-6">
+            {/* Cross-chain indicator */}
+            {isCrossChain && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="max-w-xl mx-auto flex items-center gap-2 px-4 py-3 rounded-xl bg-accent-500/10 border border-accent-500/30 text-sm text-accent-400"
+              >
+                <Globe className="w-4 h-4 flex-shrink-0" />
+                <span>
+                  Cross-chain request: Collateral on <strong>{selectedNetwork.name}</strong>, funds on <strong>{getChainById(targetChainId)?.name}</strong>
+                </span>
+              </motion.div>
+            )}
             <QuotationPanel
               collateral={selectedCollateral}
               collateralAmount={collateralAmount}
@@ -671,6 +753,7 @@ export default function BorrowPage() {
               borrowType={borrowType}
               fiatAmountCents={borrowType === 'cash' ? BigInt(Math.floor(fiatBorrowAmount.amount * 100)) : undefined}
               fiatCurrency={borrowType === 'cash' ? selectedBorrowAsset?.symbol : undefined}
+              targetChainId={isCrossChain ? targetChainId : undefined}
             />
           </div>
         );

@@ -14,6 +14,7 @@ export interface FilterState {
   interestRange: { min: number; max: number };
   duration: string[];
   sortBy: 'newest' | 'lowest_interest' | 'highest_interest' | 'amount_high' | 'amount_low';
+  crossChain: 'all' | 'cross_chain' | 'same_chain';
 }
 
 interface FilterBarProps {
@@ -88,6 +89,7 @@ export function FilterBar({ filters, onFilterChange, resultCount }: FilterBarPro
       interestRange: { min: 0, max: 100 },
       duration: [],
       sortBy: 'newest',
+      crossChain: 'all',
     });
   };
 
@@ -95,7 +97,8 @@ export function FilterBar({ filters, onFilterChange, resultCount }: FilterBarPro
     filters.assetType !== 'all' ||
     filters.tokens.length > 0 ||
     filters.duration.length > 0 ||
-    filters.sortBy !== 'newest';
+    filters.sortBy !== 'newest' ||
+    filters.crossChain !== 'all';
 
   return (
     <motion.div
@@ -158,6 +161,53 @@ export function FilterBar({ filters, onFilterChange, resultCount }: FilterBarPro
                         )}
                       >
                         {type}
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            {/* Cross-Chain Filter */}
+            <div className="relative">
+              <button
+                onClick={() => setOpenDropdown(openDropdown === 'crossChain' ? null : 'crossChain')}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-sm hover:bg-white/10 transition-colors"
+              >
+                <span className="text-gray-400">Chain:</span>
+                <span className="capitalize">
+                  {filters.crossChain === 'all' ? 'All' : filters.crossChain === 'cross_chain' ? 'Cross-Chain' : 'Same-Chain'}
+                </span>
+                <ChevronDown className={cn(
+                  'w-4 h-4 text-gray-400 transition-transform',
+                  openDropdown === 'crossChain' && 'rotate-180'
+                )} />
+              </button>
+              <AnimatePresence>
+                {openDropdown === 'crossChain' && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="absolute top-full left-0 mt-2 w-40 py-2 rounded-lg bg-navy-800 border border-white/10 shadow-lg z-50"
+                  >
+                    {[
+                      { value: 'all', label: 'All' },
+                      { value: 'cross_chain', label: 'Cross-Chain' },
+                      { value: 'same_chain', label: 'Same-Chain' },
+                    ].map((option) => (
+                      <button
+                        key={option.value}
+                        onClick={() => {
+                          updateFilter('crossChain', option.value as FilterState['crossChain']);
+                          setOpenDropdown(null);
+                        }}
+                        className={cn(
+                          'w-full px-4 py-2 text-left text-sm hover:bg-white/5',
+                          filters.crossChain === option.value && 'text-primary-400 bg-white/5'
+                        )}
+                      >
+                        {option.label}
                       </button>
                     ))}
                   </motion.div>
@@ -399,6 +449,31 @@ export function FilterBar({ filters, onFilterChange, resultCount }: FilterBarPro
                         )}
                       >
                         {type}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Cross-Chain Filter */}
+                <div>
+                  <label className="text-sm text-gray-400 mb-2 block">Chain Type</label>
+                  <div className="flex gap-2">
+                    {[
+                      { value: 'all', label: 'All' },
+                      { value: 'cross_chain', label: 'Cross-Chain' },
+                      { value: 'same_chain', label: 'Same-Chain' },
+                    ].map((option) => (
+                      <button
+                        key={option.value}
+                        onClick={() => updateFilter('crossChain', option.value as FilterState['crossChain'])}
+                        className={cn(
+                          'px-4 py-2 rounded-lg text-sm transition-colors',
+                          filters.crossChain === option.value
+                            ? 'bg-primary-500 text-white'
+                            : 'bg-white/5 text-gray-400'
+                        )}
+                      >
+                        {option.label}
                       </button>
                     ))}
                   </div>

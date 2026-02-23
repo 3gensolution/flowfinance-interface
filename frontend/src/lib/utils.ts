@@ -1,7 +1,7 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { formatUnits, parseUnits, Address } from 'viem';
-import { getTokenByAddress, getTokenByAddressForChain } from '@/config/contracts';
+import { getTokenByAddress, getTokenByAddressForChain, TOKENS_BY_CHAIN } from '@/config/contracts';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -103,18 +103,34 @@ export function formatTimeUntil(timestamp: bigint | undefined): string {
   return `${Math.floor(diff / 86400)}d left`;
 }
 
-// Get token symbol from address (optionally chain-aware)
+// Search all chains for a token by address (cross-chain fallback)
+function findTokenAcrossChains(address: Address) {
+  const addrLower = address.toLowerCase();
+  for (const tokens of Object.values(TOKENS_BY_CHAIN)) {
+    const match = Object.values(tokens).find(t => t.address.toLowerCase() === addrLower);
+    if (match) return match;
+  }
+  return undefined;
+}
+
+// Get token symbol from address (optionally chain-aware, with cross-chain fallback)
 export function getTokenSymbol(address: Address | undefined, chainId?: number): string {
   if (!address) return 'UNKNOWN';
   const token = chainId ? getTokenByAddressForChain(address, chainId) : getTokenByAddress(address);
-  return token?.symbol || formatAddress(address, 3);
+  if (token) return token.symbol;
+  // Cross-chain fallback: token may be from another chain
+  const crossChainToken = findTokenAcrossChains(address);
+  return crossChainToken?.symbol || formatAddress(address, 3);
 }
 
-// Get token decimals from address (optionally chain-aware)
+// Get token decimals from address (optionally chain-aware, with cross-chain fallback)
 export function getTokenDecimals(address: Address | undefined, chainId?: number): number {
   if (!address) return 18;
   const token = chainId ? getTokenByAddressForChain(address, chainId) : getTokenByAddress(address);
-  return token?.decimals || 18;
+  if (token) return token.decimals;
+  // Cross-chain fallback
+  const crossChainToken = findTokenAcrossChains(address);
+  return crossChainToken?.decimals || 18;
 }
 
 // Normalize raw health factor from contract (inflated by decimal mismatch)

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import { useAccount, useWriteContract, useWaitForTransactionReceipt, useSwitchChain } from 'wagmi';
 import { parseUnits } from 'viem';
 import { motion } from 'framer-motion';
 import { Card } from '@/components/ui/Card';
@@ -118,40 +118,62 @@ function TokenFaucetCard({ token, onMint, isPending, pendingToken }: TokenFaucet
 }
 
 export default function FaucetPage() {
-  const { isConnected } = useAccount();
+  const { isConnected, chainId: walletChainId } = useAccount();
   const { selectedNetwork } = useNetwork();
+  const { switchChain } = useSwitchChain();
   const [pendingToken, setPendingToken] = useState<string | null>(null);
   const [lastConfirmedHash, setLastConfirmedHash] = useState<string | null>(null);
 
-  const { writeContract, data: hash, isPending } = useWriteContract();
+  const { writeContract, data: hash, isPending, error: writeError, reset: resetWrite } = useWriteContract();
 
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
     hash,
   });
 
+  // Detect wallet/app chain mismatch
+  const isWrongChain = walletChainId !== selectedNetwork.id;
+
   // Get tokens for the selected network
   const chainTokens = getTokensForChain(selectedNetwork.id);
   const tokenList = Object.values(chainTokens);
+
+  // Handle write errors
+  useEffect(() => {
+    if (writeError && pendingToken) {
+      const msg = writeError.message || 'Transaction failed';
+      // Show user-friendly error
+      if (msg.includes('User rejected') || msg.includes('user rejected')) {
+        toast.error('Transaction rejected');
+      } else if (msg.includes('insufficient funds') || msg.includes('Insufficient funds')) {
+        toast.error('Insufficient gas. Get testnet tokens from the faucets below.');
+      } else {
+        toast.error(`Mint failed: ${msg.slice(0, 100)}`);
+      }
+      console.error('Mint error:', writeError);
+      setPendingToken(null);
+      resetWrite();
+    }
+  }, [writeError, pendingToken, resetWrite]);
+
+  const handleSwitchChain = () => {
+    switchChain({ chainId: selectedNetwork.id });
+  };
 
   const handleMint = async (tokenAddress: string, amount: bigint) => {
     const token = tokenList.find(t => t.address === tokenAddress);
     if (!token) return;
 
+    // Reset any previous error state
+    resetWrite();
     setPendingToken(token.symbol);
 
-    try {
-      writeContract({
-        address: tokenAddress as `0x${string}`,
-        abi: MOCK_TOKEN_ABI,
-        functionName: 'mint',
-        args: [amount],
-      });
-      toast.success(`Minting ${token.symbol}...`);
-    } catch (error) {
-      console.error('Mint error:', error);
-      toast.error('Failed to mint tokens');
-      setPendingToken(null);
-    }
+    writeContract({
+      address: tokenAddress as `0x${string}`,
+      abi: MOCK_TOKEN_ABI,
+      functionName: 'mint',
+      args: [amount],
+      chainId: selectedNetwork.id,
+    });
   };
 
   // Handle successful transaction
@@ -222,6 +244,32 @@ export default function FaucetPage() {
             </div>
           </Card>
         </motion.div>
+
+        {/* Wrong Chain Warning */}
+        {isWrongChain && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-8"
+          >
+            <Card className="bg-yellow-500/10 border-yellow-500/20">
+              <div className="flex items-center justify-between gap-4 p-4">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <h3 className="font-semibold text-yellow-400 mb-1">Wrong Network</h3>
+                    <p className="text-sm text-gray-400">
+                      Your wallet is on a different network. Switch to <strong className="text-white">{selectedNetwork.name}</strong> to mint tokens.
+                    </p>
+                  </div>
+                </div>
+                <Button size="sm" onClick={handleSwitchChain}>
+                  Switch Network
+                </Button>
+              </div>
+            </Card>
+          </motion.div>
+        )}
 
         {/* Token Grid */}
         <motion.div

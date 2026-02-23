@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { parseUnits, Address, Abi } from 'viem';
 import { useAccount, useWaitForTransactionReceipt, usePublicClient } from 'wagmi';
 import { useRouter } from 'next/navigation';
+import { useNetwork } from '@/contexts/NetworkContext';
 import { CollateralAsset } from './CollateralSelector';
 import { BorrowAsset, BorrowType } from './BorrowAssetSelector';
 import { TransactionFlow } from '@/components/ui/TransactionFlow';
@@ -11,13 +12,16 @@ import {
   useApproveToken,
   useTokenAllowance,
   useCreateLoanRequest,
+  useInitiateCrossChainLoanRequest,
 } from '@/hooks/useContracts';
 import { useCreateFiatLoanRequest } from '@/hooks/useFiatLoan';
 import { CONTRACT_ADDRESSES } from '@/config/contracts';
 import { formatSimulationError } from '@/lib/contractSimulation';
 import LoanMarketPlaceABIJson from '@/contracts/LoanMarketPlaceABI.json';
+import CrossChainLoanManagerABIJson from '@/contracts/CrossChainLoanManagerABI.json';
 
 const LoanMarketPlaceABI = LoanMarketPlaceABIJson as Abi;
+const CrossChainLoanManagerABI = CrossChainLoanManagerABIJson as Abi;
 
 interface BorrowSubmitCTAProps {
   collateral: CollateralAsset | null;
@@ -30,6 +34,7 @@ interface BorrowSubmitCTAProps {
   borrowType?: BorrowType;
   fiatAmountCents?: bigint;
   fiatCurrency?: string;
+  targetChainId?: number;
 }
 
 type SubmitStep = 'idle' | 'approving' | 'creating' | 'success';
@@ -59,9 +64,11 @@ export function BorrowSubmitCTA({
   borrowType = 'crypto',
   fiatAmountCents,
   fiatCurrency,
+  targetChainId,
 }: BorrowSubmitCTAProps) {
   const router = useRouter();
   const { address: userAddress } = useAccount();
+  const { selectedNetwork } = useNetwork();
   const publicClient = usePublicClient();
   const [submitStep, setSubmitStep] = useState<SubmitStep>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -70,6 +77,7 @@ export function BorrowSubmitCTA({
   const isCryptoCollateral = !!collateral?.address;
   const isCryptoBorrow = borrowType === 'crypto' && borrowAsset?.type === 'crypto' && !!borrowAsset?.address;
   const isFiatBorrow = borrowType === 'cash';
+  const isCrossChain = !!(targetChainId && targetChainId !== selectedNetwork?.id);
 
   // Convert duration to seconds for contract call
   const durationSeconds = BigInt(duration * 24 * 60 * 60);
@@ -82,13 +90,20 @@ export function BorrowSubmitCTA({
   const { createRequest, hash: createHash, isPending: isCreatePending } = useCreateLoanRequest();
   const { isSuccess: isCreateConfirmed } = useWaitForTransactionReceipt({ hash: createHash });
 
+  // Cross-chain loan request hook
+  const { initiateRequest: initiateCrossChain, hash: crossChainHash, isPending: isCrossChainPending } = useInitiateCrossChainLoanRequest();
+  const { isSuccess: isCrossChainConfirmed } = useWaitForTransactionReceipt({ hash: crossChainHash });
+
   // Fiat loan hook
   const { createFiatLoanRequest, hash: fiatCreateHash, isPending: isFiatCreatePending } = useCreateFiatLoanRequest();
   const { isSuccess: isFiatCreateConfirmed } = useWaitForTransactionReceipt({ hash: fiatCreateHash });
 
   // Determine which contract needs approval based on borrow type
+  // Cross-chain: approve CrossChainLoanManager (it transfers collateral to marketplace)
   const approvalContractAddress = isFiatBorrow
     ? CONTRACT_ADDRESSES.fiatLoanBridge
+    : isCrossChain
+    ? CONTRACT_ADDRESSES.crossChainManager
     : CONTRACT_ADDRESSES.loanMarketPlace;
 
   const tokenAddress = isCryptoCollateral ? (collateral?.address as Address) : undefined;
@@ -115,7 +130,7 @@ export function BorrowSubmitCTA({
   const needsApproval = isCryptoCollateral && currentAllowance < collateralAmountInWei;
 
   const isApproving = submitStep === 'approving' || isApprovePending;
-  const isCreating = submitStep === 'creating' || isCreatePending || isFiatCreatePending;
+  const isCreating = submitStep === 'creating' || isCreatePending || isFiatCreatePending || isCrossChainPending;
 
   // Format display values
   const currencySymbol = borrowAsset ? getCurrencySymbol(borrowAsset.symbol) : '$';
@@ -129,14 +144,14 @@ export function BorrowSubmitCTA({
     }
   }, [isApproveConfirmed, refetchAllowance]);
 
-  // Effects - Handle create success (both crypto and fiat)
+  // Effects - Handle create success (crypto, fiat, and cross-chain)
   useEffect(() => {
-    if (isCreateConfirmed || isFiatCreateConfirmed) {
+    if (isCreateConfirmed || isFiatCreateConfirmed || isCrossChainConfirmed) {
       setSubmitStep('success');
       setShowSuccessModal(true);
       setTimeout(() => router.push('/marketplace'), 3000);
     }
-  }, [isCreateConfirmed, isFiatCreateConfirmed, router]);
+  }, [isCreateConfirmed, isFiatCreateConfirmed, isCrossChainConfirmed, router]);
 
   // Handlers
   const handleApprove = async () => {
@@ -195,7 +210,62 @@ export function BorrowSubmitCTA({
           interestRateBps,
           durationSeconds
         );
+      } else if (isCrossChain && targetChainId) {
+        // Cross-chain crypto borrow
+        if (!isCryptoBorrow) {
+          setSubmitStep('idle');
+          setErrorMessage('Please select a valid borrow asset.');
+          return;
+        }
+
+        if (publicClient) {
+          console.log('=== Cross-Chain Loan Request Parameters ===');
+          console.log('Target Chain:', targetChainId);
+          console.log('Collateral Token:', collateral.address);
+          console.log('Collateral Amount:', collateralAmountInWei.toString());
+          console.log('Borrow Token (target chain):', borrowAsset.address);
+          console.log('Borrow Amount:', borrowAmountInWei.toString());
+          console.log('Interest Rate (bps):', interestRateBps.toString());
+          console.log('Duration (seconds):', durationSeconds.toString());
+
+          try {
+            await publicClient.simulateContract({
+              address: CONTRACT_ADDRESSES.crossChainManager,
+              abi: CrossChainLoanManagerABI,
+              functionName: 'initiateCrossChainLoanRequest',
+              args: [
+                BigInt(targetChainId),
+                collateral.address,
+                collateralAmountInWei,
+                borrowAsset.address,
+                borrowAmountInWei,
+                interestRateBps,
+                durationSeconds
+              ],
+              account: userAddress,
+            });
+            console.log('Cross-chain simulation successful!');
+          } catch (simError: unknown) {
+            console.error('Cross-chain simulation failed:', simError);
+            const err = simError as { shortMessage?: string; message?: string };
+            const errorMsg = err.shortMessage || err.message || 'Transaction will fail. Please check your inputs.';
+            setSubmitStep('idle');
+            setErrorMessage(errorMsg);
+            return;
+          }
+        }
+
+        await initiateCrossChain(
+          BigInt(targetChainId),
+          collateral.address as Address,
+          collateralAmountInWei,
+          borrowAsset.address as Address,
+          borrowAmountInWei,
+          interestRateBps,
+          durationSeconds
+        );
       } else {
+        // Same-chain crypto borrow
         if (!isCryptoBorrow) {
           setSubmitStep('idle');
           setErrorMessage('Please select a valid borrow asset.');
@@ -280,8 +350,11 @@ export function BorrowSubmitCTA({
       submitLoadingText="Submitting..."
       statusText={getStatusText()}
       showSuccess={showSuccessModal}
-      successTitle="Borrow Request Submitted!"
-      successMessage={`Your borrow request for ${currencySymbol}${formatNumber(loanAmount)} ${borrowAsset?.symbol || ''} has been submitted to the marketplace.`}
+      successTitle={isCrossChain ? "Cross-Chain Request Submitted!" : "Borrow Request Submitted!"}
+      successMessage={isCrossChain
+        ? `Your cross-chain borrow request for ${currencySymbol}${formatNumber(loanAmount)} ${borrowAsset?.symbol || ''} has been submitted. The relay will process it shortly.`
+        : `Your borrow request for ${currencySymbol}${formatNumber(loanAmount)} ${borrowAsset?.symbol || ''} has been submitted to the marketplace.`
+      }
       onGoToMarketplace={handleGoToMarketplace}
     />
   );

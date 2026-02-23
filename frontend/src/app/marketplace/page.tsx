@@ -23,6 +23,7 @@ import {
 import { LoanRequest, LenderOffer, LoanRequestStatus } from '@/types';
 import { FiatLenderOffer, FiatLenderOfferStatus } from '@/hooks/useFiatLoan';
 import { getTokenSymbol } from '@/lib/utils';
+import { getTokenByAddressForChain } from '@/config/contracts';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/Button';
 import Link from 'next/link';
@@ -353,6 +354,7 @@ function MarketplaceContent() {
     interestRange: { min: 0, max: 100 },
     duration: [],
     sortBy: 'newest',
+    crossChain: 'all',
   });
 
   // Crypto hooks use the marketplace-local chain; fiat offers always from Base Sepolia
@@ -445,6 +447,28 @@ function MarketplaceContent() {
       });
     };
 
+    const matchesCrossChainFilter = (item: MarketplaceItem): boolean => {
+      if (filters.crossChain === 'all') return true;
+      // Fiat offers are always same-chain (Base Sepolia only)
+      if (item.itemType === 'fiat_offer') {
+        return filters.crossChain === 'same_chain';
+      }
+      // Determine if the item is cross-chain
+      const itemChainId = 'chainId' in item ? Number(item.chainId) : 0;
+      const chainIdMismatch = itemChainId !== 0 && itemChainId !== marketplaceNetwork.id;
+      // Check if tokens are foreign to the marketplace chain
+      let hasForeignTokens = false;
+      if (item.itemType === 'crypto_request') {
+        hasForeignTokens = !getTokenByAddressForChain(item.borrowAsset, marketplaceNetwork.id)
+          || !getTokenByAddressForChain(item.collateralToken, marketplaceNetwork.id);
+      } else if (item.itemType === 'crypto_offer') {
+        hasForeignTokens = !getTokenByAddressForChain(item.lendAsset, marketplaceNetwork.id)
+          || !getTokenByAddressForChain(item.requiredCollateralAsset, marketplaceNetwork.id);
+      }
+      const isItemCrossChain = chainIdMismatch || hasForeignTokens;
+      return filters.crossChain === 'cross_chain' ? isItemCrossChain : !isItemCrossChain;
+    };
+
     const getAmount = (item: MarketplaceItem): number => {
       switch (item.itemType) {
         case 'crypto_request':
@@ -475,6 +499,7 @@ function MarketplaceContent() {
     items = items
       .filter(item => !isOwnItem(item))
       .filter(matchesNetworkFilter)
+      .filter(matchesCrossChainFilter)
       .filter(matchesTokenFilter)
       .filter(matchesInterestFilter)
       .filter(matchesDurationFilter);
