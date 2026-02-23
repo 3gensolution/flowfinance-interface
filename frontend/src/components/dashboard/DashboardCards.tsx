@@ -16,9 +16,10 @@ import {
 
 interface DashboardLoanRequestCardProps {
   request: LoanRequest;
+  chainId?: number;
 }
 
-export function DashboardLoanRequestCard({ request }: DashboardLoanRequestCardProps) {
+export function DashboardLoanRequestCard({ request, chainId }: DashboardLoanRequestCardProps) {
   const [isLoading, setIsLoading] = useState(false);
   const { cancelRequest } = useCancelLoanRequest();
 
@@ -41,15 +42,17 @@ export function DashboardLoanRequestCard({ request }: DashboardLoanRequestCardPr
       isOwner={true}
       onCancel={handleCancel}
       loading={isLoading}
+      chainId={chainId}
     />
   );
 }
 
 interface DashboardLenderOfferCardProps {
   offer: LenderOffer;
+  chainId?: number;
 }
 
-export function DashboardLenderOfferCard({ offer }: DashboardLenderOfferCardProps) {
+export function DashboardLenderOfferCard({ offer, chainId }: DashboardLenderOfferCardProps) {
   const [isLoading, setIsLoading] = useState(false);
   const { cancelOffer } = useCancelLenderOffer();
 
@@ -72,12 +75,14 @@ export function DashboardLenderOfferCard({ offer }: DashboardLenderOfferCardProp
       isOwner={true}
       onCancel={handleCancel}
       loading={isLoading}
+      chainId={chainId}
     />
   );
 }
 
 interface DashboardFiatLenderOfferCardProps {
   offer: FiatLenderOffer;
+  chainId?: number;
 }
 
 export function DashboardFiatLenderOfferCard({ offer }: DashboardFiatLenderOfferCardProps) {
@@ -109,9 +114,10 @@ export function DashboardFiatLenderOfferCard({ offer }: DashboardFiatLenderOffer
 
 interface DashboardFiatLoanRequestCardProps {
   loan: FiatLoan;
+  chainId?: number;
 }
 
-export function DashboardFiatLoanRequestCard({ loan }: DashboardFiatLoanRequestCardProps) {
+export function DashboardFiatLoanRequestCard({ loan, chainId }: DashboardFiatLoanRequestCardProps) {
   const [isLoading, setIsLoading] = useState(false);
   const { cancelFiatLoanRequest } = useCancelFiatLoanRequest();
 
@@ -134,6 +140,7 @@ export function DashboardFiatLoanRequestCard({ loan }: DashboardFiatLoanRequestC
       isOwner={true}
       onCancel={handleCancel}
       loading={isLoading}
+      chainId={chainId}
     />
   );
 }

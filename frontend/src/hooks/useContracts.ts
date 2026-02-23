@@ -3,7 +3,7 @@
 import { useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from 'wagmi';
 import { Address, Abi, formatUnits } from 'viem';
 import { useEffect, useCallback } from 'react';
-import { CONTRACT_ADDRESSES, getTokenByAddress, TOKEN_LIST, getActiveChainId } from '@/config/contracts';
+import { CONTRACT_ADDRESSES, getTokenByAddress, TOKEN_LIST, getActiveChainId, getContractAddresses } from '@/config/contracts';
 import { useContractStore } from '@/stores/contractStore';
 import { LoanRequest, LenderOffer, Loan } from '@/types';
 import LoanMarketPlaceABIJson from '@/contracts/LoanMarketPlaceABI.json';
@@ -480,18 +480,21 @@ const MockV3AggregatorABI = [
   },
 ] as const;
 
-export function useTokenPrice(tokenAddress: Address | undefined) {
+export function useTokenPrice(tokenAddress: Address | undefined, chainId?: number) {
+  const effectiveChainId = chainId ?? getActiveChainId();
+  const configAddress = chainId ? getContractAddresses(chainId).configuration : CONTRACT_ADDRESSES.configuration;
+
   const setTokenPrice = useContractStore((state) => state.setTokenPrice);
   const storedPrice = useContractStore((state) =>
     tokenAddress ? state.tokenPrices[tokenAddress.toLowerCase()] : undefined
   );
 
   const priceFeedAddress = useReadContract({
-    address: CONTRACT_ADDRESSES.configuration,
+    address: configAddress,
     abi: ConfigurationABI,
     functionName: 'priceFeeds',
     args: tokenAddress ? [tokenAddress] : undefined,
-    chainId: getActiveChainId(),
+    chainId: effectiveChainId,
     query: {
       enabled: !!tokenAddress,
     },
@@ -501,7 +504,7 @@ export function useTokenPrice(tokenAddress: Address | undefined) {
     address: priceFeedAddress.data as Address,
     abi: MockV3AggregatorABI,
     functionName: 'latestRoundData',
-    chainId: getActiveChainId(),
+    chainId: effectiveChainId,
     query: {
       enabled: !!priceFeedAddress.data && priceFeedAddress.data !== '0x0000000000000000000000000000000000000000',
     },

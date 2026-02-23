@@ -22,15 +22,17 @@ import {
   useFiatLenderOffersByLender,
 } from '@/stores/contractStore';
 import { useUIStore } from '@/stores/uiStore';
-import { Plus, Coins, Banknote, HandCoins, Wallet } from 'lucide-react';
-import { isFiatSupportedOnActiveChain } from '@/config/contracts';
+import { Plus, Coins, Banknote, HandCoins, Wallet, Info } from 'lucide-react';
+import { getActiveChainId, CHAIN_CONFIG } from '@/config/contracts';
+
+const BASE_CHAIN_ID = CHAIN_CONFIG.baseSepolia.id;
 
 type Tab = 'crypto_borrow' | 'cash_borrow' | 'crypto_lend' | 'cash_lend';
 
 export function ActiveLoansOffers() {
   const [activeTab, setActiveTab] = useState<Tab>('crypto_borrow');
   const { address } = useAccount();
-  const fiatSupported = isFiatSupportedOnActiveChain();
+  const cryptoChainId = getActiveChainId();
 
   // Crypto loans and offers
   const loanRequests = useLoanRequestsByBorrower(address);
@@ -113,8 +115,8 @@ export function ActiveLoansOffers() {
     },
   ];
 
-  // Hide fiat tabs on non-Base chains
-  const tabs = fiatSupported ? allTabs : allTabs.filter(t => !t.fiatOnly);
+  // Always show all tabs — fiat data is always fetched from Base Sepolia
+  const tabs = allTabs;
 
   return (
     <motion.div
@@ -192,6 +194,7 @@ export function ActiveLoansOffers() {
                           loan={loan as LoanData}
                           isBorrower={true}
                           onRepay={() => openRepayModal(loan.loanId)}
+                          chainId={cryptoChainId}
                         />
                       ))}
                     </div>
@@ -207,6 +210,7 @@ export function ActiveLoansOffers() {
                         <DashboardLoanRequestCard
                           key={request.requestId.toString()}
                           request={request}
+                          chainId={cryptoChainId}
                         />
                       ))}
                     </div>
@@ -226,6 +230,12 @@ export function ActiveLoansOffers() {
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.2 }}
           >
+            {cryptoChainId !== BASE_CHAIN_ID && (
+              <div className="flex items-center gap-2 px-3 py-2 mb-4 rounded-lg bg-blue-500/10 border border-blue-500/20 text-xs text-blue-400">
+                <Info className="w-3.5 h-3.5 flex-shrink-0" />
+                <span>Fiat loans are currently available on Base Sepolia only.</span>
+              </div>
+            )}
             {activeFiatLoans.length === 0 ? (
               <EmptyState
                 title="No Cash Loans"
@@ -246,6 +256,7 @@ export function ActiveLoansOffers() {
                   <DashboardFiatLoanRequestCard
                     key={loan.loanId.toString()}
                     loan={loan}
+                    chainId={BASE_CHAIN_ID}
                   />
                 ))}
               </div>
@@ -288,6 +299,7 @@ export function ActiveLoansOffers() {
                           key={loan.loanId.toString()}
                           loan={loan as LoanData}
                           isBorrower={false}
+                          chainId={cryptoChainId}
                         />
                       ))}
                     </div>
@@ -303,6 +315,7 @@ export function ActiveLoansOffers() {
                         <DashboardLenderOfferCard
                           key={offer.offerId.toString()}
                           offer={offer}
+                          chainId={cryptoChainId}
                         />
                       ))}
                     </div>
@@ -322,6 +335,12 @@ export function ActiveLoansOffers() {
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.2 }}
           >
+            {cryptoChainId !== BASE_CHAIN_ID && (
+              <div className="flex items-center gap-2 px-3 py-2 mb-4 rounded-lg bg-blue-500/10 border border-blue-500/20 text-xs text-blue-400">
+                <Info className="w-3.5 h-3.5 flex-shrink-0" />
+                <span>Fiat offers are currently available on Base Sepolia only.</span>
+              </div>
+            )}
             {activeFiatOffers.length === 0 ? (
               <EmptyState
                 title="No Cash Lending Offers"
@@ -342,6 +361,7 @@ export function ActiveLoansOffers() {
                   <DashboardFiatLenderOfferCard
                     key={offer.offerId.toString()}
                     offer={offer}
+                    chainId={BASE_CHAIN_ID}
                   />
                 ))}
               </div>

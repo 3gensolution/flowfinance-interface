@@ -3,10 +3,14 @@
 import { useReadContract, useWriteContract, useWaitForTransactionReceipt, usePublicClient, useAccount } from 'wagmi';
 import { Address, Abi } from 'viem';
 import { useState } from 'react';
-import { CONTRACT_ADDRESSES } from '@/config/contracts';
+import { getContractAddresses, CHAIN_CONFIG } from '@/config/contracts';
 import SupplierRegistryABIJson from '@/contracts/SupplierRegistryABI.json';
 
 const SupplierRegistryABI = SupplierRegistryABIJson as Abi;
+
+// Supplier Registry for fiat — always query from Base Sepolia
+const BASE_CHAIN_ID = CHAIN_CONFIG.baseSepolia.id;
+const BASE_ADDRESSES = getContractAddresses(BASE_CHAIN_ID);
 
 // Supplier types matching the contract enum
 export enum SupplierType {
@@ -34,12 +38,13 @@ export interface SupplierDetails {
 // Get supplier details for an address
 export function useSupplierDetails(address: Address | undefined) {
   const result = useReadContract({
-    address: CONTRACT_ADDRESSES.supplierRegistry,
+    address: BASE_ADDRESSES.supplierRegistry,
     abi: SupplierRegistryABI,
+    chainId: BASE_CHAIN_ID,
     functionName: 'getSupplierDetails',
     args: address ? [address] : undefined,
     query: {
-      enabled: !!address && CONTRACT_ADDRESSES.supplierRegistry !== '0x0000000000000000000000000000000000000000',
+      enabled: !!address && BASE_ADDRESSES.supplierRegistry !== '0x0000000000000000000000000000000000000000',
       // Retry on error to handle temporary network issues, but not contract reverts
       retry: (failureCount, error) => {
         // Don't retry if it's a "Supplier not registered" error
@@ -123,11 +128,12 @@ export function useSupplierDetails(address: Address | undefined) {
 // Get minimum supplier stake
 export function useMinimumSupplierStake() {
   return useReadContract({
-    address: CONTRACT_ADDRESSES.supplierRegistry,
+    address: BASE_ADDRESSES.supplierRegistry,
     abi: SupplierRegistryABI,
+    chainId: BASE_CHAIN_ID,
     functionName: 'minimumSupplierStake',
     query: {
-      enabled: CONTRACT_ADDRESSES.supplierRegistry !== '0x0000000000000000000000000000000000000000',
+      enabled: BASE_ADDRESSES.supplierRegistry !== '0x0000000000000000000000000000000000000000',
     },
   });
 }
@@ -135,11 +141,12 @@ export function useMinimumSupplierStake() {
 // Get active suppliers
 export function useActiveSuppliers() {
   return useReadContract({
-    address: CONTRACT_ADDRESSES.supplierRegistry,
+    address: BASE_ADDRESSES.supplierRegistry,
     abi: SupplierRegistryABI,
+    chainId: BASE_CHAIN_ID,
     functionName: 'getActiveSuppliers',
     query: {
-      enabled: CONTRACT_ADDRESSES.supplierRegistry !== '0x0000000000000000000000000000000000000000',
+      enabled: BASE_ADDRESSES.supplierRegistry !== '0x0000000000000000000000000000000000000000',
     },
   });
 }
@@ -161,7 +168,7 @@ export function useRegisterSupplier() {
     setSimulationError(null);
 
     // Check if contract address is valid
-    if (CONTRACT_ADDRESSES.supplierRegistry === '0x0000000000000000000000000000000000000000') {
+    if (BASE_ADDRESSES.supplierRegistry === '0x0000000000000000000000000000000000000000') {
       const error = 'Supplier Registry contract address is not configured';
       setSimulationError(error);
       throw new Error(error);
@@ -179,7 +186,7 @@ export function useRegisterSupplier() {
     try {
       if (publicClient) {
         await publicClient.simulateContract({
-          address: CONTRACT_ADDRESSES.supplierRegistry,
+          address: BASE_ADDRESSES.supplierRegistry,
           abi: SupplierRegistryABI,
           functionName: 'registerSupplier',
           args: [supplierType, name, businessRegistrationNumber],
@@ -205,8 +212,9 @@ export function useRegisterSupplier() {
 
     // If simulation passed, execute the transaction
     return await writeContractAsync({
-      address: CONTRACT_ADDRESSES.supplierRegistry,
+      address: BASE_ADDRESSES.supplierRegistry,
       abi: SupplierRegistryABI,
+      chainId: BASE_CHAIN_ID,
       functionName: 'registerSupplier',
       args: [supplierType, name, businessRegistrationNumber],
     });
@@ -231,8 +239,9 @@ export function useAddStake() {
 
   const addStake = async (amount: bigint) => {
     return await writeContractAsync({
-      address: CONTRACT_ADDRESSES.supplierRegistry,
+      address: BASE_ADDRESSES.supplierRegistry,
       abi: SupplierRegistryABI,
+      chainId: BASE_CHAIN_ID,
       functionName: 'addStake',
       value: amount,
     });
@@ -248,8 +257,9 @@ export function useWithdrawStake() {
 
   const withdrawStake = async () => {
     return await writeContractAsync({
-      address: CONTRACT_ADDRESSES.supplierRegistry,
+      address: BASE_ADDRESSES.supplierRegistry,
       abi: SupplierRegistryABI,
+      chainId: BASE_CHAIN_ID,
       functionName: 'withdrawStake',
     });
   };

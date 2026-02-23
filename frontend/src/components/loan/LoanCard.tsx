@@ -25,17 +25,18 @@ interface LoanRequestCardProps {
   onCancel?: () => void;
   isOwner?: boolean;
   loading?: boolean;
+  chainId?: number;
 }
 
-export function LoanRequestCard({ request, onFund, onCancel, isOwner, loading }: LoanRequestCardProps) {
-  const collateralSymbol = getTokenSymbol(request.collateralToken);
-  const borrowSymbol = getTokenSymbol(request.borrowAsset);
-  const collateralDecimals = getTokenDecimals(request.collateralToken);
-  const borrowDecimals = getTokenDecimals(request.borrowAsset);
+export function LoanRequestCard({ request, onFund, onCancel, isOwner, loading, chainId }: LoanRequestCardProps) {
+  const collateralSymbol = getTokenSymbol(request.collateralToken, chainId);
+  const borrowSymbol = getTokenSymbol(request.borrowAsset, chainId);
+  const collateralDecimals = getTokenDecimals(request.collateralToken, chainId);
+  const borrowDecimals = getTokenDecimals(request.borrowAsset, chainId);
 
   // Get USD prices
-  const { price: borrowPrice } = useTokenPrice(request.borrowAsset);
-  const { price: collateralPrice } = useTokenPrice(request.collateralToken);
+  const { price: borrowPrice } = useTokenPrice(request.borrowAsset, chainId);
+  const { price: collateralPrice } = useTokenPrice(request.collateralToken, chainId);
 
   // Calculate USD values
   const borrowUSD = borrowPrice
@@ -130,20 +131,21 @@ interface LenderOfferCardProps {
   onCancel?: () => void;
   isOwner?: boolean;
   loading?: boolean;
+  chainId?: number;
 }
 
-export function LenderOfferCard({ offer, onAccept, onCancel, isOwner, loading }: LenderOfferCardProps) {
-  const lendSymbol = getTokenSymbol(offer.lendAsset);
-  const lendDecimals = getTokenDecimals(offer.lendAsset);
+export function LenderOfferCard({ offer, onAccept, onCancel, isOwner, loading, chainId }: LenderOfferCardProps) {
+  const lendSymbol = getTokenSymbol(offer.lendAsset, chainId);
+  const lendDecimals = getTokenDecimals(offer.lendAsset, chainId);
 
   // Check if collateral is "any" (zero address means borrower chooses)
   const isAnyCollateral = offer.requiredCollateralAsset === '0x0000000000000000000000000000000000000000';
-  const collateralSymbol = isAnyCollateral ? 'Any' : getTokenSymbol(offer.requiredCollateralAsset);
-  const collateralDecimals = isAnyCollateral ? 18 : getTokenDecimals(offer.requiredCollateralAsset);
+  const collateralSymbol = isAnyCollateral ? 'Any' : getTokenSymbol(offer.requiredCollateralAsset, chainId);
+  const collateralDecimals = isAnyCollateral ? 18 : getTokenDecimals(offer.requiredCollateralAsset, chainId);
 
   // Get USD prices
-  const { price: lendPrice } = useTokenPrice(offer.lendAsset);
-  const { price: collateralPrice } = useTokenPrice(isAnyCollateral ? undefined : offer.requiredCollateralAsset);
+  const { price: lendPrice } = useTokenPrice(offer.lendAsset, chainId);
+  const { price: collateralPrice } = useTokenPrice(isAnyCollateral ? undefined : offer.requiredCollateralAsset, chainId);
 
   // Calculate USD values
   const lendUSD = lendPrice
@@ -274,6 +276,7 @@ interface ActiveLoanCardProps {
   onLiquidate?: () => void;
   isBorrower?: boolean;
   loading?: boolean;
+  chainId?: number;
 }
 
 export function ActiveLoanCard({
@@ -284,16 +287,17 @@ export function ActiveLoanCard({
   onRepay,
   onLiquidate,
   isBorrower,
-  loading
+  loading,
+  chainId,
 }: ActiveLoanCardProps) {
-  const collateralSymbol = getTokenSymbol(loan.collateralAsset);
-  const borrowSymbol = getTokenSymbol(loan.borrowAsset);
-  const collateralDecimals = getTokenDecimals(loan.collateralAsset);
-  const borrowDecimals = getTokenDecimals(loan.borrowAsset);
+  const collateralSymbol = getTokenSymbol(loan.collateralAsset, chainId);
+  const borrowSymbol = getTokenSymbol(loan.borrowAsset, chainId);
+  const collateralDecimals = getTokenDecimals(loan.collateralAsset, chainId);
+  const borrowDecimals = getTokenDecimals(loan.borrowAsset, chainId);
 
   // Get USD prices
-  const { price: borrowPrice } = useTokenPrice(loan.borrowAsset);
-  const { price: collateralPrice } = useTokenPrice(loan.collateralAsset);
+  const { price: borrowPrice } = useTokenPrice(loan.borrowAsset, chainId);
+  const { price: collateralPrice } = useTokenPrice(loan.collateralAsset, chainId);
 
   const healthStatus = healthFactor !== undefined ? getHealthStatus(healthFactor) : undefined;
   const remainingCollateral = loan.collateralAmount - loan.collateralReleased;
@@ -412,14 +416,15 @@ interface FiatLoanRequestCardProps {
   isOwner?: boolean;
   isSupplier?: boolean;
   loading?: boolean;
+  chainId?: number;
 }
 
-export function FiatLoanRequestCard({ loan, onFund, onCancel, isOwner, isSupplier, loading }: FiatLoanRequestCardProps) {
-  const collateralSymbol = getTokenSymbol(loan.collateralAsset);
-  const collateralDecimals = getTokenDecimals(loan.collateralAsset);
+export function FiatLoanRequestCard({ loan, onFund, onCancel, isOwner, isSupplier, loading, chainId }: FiatLoanRequestCardProps) {
+  const collateralSymbol = getTokenSymbol(loan.collateralAsset, chainId);
+  const collateralDecimals = getTokenDecimals(loan.collateralAsset, chainId);
 
   // Get USD price for collateral
-  const { price: collateralPrice } = useTokenPrice(loan.collateralAsset);
+  const { price: collateralPrice } = useTokenPrice(loan.collateralAsset, chainId);
 
   // Calculate USD values
   // const fiatAmount = Number(loan.fiatAmountCents) / 100;

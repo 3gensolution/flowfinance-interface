@@ -1,7 +1,7 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { formatUnits, parseUnits, Address } from 'viem';
-import { getTokenByAddress } from '@/config/contracts';
+import { getTokenByAddress, getTokenByAddressForChain } from '@/config/contracts';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -103,17 +103,17 @@ export function formatTimeUntil(timestamp: bigint | undefined): string {
   return `${Math.floor(diff / 86400)}d left`;
 }
 
-// Get token symbol from address
-export function getTokenSymbol(address: Address | undefined): string {
+// Get token symbol from address (optionally chain-aware)
+export function getTokenSymbol(address: Address | undefined, chainId?: number): string {
   if (!address) return 'UNKNOWN';
-  const token = getTokenByAddress(address);
+  const token = chainId ? getTokenByAddressForChain(address, chainId) : getTokenByAddress(address);
   return token?.symbol || formatAddress(address, 3);
 }
 
-// Get token decimals from address
-export function getTokenDecimals(address: Address | undefined): number {
+// Get token decimals from address (optionally chain-aware)
+export function getTokenDecimals(address: Address | undefined, chainId?: number): number {
   if (!address) return 18;
-  const token = getTokenByAddress(address);
+  const token = chainId ? getTokenByAddressForChain(address, chainId) : getTokenByAddress(address);
   return token?.decimals || 18;
 }
 

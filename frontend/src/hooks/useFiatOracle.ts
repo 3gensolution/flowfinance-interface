@@ -2,10 +2,14 @@
 
 import { useReadContract, useReadContracts } from 'wagmi';
 import { Address, Abi } from 'viem';
-import { CONTRACT_ADDRESSES, isFiatSupportedOnActiveChain } from '@/config/contracts';
+import { getContractAddresses, CHAIN_CONFIG } from '@/config/contracts';
 import FiatOracleABIJson from '@/contracts/FiatOracleABI.json';
 
 const FiatOracleABI = FiatOracleABIJson as Abi;
+
+// Fiat Oracle only exists on Base Sepolia — always query from there
+const BASE_CHAIN_ID = CHAIN_CONFIG.baseSepolia.id;
+const BASE_ADDRESSES = getContractAddresses(BASE_CHAIN_ID);
 
 // Supported fiat currencies
 export const SUPPORTED_FIAT_CURRENCIES = [
@@ -32,88 +36,82 @@ export function getCurrencyName(currencyCode: string): string {
 
 // Get exchange rate for a currency (units per 1 USD, scaled by 1e8)
 export function useExchangeRate(currency: string) {
-  const fiatSupported = isFiatSupportedOnActiveChain();
   return useReadContract({
-    address: CONTRACT_ADDRESSES.fiatOracle,
+    address: BASE_ADDRESSES.fiatOracle,
     abi: FiatOracleABI,
+    chainId: BASE_CHAIN_ID,
     functionName: 'exchangeRatesPerUSD',
     args: [currency],
     query: {
-      enabled: !!currency && fiatSupported,
+      enabled: !!currency,
     },
   });
 }
 
 // Get all supported currencies from contract
 export function useSupportedCurrencies() {
-  const fiatSupported = isFiatSupportedOnActiveChain();
   return useReadContract({
-    address: CONTRACT_ADDRESSES.fiatOracle,
+    address: BASE_ADDRESSES.fiatOracle,
     abi: FiatOracleABI,
+    chainId: BASE_CHAIN_ID,
     functionName: 'supportedCurrencies',
-    query: {
-      enabled: fiatSupported,
-    },
   });
 }
 
 // Get exchange rate update timestamp
 export function useExchangeRateUpdateTime(currency: string) {
-  const fiatSupported = isFiatSupportedOnActiveChain();
   return useReadContract({
-    address: CONTRACT_ADDRESSES.fiatOracle,
+    address: BASE_ADDRESSES.fiatOracle,
     abi: FiatOracleABI,
+    chainId: BASE_CHAIN_ID,
     functionName: 'exchangeRateUpdatedAt',
     args: [currency],
     query: {
-      enabled: !!currency && fiatSupported,
+      enabled: !!currency,
     },
   });
 }
 
 // Get supplier's fiat balance for a specific currency
 export function useSupplierBalance(supplier: Address | undefined, currency: string) {
-  const fiatSupported = isFiatSupportedOnActiveChain();
   return useReadContract({
-    address: CONTRACT_ADDRESSES.fiatOracle,
+    address: BASE_ADDRESSES.fiatOracle,
     abi: FiatOracleABI,
+    chainId: BASE_CHAIN_ID,
     functionName: 'supplierBalances',
     args: supplier && currency ? [supplier, currency] : undefined,
     query: {
-      enabled: !!supplier && !!currency && fiatSupported,
+      enabled: !!supplier && !!currency,
     },
   });
 }
 
 // Get supplier verification status (only queries on fiat-supported chains)
 export function useSupplierVerification(supplier: Address | undefined) {
-  const fiatSupported = isFiatSupportedOnActiveChain();
   return useReadContract({
-    address: CONTRACT_ADDRESSES.fiatOracle,
+    address: BASE_ADDRESSES.fiatOracle,
     abi: FiatOracleABI,
+    chainId: BASE_CHAIN_ID,
     functionName: 'isSupplierVerified',
     args: supplier ? [supplier] : undefined,
     query: {
-      enabled: !!supplier && fiatSupported,
+      enabled: !!supplier,
     },
   });
 }
 
 // Batch fetch exchange rates for all supported currencies
 export function useBatchExchangeRates() {
-  const fiatSupported = isFiatSupportedOnActiveChain();
   const currencies = SUPPORTED_FIAT_CURRENCIES.map(c => c.code);
 
   const { data: ratesData, isLoading, isError, refetch } = useReadContracts({
     contracts: currencies.map((currency) => ({
-      address: CONTRACT_ADDRESSES.fiatOracle,
+      address: BASE_ADDRESSES.fiatOracle,
       abi: FiatOracleABI,
+      chainId: BASE_CHAIN_ID,
       functionName: 'exchangeRatesPerUSD',
       args: [currency],
     })),
-    query: {
-      enabled: fiatSupported,
-    },
   });
 
   const rates = currencies.reduce((acc, currency, index) => {
@@ -129,18 +127,18 @@ export function useBatchExchangeRates() {
 
 // Batch fetch supplier balances for all supported currencies
 export function useSupplierBalances(supplier: Address | undefined) {
-  const fiatSupported = isFiatSupportedOnActiveChain();
   const currencies = SUPPORTED_FIAT_CURRENCIES.map(c => c.code);
 
   const { data: balancesData, isLoading, isError, refetch } = useReadContracts({
     contracts: currencies.map((currency) => ({
-      address: CONTRACT_ADDRESSES.fiatOracle,
+      address: BASE_ADDRESSES.fiatOracle,
       abi: FiatOracleABI,
+      chainId: BASE_CHAIN_ID,
       functionName: 'supplierBalances',
       args: supplier ? [supplier, currency] : undefined,
     })),
     query: {
-      enabled: !!supplier && fiatSupported,
+      enabled: !!supplier,
     },
   });
 
@@ -217,69 +215,66 @@ export function isExchangeRateStale(updatedAt: bigint): boolean {
 
 // Get exchange rate using contract's getExchangeRate function (returns rate and lastUpdated)
 export function useGetExchangeRate(currency: string) {
-  const fiatSupported = isFiatSupportedOnActiveChain();
   return useReadContract({
-    address: CONTRACT_ADDRESSES.fiatOracle,
+    address: BASE_ADDRESSES.fiatOracle,
     abi: FiatOracleABI,
+    chainId: BASE_CHAIN_ID,
     functionName: 'getExchangeRate',
     args: [currency],
     query: {
-      enabled: !!currency && fiatSupported,
+      enabled: !!currency,
     },
   });
 }
 
 // Get supported currencies from contract
 export function useGetSupportedCurrencies() {
-  const fiatSupported = isFiatSupportedOnActiveChain();
   return useReadContract({
-    address: CONTRACT_ADDRESSES.fiatOracle,
+    address: BASE_ADDRESSES.fiatOracle,
     abi: FiatOracleABI,
+    chainId: BASE_CHAIN_ID,
     functionName: 'getSupportedCurrencies',
-    query: {
-      enabled: fiatSupported,
-    },
   });
 }
 
 // Check if exchange rate is stale using contract function
 export function useIsExchangeRateStale(currency: string, maxAgeSeconds: number = 3600) {
-  const fiatSupported = isFiatSupportedOnActiveChain();
   return useReadContract({
-    address: CONTRACT_ADDRESSES.fiatOracle,
+    address: BASE_ADDRESSES.fiatOracle,
     abi: FiatOracleABI,
+    chainId: BASE_CHAIN_ID,
     functionName: 'isExchangeRateStale',
     args: [currency, BigInt(maxAgeSeconds)],
     query: {
-      enabled: !!currency && fiatSupported,
+      enabled: !!currency,
     },
   });
 }
 
 // Convert USD cents to another currency using contract function
 export function useConvertFromUSDCents(usdCents: bigint | undefined, currency: string) {
-  const fiatSupported = isFiatSupportedOnActiveChain();
   return useReadContract({
-    address: CONTRACT_ADDRESSES.fiatOracle,
+    address: BASE_ADDRESSES.fiatOracle,
     abi: FiatOracleABI,
+    chainId: BASE_CHAIN_ID,
     functionName: 'convertFromUSDCents',
     args: usdCents !== undefined ? [usdCents, currency] : undefined,
     query: {
-      enabled: usdCents !== undefined && usdCents > BigInt(0) && !!currency && fiatSupported,
+      enabled: usdCents !== undefined && usdCents > BigInt(0) && !!currency,
     },
   });
 }
 
 // Convert currency to USD cents using contract function
 export function useConvertToUSDCents(amountCents: bigint | undefined, currency: string) {
-  const fiatSupported = isFiatSupportedOnActiveChain();
   return useReadContract({
-    address: CONTRACT_ADDRESSES.fiatOracle,
+    address: BASE_ADDRESSES.fiatOracle,
     abi: FiatOracleABI,
+    chainId: BASE_CHAIN_ID,
     functionName: 'convertToUSDCents',
     args: amountCents !== undefined ? [amountCents, currency] : undefined,
     query: {
-      enabled: amountCents !== undefined && amountCents > BigInt(0) && !!currency && fiatSupported,
+      enabled: amountCents !== undefined && amountCents > BigInt(0) && !!currency,
     },
   });
 }

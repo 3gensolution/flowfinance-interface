@@ -35,24 +35,26 @@ interface ActiveLoanCardWithDataProps {
   loan: LoanData;
   isBorrower: boolean;
   onRepay?: () => void;
+  chainId?: number;
 }
 
 export function ActiveLoanCardWithData({
   loan,
   isBorrower,
   onRepay,
+  chainId,
 }: ActiveLoanCardWithDataProps) {
   const { data: outstandingDebt } = useOutstandingDebt(loan.loanId);
 
   // Get token prices (Chainlink 8 decimals)
-  const { price: collateralPrice } = useTokenPrice(loan.collateralAsset);
-  const { price: borrowPrice } = useTokenPrice(loan.borrowAsset);
+  const { price: collateralPrice } = useTokenPrice(loan.collateralAsset, chainId);
+  const { price: borrowPrice } = useTokenPrice(loan.borrowAsset, chainId);
 
   // Remaining collateral
   const remainingCollateral = loan.collateralAmount - loan.collateralReleased;
 
   // Convert outstanding debt to USD (8 decimals) for LTVConfig.getHealthFactor
-  const borrowDecimals = getTokenDecimals(loan.borrowAsset);
+  const borrowDecimals = getTokenDecimals(loan.borrowAsset, chainId);
   const debtUSD = useMemo(() => {
     if (!outstandingDebt || !borrowPrice) return undefined;
     return ((outstandingDebt as bigint) * (borrowPrice as bigint)) / BigInt(10 ** borrowDecimals);
@@ -88,6 +90,7 @@ export function ActiveLoanCardWithData({
       repaymentAmount={outstandingDebt ? outstandingDebt as bigint : undefined}
       isBorrower={isBorrower}
       onRepay={onRepay}
+      chainId={chainId}
     />
   );
 }

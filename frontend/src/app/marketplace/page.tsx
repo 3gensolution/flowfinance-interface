@@ -2,27 +2,26 @@
 
 import { useState, useMemo, Suspense, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FileText, HandCoins, RefreshCw, Info, ArrowRightLeft } from 'lucide-react';
-import { useReadContracts, useReadContract, useAccount, useSwitchChain } from 'wagmi';
+import { FileText, HandCoins, RefreshCw, Info } from 'lucide-react';
+import { useReadContracts, useReadContract, useAccount } from 'wagmi';
 import { Abi, Address } from 'viem';
-import { CONTRACT_ADDRESSES, CHAIN_CONFIG, isFiatSupportedChain, isFiatSupportedOnActiveChain } from '@/config/contracts';
-import { useNetwork } from '@/contexts/NetworkContext';
+import { CHAIN_CONFIG, getContractAddresses, getActiveChainId, type ContractAddresses } from '@/config/contracts';
+import { AVAILABLE_NETWORKS, type AvailableNetwork } from '@/contexts/NetworkContext';
 import { config as wagmiConfig } from '@/config/wagmi';
-import { NetworkSwitcher } from '@/components/network/NetworkSwitcher';
+import { MarketplaceNetworkSwitcher } from '@/components/network/MarketplaceNetworkSwitcher';
 import LoanMarketPlaceABIJson from '@/contracts/LoanMarketPlaceABI.json';
 import FiatLoanBridgeABIJson from '@/contracts/FiatLoanBridgeABI.json';
 import {
   FilterBar,
   FilterState,
   CryptoBorrowRequestCard,
-  FiatBorrowRequestCard,
   CryptoLendingOfferCard,
   FiatLendingOfferCard,
   ListingsGrid,
   Pagination,
 } from '@/components/marketplace';
 import { LoanRequest, LenderOffer, LoanRequestStatus } from '@/types';
-import { FiatLoan, FiatLenderOffer, FiatLoanStatus, FiatLenderOfferStatus } from '@/hooks/useFiatLoan';
+import { FiatLenderOffer, FiatLenderOfferStatus } from '@/hooks/useFiatLoan';
 import { getTokenSymbol } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/Button';
@@ -35,25 +34,22 @@ type Tab = 'borrow_requests' | 'lending_offers';
 
 // Tagged union types for proper type discrimination
 type CryptoRequest = LoanRequest & { itemType: 'crypto_request' };
-type FiatRequest = FiatLoan & { itemType: 'fiat_request' };
 type CryptoOffer = LenderOffer & { itemType: 'crypto_offer' };
 type FiatOffer = FiatLenderOffer & { itemType: 'fiat_offer' };
 
-type MarketplaceItem = CryptoRequest | FiatRequest | CryptoOffer | FiatOffer;
+type MarketplaceItem = CryptoRequest | CryptoOffer | FiatOffer;
 
 const ITEMS_PER_PAGE = 12;
 const MAX_ITEMS_TO_FETCH = 50;
 
 // Hook to fetch crypto loan requests directly from contract
-function useCryptoLoanRequests() {
-  const { selectedNetwork } = useNetwork();
-
+function useCryptoLoanRequests(chainId: number, addresses: ContractAddresses) {
   // Get total count
   const { data: nextRequestId, refetch: refetchCount, error: errorCount } = useReadContract({
-    address: CONTRACT_ADDRESSES.loanMarketPlace,
+    address: addresses.loanMarketPlace,
     abi: LoanMarketPlaceABI,
     functionName: 'nextLoanRequestId',
-    chainId: selectedNetwork.id,
+    chainId,
     config: wagmiConfig,
   });
 
@@ -62,11 +58,11 @@ function useCryptoLoanRequests() {
   // Batch fetch all requests
   const { data: requestsData, isLoading, refetch: refetchData, error: errorData } = useReadContracts({
     contracts: Array.from({ length: count }, (_, i) => ({
-      address: CONTRACT_ADDRESSES.loanMarketPlace,
+      address: addresses.loanMarketPlace,
       abi: LoanMarketPlaceABI,
       functionName: 'loanRequests',
       args: [BigInt(i)],
-      chainId: selectedNetwork.id,
+      chainId,
     })),
     config: wagmiConfig,
     query: {
@@ -144,15 +140,13 @@ function useCryptoLoanRequests() {
 }
 
 // Hook to fetch crypto lender offers directly from contract
-function useCryptoLenderOffers() {
-  const { selectedNetwork } = useNetwork();
-
+function useCryptoLenderOffers(chainId: number, addresses: ContractAddresses) {
   // Get total count
   const { data: nextOfferId, refetch: refetchCount, error: errorCount } = useReadContract({
-    address: CONTRACT_ADDRESSES.loanMarketPlace,
+    address: addresses.loanMarketPlace,
     abi: LoanMarketPlaceABI,
     functionName: 'nextLenderOfferId',
-    chainId: selectedNetwork.id,
+    chainId,
     config: wagmiConfig,
   });
 
@@ -161,11 +155,11 @@ function useCryptoLenderOffers() {
   // Batch fetch all offers
   const { data: offersData, isLoading, refetch: refetchData, error: errorData } = useReadContracts({
     contracts: Array.from({ length: count }, (_, i) => ({
-      address: CONTRACT_ADDRESSES.loanMarketPlace,
+      address: addresses.loanMarketPlace,
       abi: LoanMarketPlaceABI,
       functionName: 'lenderOffers',
       args: [BigInt(i)],
-      chainId: selectedNetwork.id,
+      chainId,
     })),
     config: wagmiConfig,
     query: {
@@ -242,126 +236,18 @@ function useCryptoLenderOffers() {
   return { data: offers, isLoading, refetch, error: errorCount || errorData };
 }
 
-// Hook to fetch pending fiat loans directly from contract (Base only)
-function useFiatLoanRequests() {
-  const { selectedNetwork } = useNetwork();
-  const fiatSupported = isFiatSupportedChain(selectedNetwork.id);
-
-  // Get pending loan IDs
-  const { data: pendingIds, isLoading: isLoadingIds, refetch: refetchIds, error: errorIds } = useReadContract({
-    address: CONTRACT_ADDRESSES.fiatLoanBridge,
-    abi: FiatLoanBridgeABI,
-    functionName: 'getPendingFiatLoans',
-    chainId: selectedNetwork.id,
-    config: wagmiConfig,
-    query: { enabled: fiatSupported },
-  });
-
-  const loanIds = useMemo(() => (pendingIds as bigint[]) || [], [pendingIds]);
-
-  // Batch fetch loan details
-  const { data: loansData, isLoading: isLoadingLoans, refetch: refetchLoans, error: errorLoans } = useReadContracts({
-    contracts: loanIds.map((id) => ({
-      address: CONTRACT_ADDRESSES.fiatLoanBridge,
-      abi: FiatLoanBridgeABI,
-      functionName: 'getFiatLoan',
-      args: [id],
-      chainId: selectedNetwork.id,
-    })),
-    config: wagmiConfig,
-    query: {
-      enabled: fiatSupported && loanIds.length > 0,
-    },
-  });
-
-  const loans = useMemo(() => {
-    if (!loansData) return [];
-
-    return loansData
-      .map((result, index) => {
-        if (result.status !== 'success' || !result.result) return null;
-
-        const data = result.result;
-        const isArray = Array.isArray(data);
-
-        let loanData;
-        if (isArray) {
-          const arr = data as readonly unknown[];
-          loanData = {
-            loanId: arr[0],
-            borrower: arr[1],
-            supplier: arr[2],
-            collateralAsset: arr[3],
-            collateralAmount: arr[4],
-            fiatAmountCents: arr[5],
-            currency: arr[6],
-            interestRate: arr[7],
-            duration: arr[8],
-            status: arr[9],
-            createdAt: arr[10],
-            activatedAt: arr[11],
-            dueDate: arr[12],
-            gracePeriodEnd: arr[13],
-            claimableAmountCents: arr[14],
-            fundsWithdrawn: arr[15],
-            repaymentDepositId: arr[16],
-            exchangeRateAtCreation: arr[17],
-            chainId: arr[18],
-          };
-        } else {
-          loanData = data as Record<string, unknown>;
-        }
-
-        if (!loanData.borrower || loanData.borrower === '0x0000000000000000000000000000000000000000') {
-          return null;
-        }
-
-        return {
-          loanId: loanIds[index],
-          borrower: loanData.borrower as Address,
-          supplier: loanData.supplier as Address,
-          collateralAsset: loanData.collateralAsset as Address,
-          collateralAmount: loanData.collateralAmount as bigint,
-          fiatAmountCents: loanData.fiatAmountCents as bigint,
-          currency: loanData.currency as string,
-          interestRate: loanData.interestRate as bigint,
-          duration: loanData.duration as bigint,
-          status: Number(loanData.status) as FiatLoanStatus,
-          createdAt: loanData.createdAt as bigint,
-          activatedAt: loanData.activatedAt as bigint,
-          dueDate: loanData.dueDate as bigint,
-          gracePeriodEnd: loanData.gracePeriodEnd as bigint,
-          claimableAmountCents: loanData.claimableAmountCents as bigint,
-          fundsWithdrawn: loanData.fundsWithdrawn as boolean,
-          repaymentDepositId: loanData.repaymentDepositId as `0x${string}`,
-          exchangeRateAtCreation: (loanData.exchangeRateAtCreation as bigint) || BigInt(0),
-          chainId: (loanData.chainId as bigint) || BigInt(0),
-        } as FiatLoan;
-      })
-      .filter((l): l is FiatLoan => l !== null);
-  }, [loansData, loanIds]);
-
-  const refetch = useCallback(() => {
-    refetchIds();
-    refetchLoans();
-  }, [refetchIds, refetchLoans]);
-
-  return { data: loans, isLoading: isLoadingIds || isLoadingLoans, refetch, error: errorIds || errorLoans };
-}
-
-// Hook to fetch active fiat lender offers directly from contract (Base only)
+// Hook to fetch active fiat lender offers — always from Base Sepolia regardless of marketplace chain
 function useFiatLenderOffersData() {
-  const { selectedNetwork } = useNetwork();
-  const fiatSupported = isFiatSupportedChain(selectedNetwork.id);
+  const baseChainId = CHAIN_CONFIG.baseSepolia.id;
+  const baseAddresses = getContractAddresses(baseChainId);
 
   // Get active offer IDs
   const { data: activeIds, isLoading: isLoadingIds, refetch: refetchIds, error: errorIds } = useReadContract({
-    address: CONTRACT_ADDRESSES.fiatLoanBridge,
+    address: baseAddresses.fiatLoanBridge,
     abi: FiatLoanBridgeABI,
     functionName: 'getActiveFiatLenderOffers',
-    chainId: selectedNetwork.id,
+    chainId: baseChainId,
     config: wagmiConfig,
-    query: { enabled: fiatSupported },
   });
 
   const offerIds = useMemo(() => (activeIds as bigint[]) || [], [activeIds]);
@@ -369,15 +255,15 @@ function useFiatLenderOffersData() {
   // Batch fetch offer details
   const { data: offersData, isLoading: isLoadingOffers, refetch: refetchOffers, error: errorOffers } = useReadContracts({
     contracts: offerIds.map((id) => ({
-      address: CONTRACT_ADDRESSES.fiatLoanBridge,
+      address: baseAddresses.fiatLoanBridge,
       abi: FiatLoanBridgeABI,
       functionName: 'fiatLenderOffers',
       args: [id],
-      chainId: selectedNetwork.id,
+      chainId: baseChainId,
     })),
     config: wagmiConfig,
     query: {
-      enabled: fiatSupported && offerIds.length > 0,
+      enabled: offerIds.length > 0,
     },
   });
 
@@ -447,10 +333,16 @@ function useFiatLenderOffersData() {
 }
 
 function MarketplaceContent() {
-  const { address: connectedAddress, isConnected } = useAccount();
-  const { selectedNetwork, setSelectedNetwork } = useNetwork();
-  const { switchChain } = useSwitchChain();
-  const fiatSupported = isFiatSupportedOnActiveChain();
+  const { address: connectedAddress } = useAccount();
+
+  // Local marketplace chain state — independent from the global NetworkContext / navbar
+  // Default to whichever chain the app is currently on
+  const [marketplaceNetwork, setMarketplaceNetwork] = useState<AvailableNetwork>(() => {
+    const activeId = getActiveChainId();
+    return AVAILABLE_NETWORKS.find(n => n.id === activeId) ?? CHAIN_CONFIG.baseSepolia;
+  });
+  const marketplaceAddresses = useMemo(() => getContractAddresses(marketplaceNetwork.id), [marketplaceNetwork.id]);
+
   const [activeTab, setActiveTab] = useState<Tab>('borrow_requests');
   const [currentPage, setCurrentPage] = useState(1);
   const [showLoadingTimeout, setShowLoadingTimeout] = useState(false);
@@ -463,28 +355,15 @@ function MarketplaceContent() {
     sortBy: 'newest',
   });
 
-  // Load data directly from contracts (no store)
-  const { data: cryptoRequests, isLoading: isLoadingCryptoRequests, refetch: refetchCryptoRequests, error: errorCryptoRequests } = useCryptoLoanRequests();
-  const { data: cryptoOffers, isLoading: isLoadingCryptoOffers, refetch: refetchCryptoOffers, error: errorCryptoOffers } = useCryptoLenderOffers();
-  const { data: fiatRequests, isLoading: isLoadingFiatRequests, refetch: refetchFiatRequests, error: errorFiatRequests } = useFiatLoanRequests();
+  // Crypto hooks use the marketplace-local chain; fiat offers always from Base Sepolia
+  const { data: cryptoRequests, isLoading: isLoadingCryptoRequests, refetch: refetchCryptoRequests, error: errorCryptoRequests } = useCryptoLoanRequests(marketplaceNetwork.id, marketplaceAddresses);
+  const { data: cryptoOffers, isLoading: isLoadingCryptoOffers, refetch: refetchCryptoOffers, error: errorCryptoOffers } = useCryptoLenderOffers(marketplaceNetwork.id, marketplaceAddresses);
   const { data: fiatOffers, isLoading: isLoadingFiatOffers, refetch: refetchFiatOffers, error: errorFiatOffers } = useFiatLenderOffersData();
 
-  // Debug logging
-  console.log('Marketplace Data:', {
-    cryptoRequests: cryptoRequests?.length,
-    cryptoOffers: cryptoOffers?.length,
-    fiatRequests: fiatRequests?.length,
-    fiatOffers: fiatOffers?.length,
-    isLoading: { cryptoRequests: isLoadingCryptoRequests, cryptoOffers: isLoadingCryptoOffers, fiatRequests: isLoadingFiatRequests, fiatOffers: isLoadingFiatOffers },
-    errors: { cryptoRequests: errorCryptoRequests, cryptoOffers: errorCryptoOffers, fiatRequests: errorFiatRequests, fiatOffers: errorFiatOffers },
-    isConnected,
-  });
-
   const isLoadingCrypto = isLoadingCryptoRequests || isLoadingCryptoOffers;
-  const isLoadingFiat = isLoadingFiatRequests || isLoadingFiatOffers;
-  const isLoading = isLoadingCrypto || isLoadingFiat;
+  const isLoading = isLoadingCrypto || isLoadingFiatOffers;
 
-  const hasError = errorCryptoRequests || errorCryptoOffers || errorFiatRequests || errorFiatOffers;
+  const hasError = errorCryptoRequests || errorCryptoOffers || errorFiatOffers;
 
   // Set timeout to stop showing loading spinner after 5 seconds
   useEffect(() => {
@@ -504,9 +383,8 @@ function MarketplaceContent() {
   const refetch = useCallback(() => {
     refetchCryptoRequests();
     refetchCryptoOffers();
-    refetchFiatRequests();
     refetchFiatOffers();
-  }, [refetchCryptoRequests, refetchCryptoOffers, refetchFiatRequests, refetchFiatOffers]);
+  }, [refetchCryptoRequests, refetchCryptoOffers, refetchFiatOffers]);
 
   // Filter and sort data
   const filteredData = useMemo(() => {
@@ -515,7 +393,7 @@ function MarketplaceContent() {
       if (!connectedAddress) return false;
       const normalizedAddress = connectedAddress.toLowerCase();
 
-      if (item.itemType === 'crypto_request' || item.itemType === 'fiat_request') {
+      if (item.itemType === 'crypto_request') {
         return item.borrower.toLowerCase() === normalizedAddress;
       }
       if (item.itemType === 'crypto_offer' || item.itemType === 'fiat_offer') {
@@ -524,20 +402,18 @@ function MarketplaceContent() {
       return false;
     };
 
-    // Helper functions defined inside useMemo to avoid dependency issues
+    // Filter by the marketplace-local network (not the global one)
     const matchesNetworkFilter = (item: MarketplaceItem): boolean => {
-      // Get chainId from item (default to 0 if not present)
+      // Fiat offers always come from Base — always show them
+      if (item.itemType === 'fiat_offer') return true;
+
       const chainId = 'chainId' in item ? Number(item.chainId) : 0;
 
-      // If no chainId, check if it matches selected network ID (could be default chain)
-      // Otherwise, only show items from the currently selected network
       if (chainId === 0) {
-        // For items without chainId, show them on the default network (Base Sepolia)
-        return selectedNetwork.id === CHAIN_CONFIG.baseSepolia.id;
+        return marketplaceNetwork.id === CHAIN_CONFIG.baseSepolia.id;
       }
 
-      // Only show items from the selected network
-      return chainId === selectedNetwork.id;
+      return chainId === marketplaceNetwork.id;
     };
 
     const matchesTokenFilter = (item: MarketplaceItem): boolean => {
@@ -549,7 +425,7 @@ function MarketplaceContent() {
       } else if (item.itemType === 'crypto_offer') {
         const symbol = getTokenSymbol(item.lendAsset);
         return filters.tokens.some(t => symbol.toLowerCase().includes(t.toLowerCase()));
-      } else if (item.itemType === 'fiat_request' || item.itemType === 'fiat_offer') {
+      } else if (item.itemType === 'fiat_offer') {
         return filters.tokens.some(t => item.currency?.toLowerCase().includes(t.toLowerCase()));
       }
       return false;
@@ -575,7 +451,6 @@ function MarketplaceContent() {
           return Number(item.borrowAmount);
         case 'crypto_offer':
           return Number(item.lendAmount);
-        case 'fiat_request':
         case 'fiat_offer':
           return Number(item.fiatAmountCents);
       }
@@ -586,9 +461,6 @@ function MarketplaceContent() {
     if (activeTab === 'borrow_requests') {
       if (filters.assetType === 'all' || filters.assetType === 'crypto') {
         items = [...items, ...cryptoRequests.map(r => ({ ...r, itemType: 'crypto_request' as const }))];
-      }
-      if (filters.assetType === 'all' || filters.assetType === 'fiat') {
-        items = [...items, ...fiatRequests.map(r => ({ ...r, itemType: 'fiat_request' as const }))];
       }
     } else {
       if (filters.assetType === 'all' || filters.assetType === 'crypto') {
@@ -627,7 +499,7 @@ function MarketplaceContent() {
     }
 
     return items;
-  }, [activeTab, cryptoRequests, cryptoOffers, fiatRequests, fiatOffers, filters, connectedAddress, selectedNetwork]);
+  }, [activeTab, cryptoRequests, cryptoOffers, fiatOffers, filters, connectedAddress, marketplaceNetwork]);
 
   // Pagination
   const totalPages = Math.ceil(filteredData.length / ITEMS_PER_PAGE);
@@ -649,15 +521,9 @@ function MarketplaceContent() {
 
   // Get counts for tabs
   const borrowRequestsCount = useMemo(() => {
-    let count = 0;
-    if (filters.assetType === 'all' || filters.assetType === 'crypto') {
-      count += cryptoRequests.length;
-    }
-    if (filters.assetType === 'all' || filters.assetType === 'fiat') {
-      count += fiatRequests.length;
-    }
-    return count;
-  }, [cryptoRequests, fiatRequests, filters.assetType]);
+    if (filters.assetType === 'fiat') return 0;
+    return cryptoRequests.length;
+  }, [cryptoRequests, filters.assetType]);
 
   const lendingOffersCount = useMemo(() => {
     let count = 0;
@@ -670,35 +536,8 @@ function MarketplaceContent() {
     return count;
   }, [cryptoOffers, fiatOffers, filters.assetType]);
 
-  const handleSwitchToBase = () => {
-    setSelectedNetwork(CHAIN_CONFIG.baseSepolia);
-    switchChain({ chainId: CHAIN_CONFIG.baseSepolia.id });
-  };
-
   // Render item based on type
   const renderItem = (item: MarketplaceItem, index: number) => {
-    // Wrap fiat cards in a click-blocking overlay when not on a fiat-supported chain
-    const wrapFiatCard = (card: React.ReactNode, key: string) => {
-      if (fiatSupported) return card;
-      return (
-        <div key={key} className="relative">
-          <div className="pointer-events-none opacity-50">{card}</div>
-          <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-2xl">
-            <div className="text-center px-4">
-              <p className="text-sm text-white/80 mb-2">Available on Base only</p>
-              <button
-                onClick={handleSwitchToBase}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500 text-white text-xs font-semibold hover:bg-blue-400 transition-colors pointer-events-auto"
-              >
-                <ArrowRightLeft className="w-3.5 h-3.5" />
-                Switch to Base
-              </button>
-            </div>
-          </div>
-        </div>
-      );
-    };
-
     switch (item.itemType) {
       case 'crypto_request':
         return (
@@ -706,15 +545,8 @@ function MarketplaceContent() {
             key={`crypto-request-${item.requestId}`}
             request={item}
             index={index}
+            chainId={marketplaceNetwork.id}
           />
-        );
-      case 'fiat_request':
-        return wrapFiatCard(
-          <FiatBorrowRequestCard
-            loan={item}
-            index={index}
-          />,
-          `fiat-request-${item.loanId}`
         );
       case 'crypto_offer':
         return (
@@ -722,15 +554,15 @@ function MarketplaceContent() {
             key={`crypto-offer-${item.offerId}`}
             offer={item}
             index={index}
+            chainId={marketplaceNetwork.id}
           />
         );
       case 'fiat_offer':
-        return wrapFiatCard(
+        return (
           <FiatLendingOfferCard
             offer={item}
             index={index}
-          />,
-          `fiat-offer-${item.offerId}`
+          />
         );
     }
   };
@@ -759,7 +591,10 @@ function MarketplaceContent() {
           transition={{ delay: 0.05 }}
           className="flex items-center justify-between mb-6"
         >
-          <NetworkSwitcher />
+          <MarketplaceNetworkSwitcher
+            selectedNetwork={marketplaceNetwork}
+            onNetworkChange={setMarketplaceNetwork}
+          />
           <Button
             variant="ghost"
             size="sm"
@@ -829,28 +664,6 @@ function MarketplaceContent() {
           resultCount={filteredData.length}
         />
 
-        {/* Fiat Base-only Banner */}
-        {!fiatSupported && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="flex items-center justify-between gap-3 px-4 py-3 mb-6 rounded-xl bg-blue-500/10 border border-blue-500/20"
-          >
-            <div className="flex items-center gap-3">
-              <ArrowRightLeft className="w-4 h-4 flex-shrink-0 text-blue-400" />
-              <p className="text-sm text-blue-300">
-                Fiat lending and borrowing is only available on <span className="font-semibold text-blue-400">Base</span>. Switch to Base to access fiat listings.
-              </p>
-            </div>
-            <button
-              onClick={handleSwitchToBase}
-              className="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500 text-white text-xs font-semibold hover:bg-blue-400 transition-colors"
-            >
-              <ArrowRightLeft className="w-3.5 h-3.5" />
-              Switch to Base
-            </button>
-          </motion.div>
-        )}
 
         {/* Error or Loading Timeout Message */}
         {(hasError || showLoadingTimeout) && (
@@ -883,6 +696,18 @@ function MarketplaceContent() {
                 View your listings in Dashboard
               </Link>
             </p>
+          </motion.div>
+        )}
+
+        {/* Fiat info bar — only show when marketplace is viewing a non-Base chain */}
+        {marketplaceNetwork.id !== CHAIN_CONFIG.baseSepolia.id && (filters.assetType === 'all' || filters.assetType === 'fiat') && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="flex items-center gap-3 px-4 py-3 mb-6 rounded-xl bg-blue-500/10 border border-blue-500/20 text-sm text-blue-400"
+          >
+            <Info className="w-4 h-4 flex-shrink-0" />
+            <p>Fiat offers are sourced from Base Sepolia regardless of the selected network.</p>
           </motion.div>
         )}
 

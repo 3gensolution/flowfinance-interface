@@ -3,12 +3,16 @@
 import { useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt, useAccount, usePublicClient } from 'wagmi';
 import { useCallback, useEffect, useMemo } from 'react';
 import { Address, Abi } from 'viem';
-import { CONTRACT_ADDRESSES } from '@/config/contracts';
+import { getContractAddresses, CHAIN_CONFIG } from '@/config/contracts';
 import FiatLoanBridgeABIJson from '@/contracts/FiatLoanBridgeABI.json';
 import { useContractStore } from '@/stores/contractStore';
 import { convertToUSDCents } from './useFiatOracle';
 
 const FiatLoanBridgeABI = FiatLoanBridgeABIJson as Abi;
+
+// Fiat contracts only exist on Base Sepolia — always query from there
+const BASE_CHAIN_ID = CHAIN_CONFIG.baseSepolia.id;
+const BASE_ADDRESSES = getContractAddresses(BASE_CHAIN_ID);
 
 // Fiat loan status enum matching contract
 export enum FiatLoanStatus {
@@ -71,8 +75,9 @@ export interface FiatLenderOffer {
 // Get next fiat loan ID
 export function useNextFiatLoanId() {
   return useReadContract({
-    address: CONTRACT_ADDRESSES.fiatLoanBridge,
+    address: BASE_ADDRESSES.fiatLoanBridge,
     abi: FiatLoanBridgeABI,
+    chainId: BASE_CHAIN_ID,
     functionName: 'nextFiatLoanId',
   });
 }
@@ -80,8 +85,9 @@ export function useNextFiatLoanId() {
 // Get next fiat lender offer ID
 export function useNextFiatLenderOfferId() {
   return useReadContract({
-    address: CONTRACT_ADDRESSES.fiatLoanBridge,
+    address: BASE_ADDRESSES.fiatLoanBridge,
     abi: FiatLoanBridgeABI,
+    chainId: BASE_CHAIN_ID,
     functionName: 'nextFiatLenderOfferId',
   });
 }
@@ -89,8 +95,9 @@ export function useNextFiatLenderOfferId() {
 // Get pending fiat loan IDs
 export function usePendingFiatLoans() {
   return useReadContract({
-    address: CONTRACT_ADDRESSES.fiatLoanBridge,
+    address: BASE_ADDRESSES.fiatLoanBridge,
     abi: FiatLoanBridgeABI,
+    chainId: BASE_CHAIN_ID,
     functionName: 'getPendingFiatLoans',
   });
 }
@@ -98,8 +105,9 @@ export function usePendingFiatLoans() {
 // Get active fiat loan IDs
 export function useActiveFiatLoans() {
   return useReadContract({
-    address: CONTRACT_ADDRESSES.fiatLoanBridge,
+    address: BASE_ADDRESSES.fiatLoanBridge,
     abi: FiatLoanBridgeABI,
+    chainId: BASE_CHAIN_ID,
     functionName: 'getActiveFiatLoans',
   });
 }
@@ -107,8 +115,9 @@ export function useActiveFiatLoans() {
 // Get borrower's fiat loan IDs
 export function useBorrowerFiatLoans(borrower: Address | undefined) {
   return useReadContract({
-    address: CONTRACT_ADDRESSES.fiatLoanBridge,
+    address: BASE_ADDRESSES.fiatLoanBridge,
     abi: FiatLoanBridgeABI,
+    chainId: BASE_CHAIN_ID,
     functionName: 'getBorrowerFiatLoans',
     args: borrower ? [borrower] : undefined,
     query: {
@@ -120,8 +129,9 @@ export function useBorrowerFiatLoans(borrower: Address | undefined) {
 // Get supplier's fiat loan IDs
 export function useSupplierFiatLoans(supplier: Address | undefined) {
   return useReadContract({
-    address: CONTRACT_ADDRESSES.fiatLoanBridge,
+    address: BASE_ADDRESSES.fiatLoanBridge,
     abi: FiatLoanBridgeABI,
+    chainId: BASE_CHAIN_ID,
     functionName: 'getSupplierFiatLoans',
     args: supplier ? [supplier] : undefined,
     query: {
@@ -133,8 +143,9 @@ export function useSupplierFiatLoans(supplier: Address | undefined) {
 // Get single fiat lender offer details
 export function useFiatLenderOffer(offerId: bigint | undefined) {
   return useReadContract({
-    address: CONTRACT_ADDRESSES.fiatLoanBridge,
+    address: BASE_ADDRESSES.fiatLoanBridge,
     abi: FiatLoanBridgeABI,
+    chainId: BASE_CHAIN_ID,
     functionName: 'fiatLenderOffers',
     args: offerId !== undefined ? [offerId] : undefined,
     query: {
@@ -146,8 +157,9 @@ export function useFiatLenderOffer(offerId: bigint | undefined) {
 // Get lender's fiat lender offer IDs
 export function useLenderFiatOffers(lender: Address | undefined) {
   return useReadContract({
-    address: CONTRACT_ADDRESSES.fiatLoanBridge,
+    address: BASE_ADDRESSES.fiatLoanBridge,
     abi: FiatLoanBridgeABI,
+    chainId: BASE_CHAIN_ID,
     functionName: 'getLenderFiatOffers',
     args: lender ? [lender] : undefined,
     query: {
@@ -161,8 +173,9 @@ export function useLenderFiatOffers(lender: Address | undefined) {
 // Get active fiat lender offers
 export function useActiveFiatLenderOffers() {
   return useReadContract({
-    address: CONTRACT_ADDRESSES.fiatLoanBridge,
+    address: BASE_ADDRESSES.fiatLoanBridge,
     abi: FiatLoanBridgeABI,
+    chainId: BASE_CHAIN_ID,
     functionName: 'getActiveFiatLenderOffers',
   });
 }
@@ -170,8 +183,9 @@ export function useActiveFiatLenderOffers() {
 // Get single fiat loan details
 export function useFiatLoan(loanId: bigint | undefined) {
   return useReadContract({
-    address: CONTRACT_ADDRESSES.fiatLoanBridge,
+    address: BASE_ADDRESSES.fiatLoanBridge,
     abi: FiatLoanBridgeABI,
+    chainId: BASE_CHAIN_ID,
     functionName: 'getFiatLoan',
     args: loanId !== undefined ? [loanId] : undefined,
     query: {
@@ -183,8 +197,9 @@ export function useFiatLoan(loanId: bigint | undefined) {
 // Calculate total debt for a fiat loan
 export function useFiatLoanTotalDebt(loanId: bigint | undefined) {
   return useReadContract({
-    address: CONTRACT_ADDRESSES.fiatLoanBridge,
+    address: BASE_ADDRESSES.fiatLoanBridge,
     abi: FiatLoanBridgeABI,
+    chainId: BASE_CHAIN_ID,
     functionName: 'calculateTotalDebt',
     args: loanId !== undefined ? [loanId] : undefined,
     query: {
@@ -196,8 +211,9 @@ export function useFiatLoanTotalDebt(loanId: bigint | undefined) {
 // Calculate health factor for a fiat loan
 export function useFiatLoanHealthFactor(loanId: bigint | undefined) {
   return useReadContract({
-    address: CONTRACT_ADDRESSES.fiatLoanBridge,
+    address: BASE_ADDRESSES.fiatLoanBridge,
     abi: FiatLoanBridgeABI,
+    chainId: BASE_CHAIN_ID,
     functionName: 'calculateHealthFactor',
     args: loanId !== undefined ? [loanId] : undefined,
     query: {
@@ -211,8 +227,9 @@ export function useBatchFiatLoans(loanIds: bigint[]) {
   const setFiatLoans = useContractStore((state) => state.setFiatLoans);
   const { data: loansData, isLoading, isError, refetch } = useReadContracts({
     contracts: loanIds.map((id) => ({
-      address: CONTRACT_ADDRESSES.fiatLoanBridge,
+      address: BASE_ADDRESSES.fiatLoanBridge,
       abi: FiatLoanBridgeABI,
+      chainId: BASE_CHAIN_ID,
       functionName: 'getFiatLoan',
       args: [id],
     })),
@@ -307,8 +324,9 @@ export function useBatchFiatLenderOffers(offerIds: bigint[]) {
   const setFiatLenderOffers = useContractStore((state) => state.setFiatLenderOffers);
   const { data: offersData, isLoading, isError, refetch } = useReadContracts({
     contracts: offerIds.map((id) => ({
-      address: CONTRACT_ADDRESSES.fiatLoanBridge,
+      address: BASE_ADDRESSES.fiatLoanBridge,
       abi: FiatLoanBridgeABI,
+      chainId: BASE_CHAIN_ID,
       functionName: 'fiatLenderOffers',
       args: [id],
     })),
@@ -527,7 +545,7 @@ export function useCreateFiatLoanRequest() {
 
     try {
       await publicClient.simulateContract({
-        address: CONTRACT_ADDRESSES.fiatLoanBridge,
+        address: BASE_ADDRESSES.fiatLoanBridge,
         abi: FiatLoanBridgeABI,
         functionName: 'createFiatLoanRequest',
         args: [collateralAsset, collateralAmount, fiatAmountCents, currency, interestRate, duration],
@@ -582,8 +600,9 @@ export function useCreateFiatLoanRequest() {
 
     // If simulation passes, execute the actual transaction
     return await writeContractAsync({
-      address: CONTRACT_ADDRESSES.fiatLoanBridge,
+      address: BASE_ADDRESSES.fiatLoanBridge,
       abi: FiatLoanBridgeABI,
+      chainId: BASE_CHAIN_ID,
       functionName: 'createFiatLoanRequest',
       args: [collateralAsset, collateralAmount, fiatAmountCents, currency, interestRate, duration],
     });
@@ -599,8 +618,9 @@ export function useCancelFiatLoanRequest() {
 
   const cancelFiatLoanRequest = async (loanId: bigint) => {
     return await writeContractAsync({
-      address: CONTRACT_ADDRESSES.fiatLoanBridge,
+      address: BASE_ADDRESSES.fiatLoanBridge,
       abi: FiatLoanBridgeABI,
+      chainId: BASE_CHAIN_ID,
       functionName: 'cancelFiatLoanRequest',
       args: [loanId],
     });
@@ -616,8 +636,9 @@ export function useAcceptFiatLoanRequest() {
 
   const acceptFiatLoanRequest = async (loanId: bigint) => {
     return await writeContractAsync({
-      address: CONTRACT_ADDRESSES.fiatLoanBridge,
+      address: BASE_ADDRESSES.fiatLoanBridge,
       abi: FiatLoanBridgeABI,
+      chainId: BASE_CHAIN_ID,
       functionName: 'acceptFiatLoanRequest',
       args: [loanId],
     });
@@ -639,8 +660,9 @@ export function useCreateFiatLenderOffer() {
     interestRate: bigint
   ) => {
     return await writeContractAsync({
-      address: CONTRACT_ADDRESSES.fiatLoanBridge,
+      address: BASE_ADDRESSES.fiatLoanBridge,
       abi: FiatLoanBridgeABI,
+      chainId: BASE_CHAIN_ID,
       functionName: 'createFiatLenderOffer',
       args: [fiatAmountCents, currency, minCollateralValueUSD, duration, interestRate],
     });
@@ -661,8 +683,9 @@ export function useAcceptFiatLenderOffer() {
     borrowAmountCents: bigint
   ) => {
     return await writeContractAsync({
-      address: CONTRACT_ADDRESSES.fiatLoanBridge,
+      address: BASE_ADDRESSES.fiatLoanBridge,
       abi: FiatLoanBridgeABI,
+      chainId: BASE_CHAIN_ID,
       functionName: 'acceptFiatLenderOffer',
       args: [offerId, collateralAsset, collateralAmount, borrowAmountCents],
     });
@@ -678,8 +701,9 @@ export function useCancelFiatLenderOffer() {
 
   const cancelFiatLenderOffer = async (offerId: bigint) => {
     return await writeContractAsync({
-      address: CONTRACT_ADDRESSES.fiatLoanBridge,
+      address: BASE_ADDRESSES.fiatLoanBridge,
       abi: FiatLoanBridgeABI,
+      chainId: BASE_CHAIN_ID,
       functionName: 'cancelFiatLenderOffer',
       args: [offerId],
     });

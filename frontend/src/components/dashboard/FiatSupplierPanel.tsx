@@ -34,6 +34,7 @@ import {
   Info,
   ChevronRight,
 } from 'lucide-react';
+import { getActiveChainId, CHAIN_CONFIG } from '@/config/contracts';
 
 interface GeneratedLinkInfo {
   url: string;
@@ -44,6 +45,7 @@ interface GeneratedLinkInfo {
 type ActionState = 'idle' | 'link_ready';
 
 export function FiatSupplierPanel() {
+  const isOnBase = getActiveChainId() === CHAIN_CONFIG.baseSepolia.id;
   const { address } = useAccount();
   const publicClient = usePublicClient();
   const { supplier, isRegistered, isVerified, isLoading: isLoadingSupplier } = useSupplierDetails(address);
@@ -219,6 +221,7 @@ export function FiatSupplierPanel() {
              isRegistered ? 'Complete verification to start' :
              'Become a liquidity provider'}
           </p>
+          {!isOnBase && <p className="text-xs text-blue-400/70 mt-0.5">Base Sepolia only</p>}
         </div>
       </div>
       <div className="flex items-center gap-2">
@@ -256,6 +259,14 @@ export function FiatSupplierPanel() {
             className="overflow-hidden"
           >
             <div className="glass-card p-6 rounded-t-none border-t-0 mt-[-1px]">
+              {/* Base-only info */}
+              {!isOnBase && (
+                <div className="flex items-center gap-2 px-3 py-2 mb-4 rounded-lg bg-blue-500/10 border border-blue-500/20 text-xs text-blue-400">
+                  <Info className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span>Fiat supplier features are currently available on Base Sepolia only.</span>
+                </div>
+              )}
+
               {/* Loading State */}
               {isLoadingSupplier && (
                 <div className="flex items-center justify-center py-8">

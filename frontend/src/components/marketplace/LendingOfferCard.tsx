@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Clock, Coins, TrendingUp, ArrowRight, Wallet } from 'lucide-react';
+import { Clock, TrendingUp, ArrowRight, Wallet } from 'lucide-react';
 import { LenderOffer, LoanRequestStatus } from '@/types';
 import { FiatLenderOffer, FiatLenderOfferStatus } from '@/hooks/useFiatLoan';
 import { formatTokenAmount, formatPercentage, formatDuration, formatRelativeTime, getTokenSymbol, getTokenDecimals, convertFiatToUSD } from '@/lib/utils';
@@ -20,18 +20,19 @@ function formatUSD(amount: number): string {
 interface CryptoLendingOfferCardProps {
   offer: LenderOffer;
   index?: number;
+  chainId?: number;
 }
 
-export function CryptoLendingOfferCard({ offer, index = 0 }: CryptoLendingOfferCardProps) {
-  const lendSymbol = getTokenSymbol(offer.lendAsset);
-  const lendDecimals = getTokenDecimals(offer.lendAsset);
+export function CryptoLendingOfferCard({ offer, index = 0, chainId }: CryptoLendingOfferCardProps) {
+  const lendSymbol = getTokenSymbol(offer.lendAsset, chainId);
+  const lendDecimals = getTokenDecimals(offer.lendAsset, chainId);
 
   // Check if collateral is "any" (zero address means borrower chooses)
   const isAnyCollateral = offer.requiredCollateralAsset === '0x0000000000000000000000000000000000000000';
-  const collateralSymbol = isAnyCollateral ? 'Any' : getTokenSymbol(offer.requiredCollateralAsset);
+  const collateralSymbol = isAnyCollateral ? 'Any' : getTokenSymbol(offer.requiredCollateralAsset, chainId);
 
   // Get USD prices
-  const { price: lendPrice } = useTokenPrice(offer.lendAsset);
+  const { price: lendPrice } = useTokenPrice(offer.lendAsset, chainId);
 
   // Calculate USD values
   const lendAmount = Number(offer.lendAmount) / Math.pow(10, Number(lendDecimals));
@@ -73,21 +74,10 @@ export function CryptoLendingOfferCard({ offer, index = 0 }: CryptoLendingOfferC
             )}
           </div>
 
-          {/* Asset Info Section */}
+          {/* Available to Borrow Section */}
           <div className="mb-4 p-3 rounded-xl bg-white/5">
             <div className="flex items-center gap-2 mb-1">
-              <Coins className="w-4 h-4 text-accent-400" />
-              <span className="text-xs text-gray-400">Asset</span>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span className="font-semibold text-accent-400">{lendSymbol}</span>
-            </div>
-          </div>
-
-          {/* Available to Borrow */}
-          <div className="mb-4 p-3 rounded-xl bg-white/5">
-            <div className="flex items-center gap-2 mb-1">
-              <Wallet className="w-4 h-4 text-primary-400" />
+              <Wallet className="w-4 h-4 text-accent-400" />
               <span className="text-xs text-gray-400">Available to Borrow</span>
             </div>
             <div className="flex items-baseline gap-2">
@@ -104,16 +94,6 @@ export function CryptoLendingOfferCard({ offer, index = 0 }: CryptoLendingOfferC
                 {formatTokenAmount(offer.borrowedAmount, lendDecimals)} already borrowed
               </p>
             )}
-          </div>
-
-          {/* Collateral Type Badge */}
-          <div className="mb-4 p-3 rounded-xl bg-accent-500/10 border border-accent-500/20">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-gray-400">Accepted Collateral</span>
-              <span className="text-sm font-medium text-accent-400">
-                {isAnyCollateral ? 'Flexible - Borrower chooses' : collateralSymbol}
-              </span>
-            </div>
           </div>
 
           {/* Stats Grid */}
@@ -134,6 +114,16 @@ export function CryptoLendingOfferCard({ offer, index = 0 }: CryptoLendingOfferC
               </div>
               <span className="text-lg font-semibold text-white">
                 {formatDuration(offer.duration)}
+              </span>
+            </div>
+          </div>
+
+          {/* Accepted Collateral Section */}
+          <div className="mb-4 p-3 rounded-xl bg-gradient-to-r from-accent-500/10 to-primary-500/10 border border-white/5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-400">Accepted Collateral</span>
+              <span className="font-semibold text-white">
+                {isAnyCollateral ? 'Flexible - Borrower chooses' : collateralSymbol}
               </span>
             </div>
           </div>
@@ -206,18 +196,7 @@ export function FiatLendingOfferCard({ offer, index = 0 }: FiatLendingOfferCardP
             )}
           </div>
 
-          {/* Asset Info Section */}
-          <div className="mb-4 p-3 rounded-xl bg-green-500/5 border border-green-500/10">
-            <div className="flex items-center gap-2 mb-1">
-              <Coins className="w-4 h-4 text-green-400" />
-              <span className="text-xs text-gray-400">Currency</span>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span className="font-semibold text-green-400">{offer.currency}</span>
-            </div>
-          </div>
-
-          {/* Available to Borrow */}
+          {/* Available to Borrow Section */}
           <div className="mb-4 p-3 rounded-xl bg-white/5">
             <div className="flex items-center gap-2 mb-1">
               <Wallet className="w-4 h-4 text-green-400" />
@@ -254,6 +233,14 @@ export function FiatLendingOfferCard({ offer, index = 0 }: FiatLendingOfferCardP
               <span className="text-lg font-semibold text-white">
                 {formatDuration(offer.duration)}
               </span>
+            </div>
+          </div>
+
+          {/* Currency Section */}
+          <div className="mb-4 p-3 rounded-xl bg-gradient-to-r from-green-500/10 to-accent-500/10 border border-green-500/10">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-400">Currency</span>
+              <span className="font-semibold text-white">{offer.currency}</span>
             </div>
           </div>
 
