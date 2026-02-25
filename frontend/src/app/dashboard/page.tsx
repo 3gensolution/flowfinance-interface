@@ -6,6 +6,8 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { ConnectButton } from '@/components/wallet/ConnectButton';
 import { RepayLoanModal } from '@/components/loan/RepayLoanModal';
+import { LiquidateLoanModal } from '@/components/loan/LiquidateLoanModal';
+import { RequestExtensionModal } from '@/components/loan/RequestExtensionModal';
 import { useDashboardDataLoader } from '@/hooks/useDashboardDataLoader';
 import {
   SummaryCards,
@@ -93,8 +95,10 @@ export default function DashboardPage() {
         <TransactionHistory />
       </div>
 
-      {/* Repay Modal - Global */}
+      {/* Global Modals */}
       <RepayLoanModal />
+      <LiquidateLoanModal />
+      <RequestExtensionModal />
     </div>
   );
 }

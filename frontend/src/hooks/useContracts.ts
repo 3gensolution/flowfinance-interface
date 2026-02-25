@@ -1067,6 +1067,34 @@ export function useLiquidateLoan() {
   return { liquidate, hash, isPending, isConfirming, isSuccess, error };
 }
 
+// Check if a loan can be liquidated
+export function useCanLiquidate(loanId: bigint | undefined) {
+  return useReadContract({
+    address: CONTRACT_ADDRESSES.loanMarketPlace,
+    abi: LoanMarketPlaceABI,
+    functionName: 'canLiquidate',
+    args: loanId !== undefined ? [loanId] : undefined,
+    chainId: getActiveChainId(),
+    query: {
+      enabled: loanId !== undefined,
+    },
+  });
+}
+
+// Get loan extension state (additionalDuration, requested, approved)
+export function useLoanExtension(loanId: bigint | undefined) {
+  return useReadContract({
+    address: CONTRACT_ADDRESSES.loanMarketPlace,
+    abi: LoanMarketPlaceABI,
+    functionName: 'loanExtensions',
+    args: loanId !== undefined ? [loanId] : undefined,
+    chainId: getActiveChainId(),
+    query: {
+      enabled: loanId !== undefined,
+    },
+  });
+}
+
 // Batch fetch loan requests using multicall
 export function useBatchLoanRequests(startId: number, count: number) {
   const setLoanRequests = useContractStore((state) => state.setLoanRequests);

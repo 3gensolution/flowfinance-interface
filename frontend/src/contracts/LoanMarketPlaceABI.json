@@ -214,6 +214,60 @@
   },
   {
     "type": "function",
+    "name": "createCrossChainLoanRequestWithCollateral",
+    "inputs": [
+      {
+        "name": "targetChainId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "borrower",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "collateralToken",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "collateralAmount",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "borrowAsset",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "borrowAmount",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "interestRate",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "duration",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "requestId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "createCrossChainRequest",
     "inputs": [
       {
@@ -2096,22 +2150,12 @@
   },
   {
     "type": "error",
-    "name": "OfferExpired",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "OfferFullyUtilized",
     "inputs": []
   },
   {
     "type": "error",
     "name": "OfferNotAvailable",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "OfferNotExpiredYet",
     "inputs": []
   },
   {
@@ -2168,11 +2212,6 @@
   },
   {
     "type": "error",
-    "name": "RequestExpired",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "RequestIsNotPending",
     "inputs": []
   },
@@ -2200,6 +2239,11 @@
   {
     "type": "error",
     "name": "SourceChainNotSupported",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TargetChainNotSupported",
     "inputs": []
   },
   {

@@ -35,6 +35,7 @@ interface ActiveLoanCardWithDataProps {
   loan: LoanData;
   isBorrower: boolean;
   onRepay?: () => void;
+  onLiquidate?: () => void;
   chainId?: number;
 }
 
@@ -42,6 +43,7 @@ export function ActiveLoanCardWithData({
   loan,
   isBorrower,
   onRepay,
+  onLiquidate,
   chainId,
 }: ActiveLoanCardWithDataProps) {
   const { data: outstandingDebt } = useOutstandingDebt(loan.loanId);
@@ -90,6 +92,7 @@ export function ActiveLoanCardWithData({
       repaymentAmount={outstandingDebt ? outstandingDebt as bigint : undefined}
       isBorrower={isBorrower}
       onRepay={onRepay}
+      onLiquidate={onLiquidate}
       chainId={chainId}
     />
   );

@@ -1,8 +1,9 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useCallback } from 'react';
 import { useParams } from 'next/navigation';
-import { useAccount } from 'wagmi';
+import { useAccount, usePublicClient } from 'wagmi';
+import { Abi } from 'viem';
 import { motion } from 'framer-motion';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -11,6 +12,9 @@ import {
   useTokenPrice,
   useRepaymentInfo,
   useHealthFactor,
+  useCanLiquidate,
+  useLoanExtension,
+  useApproveExtension,
 } from '@/hooks/useContracts';
 import { LoanStatus } from '@/types';
 import {
@@ -34,20 +38,30 @@ import {
   Copy,
   Heart,
   DollarSign,
+  Zap,
+  CalendarPlus,
 } from 'lucide-react';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
-import { DEFAULT_CHAIN } from '@/config/contracts';
+import { DEFAULT_CHAIN, CONTRACT_ADDRESSES } from '@/config/contracts';
 import { useLoansByBorrower, useLoansByLender } from '@/stores/contractStore';
 import { useUIStore } from '@/stores/uiStore';
+import { simulateContractWrite, formatSimulationError } from '@/lib/contractSimulation';
+import { RepayLoanModal } from '@/components/loan/RepayLoanModal';
+import { LiquidateLoanModal } from '@/components/loan/LiquidateLoanModal';
+import { RequestExtensionModal } from '@/components/loan/RequestExtensionModal';
+import LoanMarketPlaceABIJson from '@/contracts/LoanMarketPlaceABI.json';
+
+const LoanMarketPlaceABI = LoanMarketPlaceABIJson as Abi;
 
 export default function ActiveLoanDetailPage() {
   const params = useParams();
   const loanId = params.id ? BigInt(params.id as string) : undefined;
   const { address } = useAccount();
+  const publicClient = usePublicClient();
 
-  // UI Store for repay modal
-  const { openRepayModal } = useUIStore();
+  // UI Store for modals
+  const { openRepayModal, openLiquidateModal, openExtensionModal } = useUIStore();
 
   // Get loans from store
   const borrowedLoans = useLoansByBorrower(address);
@@ -103,6 +117,24 @@ export default function ActiveLoanDetailPage() {
     ? Number(healthFactorRaw as bigint) / 1e18
     : 0;
 
+  // Check if loan can be liquidated
+  const { data: canLiquidateData } = useCanLiquidate(
+    loan?.status === LoanStatus.ACTIVE ? loanId : undefined
+  );
+  const canLiquidate = canLiquidateData as boolean | undefined;
+
+  // Get loan extension state
+  const { data: extensionData, refetch: refetchExtension } = useLoanExtension(
+    loan?.status === LoanStatus.ACTIVE ? loanId : undefined
+  );
+  const extensionInfo = extensionData as readonly [bigint, boolean, boolean] | undefined;
+  const extensionAdditionalDuration = extensionInfo ? extensionInfo[0] : BigInt(0);
+  const extensionRequested = extensionInfo ? extensionInfo[1] : false;
+  const extensionApproved = extensionInfo ? extensionInfo[2] : false;
+
+  // Approve extension hook (for lender)
+  const { approveExtension, isPending: isApprovingExtension } = useApproveExtension();
+
   // Calculate USD values
   const collateralUSD = loan && collateralPrice
     ? (Number(loan.collateralAmount) / Math.pow(10, collateralDecimals)) * Number(collateralPrice) / 1e8
@@ -122,6 +154,10 @@ export default function ActiveLoanDetailPage() {
   };
   const healthStatus = getHealthStatus();
 
+  // Grace period
+  const gracePeriodEnd = loan ? Number(loan.gracePeriodEnd) * 1000 : 0;
+  const isGracePeriodExpired = gracePeriodEnd > 0 && Date.now() > gracePeriodEnd;
+
   const copyAddress = (addr: string) => {
     navigator.clipboard.writeText(addr);
     toast.success('Address copied!');
@@ -132,6 +168,48 @@ export default function ActiveLoanDetailPage() {
       openRepayModal(loanId);
     }
   };
+
+  const handleLiquidate = () => {
+    if (loanId !== undefined) {
+      openLiquidateModal(loanId);
+    }
+  };
+
+  const handleRequestExtension = () => {
+    if (loanId !== undefined) {
+      openExtensionModal(loanId);
+    }
+  };
+
+  const handleApproveExtension = useCallback(async () => {
+    if (!loanId || !address || !publicClient) return;
+
+    const toastId = toast.loading('Simulating approval...');
+
+    try {
+      const simulation = await simulateContractWrite({
+        address: CONTRACT_ADDRESSES.loanMarketPlace,
+        abi: LoanMarketPlaceABI,
+        functionName: 'approveLoanExtension',
+        args: [loanId],
+        account: address,
+      });
+
+      if (!simulation.success) {
+        const errorMsg = simulation.errorMessage || 'Approval simulation failed';
+        toast.error(errorMsg, { id: toastId });
+        return;
+      }
+
+      toast.loading('Approving extension...', { id: toastId });
+      approveExtension(loanId);
+      toast.success('Extension approved!', { id: toastId });
+      refetchExtension();
+    } catch (error: unknown) {
+      const errorMsg = formatSimulationError(error);
+      toast.error(errorMsg, { id: toastId });
+    }
+  }, [loanId, address, publicClient, approveExtension, refetchExtension]);
 
   if (!loan) {
     return (
@@ -184,15 +262,37 @@ export default function ActiveLoanDetailPage() {
             </p>
           </div>
 
-          {loan.status === LoanStatus.ACTIVE && isBorrower && (
-            <Button
-              onClick={handleRepay}
-              icon={<DollarSign className="w-4 h-4" />}
-              size="lg"
-            >
-              Repay Loan
-            </Button>
-          )}
+          <div className="flex gap-2">
+            {loan.status === LoanStatus.ACTIVE && isBorrower && (
+              <>
+                <Button
+                  onClick={handleRequestExtension}
+                  variant="secondary"
+                  icon={<CalendarPlus className="w-4 h-4" />}
+                  size="lg"
+                >
+                  Extend
+                </Button>
+                <Button
+                  onClick={handleRepay}
+                  icon={<DollarSign className="w-4 h-4" />}
+                  size="lg"
+                >
+                  Repay Loan
+                </Button>
+              </>
+            )}
+            {loan.status === LoanStatus.ACTIVE && !isBorrower && canLiquidate && (
+              <Button
+                onClick={handleLiquidate}
+                variant="danger"
+                icon={<Zap className="w-4 h-4" />}
+                size="lg"
+              >
+                Liquidate
+              </Button>
+            )}
+          </div>
         </motion.div>
 
         <div className="grid lg:grid-cols-3 gap-6">
@@ -316,6 +416,67 @@ export default function ActiveLoanDetailPage() {
               </motion.div>
             )}
 
+            {/* Extension Status Card */}
+            {loan.status === LoanStatus.ACTIVE && extensionRequested && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.17 }}
+              >
+                <Card className={`border ${extensionApproved ? 'border-green-500/30 bg-green-500/5' : 'border-yellow-500/30 bg-yellow-500/5'}`}>
+                  <div className="flex items-center gap-2 mb-4">
+                    <CalendarPlus className={`w-5 h-5 ${extensionApproved ? 'text-green-400' : 'text-yellow-400'}`} />
+                    <h3 className="font-semibold">Loan Extension</h3>
+                    <Badge variant={extensionApproved ? 'success' : 'warning'} size="sm">
+                      {extensionApproved ? 'Approved' : 'Pending Approval'}
+                    </Badge>
+                  </div>
+
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Requested Extension</span>
+                      <span className="font-medium">{formatDuration(extensionAdditionalDuration)}</span>
+                    </div>
+                    {extensionApproved && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-400">New Due Date</span>
+                        <span className="font-medium text-green-400">
+                          {new Date(Number(loan.dueDate) * 1000).toLocaleDateString()}
+                        </span>
+                      </div>
+                    )}
+                    {!extensionApproved && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-400">New Due Date (if approved)</span>
+                        <span className="font-medium text-yellow-400">
+                          {new Date((Number(loan.dueDate) + Number(extensionAdditionalDuration)) * 1000).toLocaleDateString()}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Lender can approve */}
+                  {!isBorrower && !extensionApproved && (
+                    <Button
+                      onClick={handleApproveExtension}
+                      className="w-full mt-4"
+                      loading={isApprovingExtension}
+                      disabled={isApprovingExtension}
+                      icon={<CheckCircle className="w-4 h-4" />}
+                    >
+                      {isApprovingExtension ? 'Approving...' : 'Approve Extension'}
+                    </Button>
+                  )}
+
+                  {isBorrower && !extensionApproved && (
+                    <p className="text-xs text-gray-400 mt-3">
+                      Waiting for the lender to approve your extension request.
+                    </p>
+                  )}
+                </Card>
+              </motion.div>
+            )}
+
             {/* Parties Info */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
@@ -415,6 +576,41 @@ export default function ActiveLoanDetailPage() {
               </motion.div>
             )}
 
+            {/* Liquidation Info Card (for lenders on overdue loans) */}
+            {loan.status === LoanStatus.ACTIVE && !isBorrower && isOverdue && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.35 }}
+              >
+                <Card className="border border-red-500/30 bg-red-500/5">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Zap className="w-5 h-5 text-red-400" />
+                    <h3 className="font-semibold">Liquidation</h3>
+                  </div>
+                  {canLiquidate ? (
+                    <>
+                      <p className="text-sm text-gray-400 mb-3">
+                        This loan can be liquidated. You will pay the outstanding debt and receive collateral + 5% bonus.
+                      </p>
+                      <Button
+                        variant="danger"
+                        onClick={handleLiquidate}
+                        className="w-full"
+                        icon={<Zap className="w-4 h-4" />}
+                      >
+                        Liquidate Loan
+                      </Button>
+                    </>
+                  ) : (
+                    <p className="text-sm text-gray-400">
+                      Loan health factor is still above the liquidation threshold.
+                    </p>
+                  )}
+                </Card>
+              </motion.div>
+            )}
+
             {/* Timeline */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
@@ -442,6 +638,15 @@ export default function ActiveLoanDetailPage() {
                     <span className="text-gray-400">Duration</span>
                     <span>{formatDuration(loan.duration)}</span>
                   </div>
+                  {gracePeriodEnd > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Grace Period End</span>
+                      <span className={isGracePeriodExpired ? 'text-red-400' : 'text-yellow-400'}>
+                        {new Date(gracePeriodEnd).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })}
+                        {isGracePeriodExpired && ' (Expired)'}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </Card>
             </motion.div>
@@ -522,6 +727,11 @@ export default function ActiveLoanDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Global Modals */}
+      <RepayLoanModal />
+      <LiquidateLoanModal />
+      <RequestExtensionModal />
     </div>
   );
 }

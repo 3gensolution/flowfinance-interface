@@ -45,6 +45,7 @@ export function ActiveLoansOffers() {
   const fiatOffers = useFiatLenderOffersByLender(address);
 
   const openRepayModal = useUIStore((state) => state.openRepayModal);
+  const openLiquidateModal = useUIStore((state) => state.openLiquidateModal);
 
   // Filter active crypto loans
   const activeBorrowedLoans = useMemo(() =>
@@ -299,6 +300,7 @@ export function ActiveLoansOffers() {
                           key={loan.loanId.toString()}
                           loan={loan as LoanData}
                           isBorrower={false}
+                          onLiquidate={() => openLiquidateModal(loan.loanId)}
                           chainId={cryptoChainId}
                         />
                       ))}
