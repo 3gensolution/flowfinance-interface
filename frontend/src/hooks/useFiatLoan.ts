@@ -3,7 +3,7 @@
 import { useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt, useAccount, usePublicClient } from 'wagmi';
 import { useCallback, useEffect, useMemo } from 'react';
 import { Address, Abi } from 'viem';
-import { getContractAddresses, CHAIN_CONFIG } from '@/config/contracts';
+import { getContractAddresses, CHAIN_CONFIG, getActiveChainId, ZERO_ADDRESS } from '@/config/contracts';
 import FiatLoanBridgeABIJson from '@/contracts/FiatLoanBridgeABI.json';
 import { useContractStore } from '@/stores/contractStore';
 import { convertToUSDCents } from './useFiatOracle';
@@ -671,7 +671,9 @@ export function useCreateFiatLenderOffer() {
   return { createFiatLenderOffer, hash, isPending, isConfirming, isSuccess, error };
 }
 
-// Accept a fiat lender offer (for borrowers)
+// Accept a fiat lender offer (for borrowers) — writes to the ACTIVE chain's FiatLoanBridge
+// On Base (supplier chain): direct local acceptance
+// On other chains: cross-chain acceptance — collateral locked locally, relay activates loan
 export function useAcceptFiatLenderOffer() {
   const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
@@ -682,10 +684,17 @@ export function useAcceptFiatLenderOffer() {
     collateralAmount: bigint,
     borrowAmountCents: bigint
   ) => {
+    const activeChainId = getActiveChainId();
+    const activeAddresses = getContractAddresses(activeChainId);
+
+    if (activeAddresses.fiatLoanBridge === ZERO_ADDRESS) {
+      throw new Error('FiatLoanBridge is not deployed on this chain');
+    }
+
     return await writeContractAsync({
-      address: BASE_ADDRESSES.fiatLoanBridge,
+      address: activeAddresses.fiatLoanBridge,
       abi: FiatLoanBridgeABI,
-      chainId: BASE_CHAIN_ID,
+      chainId: activeChainId,
       functionName: 'acceptFiatLenderOffer',
       args: [offerId, collateralAsset, collateralAmount, borrowAmountCents],
     });

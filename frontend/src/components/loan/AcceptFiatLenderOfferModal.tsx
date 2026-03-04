@@ -6,7 +6,7 @@ import { Address, parseUnits, formatUnits } from 'viem';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Input';
-import { TOKEN_LIST, CONTRACT_ADDRESSES } from '@/config/contracts';
+import { TOKEN_LIST, getContractAddresses, getActiveChainId, isSupplierChain, CHAIN_CONFIG } from '@/config/contracts';
 import { FiatLenderOffer } from '@/hooks/useFiatLoan';
 import { useTokenBalance, useTokenAllowance, useApproveToken, useTokenPrice, useSupportedAssets } from '@/hooks/useContracts';
 import { useAcceptFiatLenderOffer } from '@/hooks/useFiatLoan';
@@ -29,6 +29,13 @@ interface AcceptFiatLenderOfferModalProps {
 
 export function AcceptFiatLenderOfferModal({ offer, isOpen, onClose, onSuccess }: AcceptFiatLenderOfferModalProps) {
   const { address } = useAccount();
+
+  // Cross-chain awareness
+  const activeChainId = getActiveChainId();
+  const activeAddresses = getContractAddresses(activeChainId);
+  const isOnSupplierChain = isSupplierChain(activeChainId);
+  const activeChainName = Object.values(CHAIN_CONFIG).find(c => c.id === activeChainId)?.name || `Chain ${activeChainId}`;
+
   const [collateralToken, setCollateralToken] = useState<Address>(TOKEN_LIST[0].address);
   const [collateralAmount, setCollateralAmount] = useState('');
   const [step, setStep] = useState<'form' | 'approve' | 'confirm'>('form');
@@ -70,7 +77,7 @@ export function AcceptFiatLenderOfferModal({ offer, isOpen, onClose, onSuccess }
   const { data: allowance, refetch: refetchAllowance } = useTokenAllowance(
     collateralToken,
     address,
-    CONTRACT_ADDRESSES.fiatLoanBridge
+    activeAddresses.fiatLoanBridge
   );
   const { price: collateralPrice } = useTokenPrice(collateralToken);
 
@@ -94,9 +101,9 @@ export function AcceptFiatLenderOfferModal({ offer, isOpen, onClose, onSuccess }
     ? Number(convertToUSDCents(parsedBorrowAmountCents, offerCurrencyRate)) / 100
     : 0;
 
-  // Calculate min collateral proportional to borrow amount
+  // Calculate min collateral proportional to borrow amount (minCollateralValueUSD is in 8-dec)
   const proportionalMinCollateralUSD = offer && offer.fiatAmountCents > BigInt(0)
-    ? (Number(offer.minCollateralValueUSD) * Number(parsedBorrowAmountCents)) / Number(offer.fiatAmountCents)
+    ? (Number(offer.minCollateralValueUSD) * Number(parsedBorrowAmountCents)) / Number(offer.fiatAmountCents) / 1e8
     : 0;
 
   // Check if collateral meets minimum requirement (proportional to selected borrow amount)
@@ -155,7 +162,7 @@ export function AcceptFiatLenderOfferModal({ offer, isOpen, onClose, onSuccess }
     if (needsApproval) {
       setStep('approve');
       try {
-        await approveAsync(collateralToken, CONTRACT_ADDRESSES.fiatLoanBridge, parsedCollateralAmount);
+        await approveAsync(collateralToken, activeAddresses.fiatLoanBridge, parsedCollateralAmount);
         // Transaction submitted - useEffect will handle success and move to confirm step
       } catch (error) {
         console.error('Approval failed:', error);
@@ -174,7 +181,7 @@ export function AcceptFiatLenderOfferModal({ offer, isOpen, onClose, onSuccess }
     try {
       // Simulate the transaction first
       const simulation = await simulateContractWrite({
-        address: CONTRACT_ADDRESSES.fiatLoanBridge,
+        address: activeAddresses.fiatLoanBridge,
         abi: FiatLoanBridgeABI,
         functionName: 'acceptFiatLenderOffer',
         args: [offer.offerId, collateralToken, parsedCollateralAmount, parsedBorrowAmountCents],
@@ -217,7 +224,7 @@ export function AcceptFiatLenderOfferModal({ offer, isOpen, onClose, onSuccess }
             </div>
             <div className="flex justify-between">
               <span className="text-gray-400">Min Collateral:</span>
-              <span className="font-medium">${Number(offer.minCollateralValueUSD).toLocaleString()}</span>
+              <span className="font-medium">${(Number(offer.minCollateralValueUSD) / 1e8).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-400">Interest Rate:</span>
@@ -476,7 +483,10 @@ export function AcceptFiatLenderOfferModal({ offer, isOpen, onClose, onSuccess }
         <div className="flex gap-2 p-3 bg-primary-500/10 border border-primary-500/30 rounded-lg">
           <AlertCircle className="w-4 h-4 text-primary-400 flex-shrink-0 mt-0.5" />
           <p className="text-xs text-gray-300">
-            Your collateral will be locked until the loan is repaid. The supplier will disburse the fiat amount to you off-chain after accepting.
+            {isOnSupplierChain
+              ? 'Your collateral will be locked until the loan is repaid. The supplier will disburse the fiat amount to you off-chain after accepting.'
+              : `Your collateral will be locked on ${activeChainName}. The cross-chain relay will activate your loan on the supplier chain shortly after.`
+            }
           </p>
         </div>
       </div>

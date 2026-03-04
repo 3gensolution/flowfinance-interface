@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { useAccount } from 'wagmi';
+import { useState, useEffect, useRef } from 'react';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { useAccount, useSwitchChain } from 'wagmi';
+import { useNetwork, AVAILABLE_NETWORKS, hasContracts } from '@/contexts/NetworkContext';
 import { motion } from 'framer-motion';
 import { formatUnits, parseUnits } from 'viem';
 import { Card } from '@/components/ui/Card';
@@ -16,7 +17,9 @@ import {
   useTokenBalance,
   useTokenAllowance,
   useLTV,
+  useConfigMaxLTV,
   useRefreshMockPrice,
+  useSupportedAssets,
 } from '@/hooks/useContracts';
 import { LoanRequestStatus } from '@/types';
 import {
@@ -51,7 +54,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
-import { DEFAULT_CHAIN, CONTRACT_ADDRESSES } from '@/config/contracts';
+import { DEFAULT_CHAIN, CONTRACT_ADDRESSES, getActiveChainId, CHAIN_CONFIG } from '@/config/contracts';
 import { simulateContractWrite, formatSimulationError } from '@/lib/contractSimulation';
 import LoanMarketPlaceABIJson from '@/contracts/LoanMarketPlaceABI.json';
 import { Abi } from 'viem';
@@ -93,12 +96,38 @@ const STATUS_CONFIG: Record<number, { label: string; color: string; bgColor: str
 export default function OfferDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const offerId = params.id ? BigInt(params.id as string) : undefined;
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, chain } = useAccount();
+  const { switchChain } = useSwitchChain();
+  const { selectedNetwork, setSelectedNetwork } = useNetwork();
+
+  // Switch to the correct chain based on URL query param (set by marketplace links)
+  // This ensures all hooks (prices, LTV, balances) query the correct chain
+  const hasSyncedUrlChain = useRef(false);
+  const urlChainId = searchParams.get('chainId') ? Number(searchParams.get('chainId')) : undefined;
+
+  useEffect(() => {
+    if (!urlChainId || hasSyncedUrlChain.current) return;
+    if (urlChainId === selectedNetwork.id) {
+      hasSyncedUrlChain.current = true;
+      return;
+    }
+    const network = AVAILABLE_NETWORKS.find(n => n.id === urlChainId);
+    if (network && hasContracts(network.id)) {
+      hasSyncedUrlChain.current = true;
+      setSelectedNetwork(network);
+    }
+  }, [urlChainId, selectedNetwork.id, setSelectedNetwork]);
+
+  // Check if wallet is on the correct chain (the chain the offer lives on)
+  const activeChainId = getActiveChainId();
+  const isWrongChain = isConnected && chain?.id !== activeChainId;
+  const activeChainName = Object.values(CHAIN_CONFIG).find(c => c.id === activeChainId)?.name || `Chain ${activeChainId}`;
 
   const [showAcceptModal, setShowAcceptModal] = useState(false);
   const [isAccepting, setIsAccepting] = useState(false);
-  const [acceptStep, setAcceptStep] = useState<'approve' | 'accept'>('approve');
+  const [acceptStep, setAcceptStep] = useState<'form' | 'approve' | 'accept'>('form');
   const [simulationError, setSimulationError] = useState<string>('');
 
   // State for flexible collateral (when offer accepts any collateral)
@@ -106,6 +135,9 @@ export default function OfferDetailPage() {
 
   // State for partial borrowing - how much user wants to borrow (up to remaining amount)
   const [borrowAmountInput, setBorrowAmountInput] = useState<string>('');
+
+  // State for borrower-chosen duration (7 days to lender's max)
+  const [selectedDurationDays, setSelectedDurationDays] = useState<number>(0);
 
   // Fetch lender offer data
   const { data: offerData, isLoading: offerLoading, refetch } = useLenderOffer(offerId);
@@ -129,6 +161,10 @@ export default function OfferDetailPage() {
     chainId: offerTuple[13] as bigint,
   } : null;
 
+  // Get supported assets from Configuration contract
+  const { supportedTokens } = useSupportedAssets();
+  const availableTokens = supportedTokens.length > 0 ? supportedTokens : TOKEN_LIST;
+
   // Get the remaining amount available to borrow
   const remainingAmount = offer?.remainingAmount || BigInt(0);
 
@@ -140,13 +176,6 @@ export default function OfferDetailPage() {
   const parsedBorrowAmount = borrowAmountInput
     ? parseUnits(borrowAmountInput, lendDecimals)
     : remainingAmount;
-
-  // Initialize borrow amount when offer loads
-  useEffect(() => {
-    if (offer && remainingAmount > BigInt(0) && !borrowAmountInput) {
-      setBorrowAmountInput(formatUnits(remainingAmount, lendDecimals));
-    }
-  }, [offer, remainingAmount, lendDecimals, borrowAmountInput]);
 
   // Validate borrow amount
   const isBorrowAmountValid = parsedBorrowAmount > BigInt(0) && parsedBorrowAmount <= remainingAmount;
@@ -208,14 +237,28 @@ export default function OfferDetailPage() {
     ? (Number(offer.lendAmount) / Math.pow(10, Number(lendDecimals))) * Number(lendPrice) / 1e8
     : 0;
 
-  // Get LTV from contract
-  const durationDays = offer ? Math.ceil(Number(offer.duration) / (24 * 60 * 60)) : 0;
-  const { data: ltvBps } = useLTV(activeCollateralToken, durationDays);
-  const currentLTV = ltvBps ? Number(ltvBps) / 100 : 0;
+  // Get LTV from contract based on borrower's chosen duration
+  const maxDurationDays = offer ? Math.ceil(Number(offer.duration) / (24 * 60 * 60)) : 0;
+  const { data: ltvBps } = useLTV(activeCollateralToken, selectedDurationDays > 0 ? selectedDurationDays : undefined);
+  // Also read the static maxLTV from Configuration (what the contract _validateLTV actually checks)
+  const { data: configMaxLtvBps } = useConfigMaxLTV(activeCollateralToken);
+
+  // Use the MINIMUM of duration-based LTV and static config maxLTV to avoid contract rejection
+  const effectiveLtvBps = (() => {
+    const durationLtv = ltvBps ? Number(ltvBps) : 0;
+    const configLtv = configMaxLtvBps ? Number(configMaxLtvBps) : 0;
+    if (durationLtv > 0 && configLtv > 0) return Math.min(durationLtv, configLtv);
+    if (durationLtv > 0) return durationLtv;
+    if (configLtv > 0) return configLtv;
+    return 0;
+  })();
+  const currentLTV = effectiveLtvBps > 0 ? effectiveLtvBps / 100 : 0;
 
   // Calculate required collateral from contract LTV and prices
+  // Uses ceiling division + 0.5% buffer to avoid integer truncation causing
+  // the contract's _validateLTV to reject with LTVExceedsMaximum
   const calculatedCollateralAmount = (() => {
-    const ltvValue = ltvBps ? Number(ltvBps) : 0;
+    const ltvValue = effectiveLtvBps;
     if (!offer || !lendPrice || !collateralPrice || ltvValue === 0 || parsedBorrowAmount === BigInt(0)) {
       return BigInt(0);
     }
@@ -226,7 +269,11 @@ export default function OfferDetailPage() {
     const numerator = borrowAmountBN * lendPriceBN * BigInt(10000) * BigInt(10 ** collateralDecimals);
     const denominator = ltvBpsBN * collateralPriceBN * BigInt(10 ** lendDecimals);
     if (denominator === BigInt(0)) return BigInt(0);
-    return numerator / denominator;
+    // Ceiling division to avoid rounding down
+    const rawCollateral = (numerator + denominator - BigInt(1)) / denominator;
+    // Add 0.5% buffer to handle compound integer truncation in the contract
+    // (contract rounds collateralValueUSD down and loanValueUSD down, making LTV higher)
+    return rawCollateral + rawCollateral / BigInt(200);
   })();
 
   const collateralAmountBigInt = calculatedCollateralAmount;
@@ -290,16 +337,50 @@ export default function OfferDetailPage() {
       toast.error('Invalid offer ID.');
       return;
     }
+    if (isWrongChain) {
+      toast.error(`Please switch to ${activeChainName} first.`);
+      return;
+    }
     setShowAcceptModal(true);
   };
 
-  // Reset step when opening modal
+  // Reset modal state when opening
   useEffect(() => {
     if (showAcceptModal) {
-      setAcceptStep(hasApproval ? 'accept' : 'approve');
+      setAcceptStep('form');
+      setSelectedCollateralToken('');
       setSimulationError('');
+      // Initialize borrow amount to remaining
+      if (offer && remainingAmount > BigInt(0)) {
+        setBorrowAmountInput(formatUnits(remainingAmount, lendDecimals));
+      }
+      // Initialize duration to lender's max
+      if (maxDurationDays > 0) {
+        setSelectedDurationDays(maxDurationDays);
+      }
     }
-  }, [showAcceptModal, hasApproval, borrowerCollateralAllowance, collateralAmountBigInt, borrowerCollateralBalance, hasZeroBalance, hasInsufficientBalance, isPriceStale]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showAcceptModal]);
+
+  // Form validation for the form step
+  const isFormValid = offer &&
+    isBorrowAmountValid &&
+    selectedCollateralToken &&
+    collateralAmountBigInt > BigInt(0) &&
+    selectedDurationDays >= 7 &&
+    selectedDurationDays <= maxDurationDays &&
+    !hasZeroBalance &&
+    !hasInsufficientBalance &&
+    !isPriceStale;
+
+  const handleProceedToApprove = () => {
+    if (!isFormValid) return;
+    if (hasApproval) {
+      setAcceptStep('accept');
+    } else {
+      setAcceptStep('approve');
+    }
+  };
 
   const handleApprove = async () => {
     if (!offer) {
@@ -322,6 +403,12 @@ export default function OfferDetailPage() {
 
     const tokenToApprove = selectedCollateralToken as Address;
 
+    console.log('[Approve] Debug Info:', {
+      tokenToApprove,
+      spender: CONTRACT_ADDRESSES.loanMarketPlace,
+      collateralAmount: collateralAmountBigInt.toString(),
+    });
+
     try {
       const simulation = await simulateContractWrite({
         address: tokenToApprove,
@@ -342,7 +429,10 @@ export default function OfferDetailPage() {
         account: address,
       });
 
+      console.log('[Approve] Simulation result:', simulation);
+
       if (!simulation.success) {
+        console.error('[Approve] Simulation failed:', simulation.errorMessage);
         setSimulationError(simulation.errorMessage || 'Simulation failed');
         toast.error(simulation.errorMessage || 'Transaction will fail');
         return;
@@ -350,6 +440,7 @@ export default function OfferDetailPage() {
 
       await approveAsync(tokenToApprove, CONTRACT_ADDRESSES.loanMarketPlace, collateralAmountBigInt);
     } catch (error: unknown) {
+      console.error('[Approve] Error:', error);
       const errorMsg = formatSimulationError(error);
       setSimulationError(errorMsg);
       toast.error(errorMsg);
@@ -378,6 +469,31 @@ export default function OfferDetailPage() {
 
     const collateralAssetToUse = selectedCollateralToken as Address;
 
+    // Calculate what the contract will see for debugging
+    const debugLoanValueUSD = lendPrice ? (parsedBorrowAmount * BigInt(lendPrice)) / BigInt(10 ** lendDecimals) : BigInt(0);
+    const debugCollateralValueUSD = collateralPrice ? (collateralAmountBigInt * BigInt(collateralPrice)) / BigInt(10 ** collateralDecimals) : BigInt(0);
+    const debugContractLTV = debugCollateralValueUSD > BigInt(0) ? (debugLoanValueUSD * BigInt(10000)) / debugCollateralValueUSD : BigInt(0);
+
+    console.log('[AcceptOffer] Debug Info:', {
+      offerId: offerId?.toString(),
+      collateralAsset: collateralAssetToUse,
+      collateralAmount: collateralAmountBigInt.toString(),
+      borrowAmount: parsedBorrowAmount.toString(),
+      lendAsset: offer.lendAsset,
+      lendPrice: lendPrice?.toString(),
+      lendPriceUSD: lendPrice ? `$${(Number(lendPrice) / 1e8).toFixed(2)}` : 'N/A',
+      collateralPrice: collateralPrice?.toString(),
+      collateralPriceUSD: collateralPrice ? `$${(Number(collateralPrice) / 1e8).toFixed(2)}` : 'N/A',
+      ltvFromLTVConfig: ltvBps?.toString(),
+      ltvFromConfiguration: configMaxLtvBps?.toString(),
+      effectiveLtvUsed: effectiveLtvBps,
+      contractLTVCheck: `${debugContractLTV.toString()} vs max ${configMaxLtvBps?.toString() || 'unknown'}`,
+      loanValueUSD: `$${(Number(debugLoanValueUSD) / 1e8).toFixed(2)}`,
+      collateralValueUSD: `$${(Number(debugCollateralValueUSD) / 1e8).toFixed(2)}`,
+      selectedDurationDays,
+      contractAddress: CONTRACT_ADDRESSES.loanMarketPlace,
+    });
+
     try {
       const simulation = await simulateContractWrite({
         address: CONTRACT_ADDRESSES.loanMarketPlace,
@@ -387,8 +503,11 @@ export default function OfferDetailPage() {
         account: address,
       });
 
+      console.log('[AcceptOffer] Simulation result:', simulation);
+
       if (!simulation.success) {
         const errorMsg = simulation.errorMessage || 'Transaction would fail';
+        console.error('[AcceptOffer] Simulation failed:', errorMsg);
         setSimulationError(errorMsg);
         toast.error(errorMsg);
         setIsAccepting(false);
@@ -397,6 +516,7 @@ export default function OfferDetailPage() {
 
       await acceptOfferAsync(offerId, collateralAssetToUse, collateralAmountBigInt, parsedBorrowAmount);
     } catch (error: unknown) {
+      console.error('[AcceptOffer] Error:', error);
       const errorMsg = formatSimulationError(error);
       setSimulationError(errorMsg);
       toast.error(errorMsg);
@@ -412,12 +532,6 @@ export default function OfferDetailPage() {
   // Disabled states
   const isOpenModalDisabled =
     !offer ||
-    !isBorrowAmountValid ||
-    !hasValidCollateralInput ||
-    !selectedCollateralToken ||
-    (selectedCollateralToken && hasZeroBalance) ||
-    hasInsufficientBalance ||
-    isPriceStale ||
     isAccepting ||
     acceptIsPending ||
     isAcceptConfirming ||
@@ -575,7 +689,7 @@ export default function OfferDetailPage() {
             </div>
 
             {/* Action Buttons */}
-            {canAccept && (
+            {canAccept && !isWrongChain && (
               <div className="flex flex-wrap gap-3 mt-6">
                 <Button
                   onClick={openAcceptModal}
@@ -585,6 +699,27 @@ export default function OfferDetailPage() {
                 >
                   Accept This Offer
                 </Button>
+              </div>
+            )}
+
+            {/* Wrong Chain Warning */}
+            {canAccept && isWrongChain && (
+              <div className="mt-6 p-4 rounded-xl bg-yellow-500/10 border border-yellow-500/20">
+                <div className="flex items-center gap-3">
+                  <AlertCircle className="w-5 h-5 text-yellow-400 flex-shrink-0" />
+                  <div className="flex-1">
+                    <p className="text-sm text-yellow-400 font-medium">Wrong Network</p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      Please switch to {activeChainName} to accept this offer.
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => switchChain({ chainId: activeChainId })}
+                  >
+                    Switch to {activeChainName}
+                  </Button>
+                </div>
               </div>
             )}
           </div>
@@ -633,29 +768,12 @@ export default function OfferDetailPage() {
                     <span className="font-semibold">{formatDuration(offer.duration)}</span>
                   </div>
                   <div className="flex items-center justify-between py-3 border-b border-white/5">
-                    <span className="text-sm text-gray-400">Required Collateral</span>
-                    {selectedCollateralToken && collateralAmountBigInt > BigInt(0) ? (
-                      <div className="text-right">
-                        <span className="font-semibold">
-                          {requiredCollateralFormatted} {collateralSymbol}
-                        </span>
-                        {minCollateralUSD > 0 && (
-                          <p className="text-xs text-gray-500">~${minCollateralUSD.toFixed(2)} USD</p>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="font-semibold text-accent-400">Select collateral below</span>
-                    )}
+                    <span className="text-sm text-gray-400">Collateral</span>
+                    <span className="font-semibold text-accent-400">Dynamic (LTV-based)</span>
                   </div>
                   <div className="flex items-center justify-between py-3">
                     <span className="text-sm text-gray-400">LTV Ratio</span>
-                    {selectedCollateralToken && currentLTV > 0 ? (
-                      <span className={`font-semibold ${currentLTV > 80 ? 'text-red-400' : currentLTV > 70 ? 'text-yellow-400' : 'text-green-400'}`}>
-                        {currentLTV.toFixed(1)}%
-                      </span>
-                    ) : (
-                      <span className="text-sm text-gray-500">Depends on collateral chosen</span>
-                    )}
+                    <span className="text-sm text-gray-500">Depends on collateral chosen</span>
                   </div>
                 </div>
               </Card>
@@ -719,45 +837,10 @@ export default function OfferDetailPage() {
                       <h3 className="text-lg font-bold">Borrowing Opportunity</h3>
                     </div>
                     <div className="space-y-0">
-                      {/* Borrow Amount Input */}
-                      <div className="py-3 border-b border-white/5">
-                        <div className="flex justify-between items-center mb-2">
-                          <span className="text-sm text-gray-400">Amount to Borrow</span>
-                          <span className="text-xs text-gray-500">
-                            Max: {formatTokenAmount(remainingAmount, lendDecimals)} {lendSymbol}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="number"
-                            step="any"
-                            min="0"
-                            value={borrowAmountInput}
-                            onChange={(e) => setBorrowAmountInput(e.target.value)}
-                            placeholder="0.0"
-                            className="input-field flex-1"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setBorrowAmountInput(formatUnits(remainingAmount, lendDecimals))}
-                            className="px-3 py-2 text-xs font-semibold text-accent-400 hover:text-accent-300 bg-accent-400/10 hover:bg-accent-400/20 rounded-lg transition-colors"
-                          >
-                            MAX
-                          </button>
-                          <span className="text-sm text-gray-400 min-w-[50px]">{lendSymbol}</span>
-                        </div>
-                        {!isBorrowAmountValid && borrowAmountInput && (
-                          <p className="text-xs text-red-400 mt-1">
-                            {parsedBorrowAmount > remainingAmount
-                              ? 'Amount exceeds available'
-                              : 'Enter a valid amount'}
-                          </p>
-                        )}
-                      </div>
                       <div className="flex justify-between items-center py-3 border-b border-white/5">
-                        <span className="text-sm text-gray-400">You Will Receive</span>
-                        <span className="font-semibold text-accent-400">
-                          {borrowAmountInput || '0'} {lendSymbol}
+                        <span className="text-sm text-gray-400">Available to Borrow</span>
+                        <span className="font-semibold text-primary-400">
+                          {formatTokenAmount(remainingAmount, lendDecimals)} {lendSymbol}
                         </span>
                       </div>
                       <div className="flex justify-between items-center py-3 border-b border-white/5">
@@ -767,14 +850,10 @@ export default function OfferDetailPage() {
                         </span>
                       </div>
                       <div className="flex justify-between items-center py-3 border-b border-white/5">
-                        <span className="text-sm text-gray-400">Collateral Required</span>
-                        {selectedCollateralToken && collateralAmountBigInt > BigInt(0) ? (
-                          <span className="font-semibold">
-                            {requiredCollateralFormatted} {collateralSymbol}
-                          </span>
-                        ) : (
-                          <span className="font-semibold text-accent-400">Select below</span>
-                        )}
+                        <span className="text-sm text-gray-400">Collateral</span>
+                        <span className="font-semibold text-accent-400">
+                          Auto-calculated based on LTV
+                        </span>
                       </div>
                       <div className="flex justify-between items-center py-3">
                         <span className="text-sm text-gray-400">Loan Duration</span>
@@ -782,60 +861,47 @@ export default function OfferDetailPage() {
                       </div>
                     </div>
 
-                    {/* Dynamic Collateral Selection */}
-                    {isConnected && (
-                      <div className="mt-5 pt-5 border-t border-white/5 space-y-4">
-                        <div className="p-3 rounded-xl bg-accent-500/10 border border-accent-500/20">
-                          <p className="text-sm text-accent-400 font-medium">Choose Your Collateral</p>
-                          <p className="text-xs text-gray-400 mt-1">
-                            Select a supported token as collateral. The required amount will be calculated based on LTV and current prices.
+                    {isConnected && !isWrongChain && (
+                      <div className="mt-5 pt-5 border-t border-white/5">
+                        <Button
+                          onClick={openAcceptModal}
+                          className="w-full"
+                          icon={<Wallet className="w-4 h-4" />}
+                          disabled={isOpenModalDisabled}
+                        >
+                          Accept This Offer
+                        </Button>
+                      </div>
+                    )}
+
+                    {isConnected && isWrongChain && (
+                      <div className="mt-5 pt-5 border-t border-white/5">
+                        <div className="p-3 rounded-xl bg-yellow-500/10 border border-yellow-500/20 mb-3">
+                          <div className="flex gap-2 items-center">
+                            <AlertCircle className="w-4 h-4 text-yellow-400 flex-shrink-0" />
+                            <p className="text-sm text-yellow-400">
+                              Switch to {activeChainName} to accept this offer
+                            </p>
+                          </div>
+                        </div>
+                        <Button
+                          onClick={() => switchChain({ chainId: activeChainId })}
+                          className="w-full"
+                          icon={<RefreshCw className="w-4 h-4" />}
+                        >
+                          Switch to {activeChainName}
+                        </Button>
+                      </div>
+                    )}
+
+                    {!isConnected && (
+                      <div className="mt-5 p-3 rounded-xl bg-yellow-500/10 border border-yellow-500/20">
+                        <div className="flex gap-2 items-center">
+                          <AlertCircle className="w-4 h-4 text-yellow-400 flex-shrink-0" />
+                          <p className="text-sm text-yellow-400">
+                            Connect your wallet to accept this offer
                           </p>
                         </div>
-
-                        <div>
-                          <label className="block text-sm text-gray-400 mb-2">Select Collateral Token</label>
-                          <select
-                            value={selectedCollateralToken}
-                            onChange={(e) => setSelectedCollateralToken(e.target.value as Address)}
-                            className="w-full input-field bg-gray-800 border border-gray-700 rounded-lg px-4 py-3"
-                          >
-                            <option value="">Select a token</option>
-                            {TOKEN_LIST.filter(t => t.symbol !== 'USDC' && t.symbol !== 'USDT' && t.symbol !== 'DAI').map((token) => (
-                              <option key={token.address} value={token.address}>
-                                {token.symbol}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-
-                        {selectedCollateralToken && (
-                          <div>
-                            <label className="block text-sm text-gray-400 mb-2">Required Collateral (calculated)</label>
-                            <div className="p-4 rounded-xl bg-white/[0.03] border border-white/5">
-                              {collateralAmountBigInt > BigInt(0) ? (
-                                <div className="flex justify-between items-center">
-                                  <span className="text-xl font-bold text-white">
-                                    {requiredCollateralFormatted} {collateralSymbol}
-                                  </span>
-                                  {minCollateralUSD > 0 && (
-                                    <span className="text-sm text-gray-400">~${minCollateralUSD.toFixed(2)} USD</span>
-                                  )}
-                                </div>
-                              ) : (
-                                <span className="text-gray-400">Loading prices...</span>
-                              )}
-                              <p className="text-xs text-gray-500 mt-2">
-                                Based on {currentLTV.toFixed(1)}% LTV
-                              </p>
-                            </div>
-                            <div className="flex justify-between text-xs text-gray-400 mt-2">
-                              <span>Your Balance: {maxCollateralBalance} {collateralSymbol}</span>
-                              {hasInsufficientBalance && (
-                                <span className="text-red-400">Insufficient balance</span>
-                              )}
-                            </div>
-                          </div>
-                        )}
                       </div>
                     )}
                   </div>
@@ -1026,223 +1092,426 @@ export default function OfferDetailPage() {
         size="md"
       >
         <div className="space-y-6">
-          {/* Summary */}
-          <div className="glass-card p-4 space-y-3">
-            <div className="flex justify-between">
-              <span className="text-gray-400">You Will Receive</span>
-              <span className="font-semibold text-accent-400">
-                {borrowAmountInput || '0'} {lendSymbol}
-              </span>
-            </div>
-            {parsedBorrowAmount < remainingAmount && (
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Remaining in Offer</span>
-                <span className="text-gray-400">
-                  {formatTokenAmount(remainingAmount - parsedBorrowAmount, lendDecimals)} {lendSymbol}
-                </span>
+          {/* Step indicator */}
+          <div className="flex items-center gap-4 mb-6">
+            <div className={`flex items-center gap-2 ${acceptStep === 'form' ? 'text-primary-400' : 'text-gray-500'}`}>
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center ${acceptStep === 'form' ? 'bg-primary-500' : 'bg-gray-700'}`}>
+                1
               </div>
-            )}
-            <div className="flex justify-between">
-              <span className="text-gray-400">Interest Rate</span>
-              <span className="font-semibold text-yellow-400">
-                {offer && formatPercentage(offer.interestRate)} APY
-              </span>
+              <span className="text-sm">Details</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-gray-400">Duration</span>
-              <span className="font-semibold">
-                {offer && formatDuration(offer.duration)}
-              </span>
+            <div className="flex-1 h-0.5 bg-gray-700" />
+            <div className={`flex items-center gap-2 ${acceptStep === 'approve' ? 'text-primary-400' : 'text-gray-500'}`}>
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center ${acceptStep === 'approve' ? 'bg-primary-500' : hasApproval ? 'bg-green-500' : 'bg-gray-700'}`}>
+                {hasApproval ? <CheckCircle className="w-5 h-5" /> : '2'}
+              </div>
+              <span className="text-sm">Approve</span>
+            </div>
+            <div className="flex-1 h-0.5 bg-gray-700" />
+            <div className={`flex items-center gap-2 ${acceptStep === 'accept' ? 'text-primary-400' : 'text-gray-500'}`}>
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center ${acceptStep === 'accept' ? 'bg-primary-500' : 'bg-gray-700'}`}>
+                3
+              </div>
+              <span className="text-sm">Confirm</span>
             </div>
           </div>
 
-          {/* Collateral Selection */}
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm text-gray-400 mb-2">Select Collateral Token</label>
-              <select
-                value={selectedCollateralToken}
-                onChange={(e) => setSelectedCollateralToken(e.target.value as Address)}
-                className="w-full input-field bg-gray-800 border border-gray-700 rounded-lg px-4 py-3"
-              >
-                <option value="">Select a token</option>
-                {TOKEN_LIST.filter(t => t.symbol !== 'USDC' && t.symbol !== 'USDT' && t.symbol !== 'DAI').map((token) => (
-                  <option key={token.address} value={token.address}>
-                    {token.symbol}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {selectedCollateralToken && (
+          {/* Form Step */}
+          {acceptStep === 'form' && (
+            <div className="space-y-4">
+              {/* Borrow Amount */}
               <div>
-                <label className="block text-sm text-gray-400 mb-2">Required Collateral (calculated)</label>
-                <div className="p-4 bg-gray-800/50 border border-gray-700 rounded-lg">
-                  {collateralAmountBigInt > BigInt(0) ? (
-                    <div className="flex justify-between items-center">
-                      <span className="text-xl font-bold text-white">
-                        {requiredCollateralFormatted} {collateralSymbol}
-                      </span>
-                      {minCollateralUSD > 0 && (
-                        <span className="text-sm text-gray-400">~${minCollateralUSD.toFixed(2)} USD</span>
-                      )}
-                    </div>
-                  ) : (
-                    <span className="text-gray-400">Loading prices...</span>
-                  )}
-                  <p className="text-xs text-gray-500 mt-2">
-                    Based on {currentLTV.toFixed(1)}% LTV
-                  </p>
+                <label className="block text-sm text-gray-400 mb-2">
+                  Amount to Borrow ({lendSymbol})
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={borrowAmountInput}
+                    onChange={(e) => setBorrowAmountInput(e.target.value)}
+                    placeholder="0.0"
+                    className="input-field flex-1"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setBorrowAmountInput(formatUnits(remainingAmount, lendDecimals))}
+                    className="px-3 py-2 text-xs font-semibold text-accent-400 hover:text-accent-300 bg-accent-400/10 hover:bg-accent-400/20 rounded-lg transition-colors"
+                  >
+                    MAX
+                  </button>
                 </div>
-                <div className="mt-2 flex justify-between text-sm">
-                  <span className="text-gray-400">
-                    Balance: {maxCollateralBalance} {collateralSymbol}
-                  </span>
-                  {currentLTV > 0 && (
-                    <span className={`${currentLTV > 80 ? 'text-red-400' : currentLTV > 70 ? 'text-yellow-400' : 'text-green-400'}`}>
-                      LTV: {currentLTV.toFixed(1)}%
+                <div className="flex justify-between text-xs text-gray-500 mt-1">
+                  <span>Max available: {formatTokenAmount(remainingAmount, lendDecimals)} {lendSymbol}</span>
+                  {!isBorrowAmountValid && borrowAmountInput && (
+                    <span className="text-red-400">
+                      {parsedBorrowAmount > remainingAmount ? 'Exceeds available' : 'Invalid amount'}
                     </span>
                   )}
                 </div>
               </div>
-            )}
-          </div>
 
-          {/* Zero Balance Warning */}
-          {(selectedCollateralToken && hasZeroBalance) && (
-            <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-              <div className="flex gap-2 items-start">
-                <AlertCircle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
-                <div className="text-sm">
-                  <p className="text-yellow-400 font-medium">No {collateralSymbol} Balance</p>
-                  <p className="text-gray-400 mt-1">
-                    You need {collateralSymbol} tokens to accept this offer.
-                  </p>
-                  <Link
-                    href="/faucet"
-                    className="text-primary-400 hover:text-primary-300 hover:underline font-medium mt-2 inline-block"
-                  >
-                    Get test tokens from the faucet →
-                  </Link>
+              {/* Duration Selection */}
+              <div>
+                <label className="block text-sm text-gray-400 mb-2">
+                  Loan Duration (Days) <span className="text-xs text-gray-500">- Max: {maxDurationDays} days</span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={selectedDurationDays || ''}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (value === '') {
+                        setSelectedDurationDays(7);
+                      } else if (/^\d+$/.test(value)) {
+                        const days = parseInt(value);
+                        const clampedDays = Math.max(7, Math.min(maxDurationDays, days));
+                        setSelectedDurationDays(clampedDays);
+                      }
+                    }}
+                    onBlur={(e) => {
+                      if (!e.target.value || parseInt(e.target.value) < 7) {
+                        setSelectedDurationDays(7);
+                      }
+                    }}
+                    placeholder={maxDurationDays.toString()}
+                    className="input-field flex-1"
+                  />
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDurationDays(7)}
+                      className="px-2 py-2 text-xs font-semibold text-primary-400 hover:text-primary-300 bg-primary-400/10 hover:bg-primary-400/20 rounded-lg transition-colors"
+                    >
+                      7D
+                    </button>
+                    {maxDurationDays >= 30 && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDurationDays(30)}
+                        className="px-2 py-2 text-xs font-semibold text-primary-400 hover:text-primary-300 bg-primary-400/10 hover:bg-primary-400/20 rounded-lg transition-colors"
+                      >
+                        30D
+                      </button>
+                    )}
+                    {maxDurationDays >= 90 && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDurationDays(90)}
+                        className="px-2 py-2 text-xs font-semibold text-primary-400 hover:text-primary-300 bg-primary-400/10 hover:bg-primary-400/20 rounded-lg transition-colors"
+                      >
+                        90D
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDurationDays(maxDurationDays)}
+                      className="px-2 py-2 text-xs font-semibold text-accent-400 hover:text-accent-300 bg-accent-400/10 hover:bg-accent-400/20 rounded-lg transition-colors"
+                    >
+                      MAX
+                    </button>
+                  </div>
+                </div>
+                <div className="flex justify-between text-xs text-gray-500 mt-1">
+                  <span>Min: 7 days | Your choice ≤ Lender&apos;s max</span>
+                  {selectedDurationDays > 0 && (
+                    <span className="text-primary-400">
+                      ≈ {Math.floor(selectedDurationDays / 30)}mo {selectedDurationDays % 30}d
+                      {currentLTV > 0 && ` • LTV: ${currentLTV.toFixed(1)}%`}
+                    </span>
+                  )}
                 </div>
               </div>
+
+              {/* Collateral Token Selection */}
+              <div>
+                <label className="block text-sm text-gray-400 mb-2">Collateral Token</label>
+                <select
+                  value={selectedCollateralToken}
+                  onChange={(e) => setSelectedCollateralToken(e.target.value as Address)}
+                  className="w-full input-field bg-gray-800 border border-gray-700 rounded-lg px-4 py-3"
+                >
+                  <option value="">Select a token</option>
+                  {availableTokens.filter(t => t.address.toLowerCase() !== offer?.lendAsset?.toLowerCase()).map((token) => (
+                    <option key={token.address} value={token.address}>
+                      {token.symbol}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Collateral Amount (Auto-calculated) */}
+              {selectedCollateralToken && (
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">
+                    Required Collateral <span className="text-xs text-gray-500">- Auto-calculated based on LTV</span>
+                  </label>
+
+                  <div className="p-4 rounded-lg bg-gray-800/50 border border-gray-700">
+                    {collateralAmountBigInt > BigInt(0) ? (
+                      <div className="space-y-1">
+                        <div className="text-center">
+                          <span className="text-white font-bold text-2xl">
+                            {requiredCollateralFormatted} {collateralSymbol}
+                          </span>
+                        </div>
+                        {minCollateralUSD > 0 && (
+                          <div className="text-center text-sm text-gray-400">
+                            ~${minCollateralUSD.toFixed(2)} USD
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-center py-2 text-gray-500">
+                        Enter borrow amount to calculate collateral
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex justify-between text-xs text-gray-500 mt-2">
+                    <span>
+                      Your Balance: {maxCollateralBalance} {collateralSymbol}
+                    </span>
+                    {currentLTV > 0 && (
+                      <span className="text-primary-400">LTV: {currentLTV.toFixed(1)}%</span>
+                    )}
+                  </div>
+
+                  {/* Balance check */}
+                  {collateralAmountBigInt > BigInt(0) && hasZeroBalance && (
+                    <div className="mt-2 p-2 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
+                      <div className="flex items-center gap-2 text-sm">
+                        <AlertCircle className="w-4 h-4 text-yellow-400" />
+                        <span className="text-yellow-400">No {collateralSymbol} balance</span>
+                      </div>
+                      <Link
+                        href="/faucet"
+                        className="text-primary-400 hover:text-primary-300 hover:underline text-xs font-medium mt-1 ml-6 inline-block"
+                      >
+                        Get test tokens from the faucet →
+                      </Link>
+                    </div>
+                  )}
+
+                  {hasInsufficientBalance && !hasZeroBalance && (
+                    <div className="mt-2 p-2 rounded-lg bg-red-500/10 border border-red-500/30">
+                      <div className="flex items-center gap-2 text-sm">
+                        <AlertCircle className="w-4 h-4 text-red-400" />
+                        <span className="text-red-400">Insufficient {collateralSymbol} balance</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {collateralAmountBigInt > BigInt(0) && !hasZeroBalance && !hasInsufficientBalance && (
+                    <div className="mt-2 p-2 rounded-lg bg-green-500/10 border border-green-500/30">
+                      <div className="flex items-center gap-2 text-sm">
+                        <CheckCircle className="w-4 h-4 text-green-400" />
+                        <span className="text-green-400">Sufficient collateral balance</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Price Staleness Warning */}
+              {isPriceStale && selectedCollateralToken && (
+                <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
+                  <div className="flex gap-3">
+                    <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1 space-y-2 text-sm">
+                      <p className="text-red-400 font-medium">Price Data is Stale</p>
+                      <p className="text-gray-400">
+                        Transaction will fail until price feeds are refreshed.
+                      </p>
+                      <Button
+                        onClick={handleRefreshPrices}
+                        loading={isRefreshingPrice}
+                        size="sm"
+                        variant="secondary"
+                        icon={<RefreshCw className="w-4 h-4" />}
+                      >
+                        Refresh Price Feeds
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Summary */}
+              {isFormValid && (
+                <div className="glass-card p-4 space-y-3">
+                  <h4 className="font-semibold text-sm">Summary</h4>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">You will receive</span>
+                    <span className="text-accent-400 font-medium">
+                      {borrowAmountInput} {lendSymbol}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">Collateral locked</span>
+                    <span>{requiredCollateralFormatted} {collateralSymbol}</span>
+                  </div>
+                  {minCollateralUSD > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-400">Collateral value</span>
+                      <span className="text-primary-400">~${minCollateralUSD.toFixed(2)} USD</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">Interest Rate</span>
+                    <span className="text-yellow-400">{offer && formatPercentage(offer.interestRate)} APY</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">Duration</span>
+                    <span>{selectedDurationDays} days</span>
+                  </div>
+                  {parsedBorrowAmount < remainingAmount && (
+                    <div className="flex justify-between text-sm pt-2 border-t border-white/10">
+                      <span className="text-gray-500">Remaining in Offer</span>
+                      <span className="text-gray-400">
+                        {formatTokenAmount(remainingAmount - parsedBorrowAmount, lendDecimals)} {lendSymbol}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <Button
+                onClick={handleProceedToApprove}
+                className="w-full"
+                disabled={!isFormValid}
+              >
+                Continue
+              </Button>
             </div>
           )}
 
-          {/* Insufficient Balance Warning */}
-          {hasInsufficientBalance && !hasZeroBalance && (
-            <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
-              <div className="flex gap-2 items-start">
-                <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-                <div className="text-sm">
-                  <p className="text-red-400 font-medium">Insufficient Balance</p>
-                  <p className="text-gray-400 mt-1">
-                    You need {requiredCollateralFormatted} {collateralSymbol} but only have {maxCollateralBalance}.
-                  </p>
-                  <Link
-                    href="/faucet"
-                    className="text-primary-400 hover:text-primary-300 hover:underline font-medium mt-2 inline-block"
-                  >
-                    Get more tokens from the faucet →
-                  </Link>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Price Staleness Warning in Modal */}
-          {isPriceStale && (
-            <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
-              <div className="flex gap-2 items-start">
-                <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-                <div className="flex-1 text-sm space-y-2">
-                  <p className="text-red-400 font-medium">Price Data is Stale</p>
-                  <p className="text-gray-400">
-                    Transaction will fail until price feeds are refreshed.
-                  </p>
-                  <Button
-                    onClick={handleRefreshPrices}
-                    loading={isRefreshingPrice}
-                    size="sm"
-                    variant="secondary"
-                    icon={<RefreshCw className="w-4 h-4" />}
-                  >
-                    Refresh Price Feeds
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Simulation Error */}
-          {simulationError && (
-            <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
-              <div className="flex gap-2 items-start">
-                <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-                <div className="text-sm">
-                  <p className="text-red-400 font-medium">Transaction Error</p>
-                  <p className="text-gray-400 mt-1">{simulationError}</p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Steps */}
-          {(hasValidCollateralInput && !hasZeroBalance && !hasInsufficientBalance && !isPriceStale) && (
+          {/* Approve Step */}
+          {acceptStep === 'approve' && (
             <div className="space-y-4">
-              <div className="flex items-center gap-4">
-                <div className={`flex items-center gap-2 ${acceptStep === 'approve' || hasApproval ? 'text-primary-400' : 'text-gray-500'}`}>
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center ${hasApproval ? 'bg-green-500' : acceptStep === 'approve' ? 'bg-primary-500' : 'bg-gray-700'}`}>
-                    {hasApproval ? <CheckCircle className="w-5 h-5" /> : '1'}
-                  </div>
-                  <span>Approve</span>
+              <div className="text-center py-4">
+                <div className="w-16 h-16 rounded-full bg-yellow-500/10 border border-yellow-500/20 flex items-center justify-center mx-auto mb-4">
+                  <Shield className="w-8 h-8 text-yellow-400" />
                 </div>
-                <div className="flex-1 h-0.5 bg-gray-700" />
-                <div className={`flex items-center gap-2 ${acceptStep === 'accept' ? 'text-primary-400' : 'text-gray-500'}`}>
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center ${acceptStep === 'accept' ? 'bg-primary-500' : 'bg-gray-700'}`}>
-                    2
-                  </div>
-                  <span>Accept</span>
-                </div>
+                <h3 className="text-lg font-semibold mb-2">Approve Collateral</h3>
+                <p className="text-gray-400 text-sm">
+                  Approve {requiredCollateralFormatted} {collateralSymbol} to be used as collateral for this loan.
+                </p>
               </div>
 
-              {!hasApproval && (
-                <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-                  <p className="text-xs text-gray-300">
-                    <span className="text-yellow-400 font-medium">Why approve?</span> ERC-20 tokens require you to authorize the contract before it can lock your {collateralSymbol} as collateral. This is a standard security feature that protects your assets.
-                  </p>
+              <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                <p className="text-xs text-gray-300">
+                  <span className="text-yellow-400 font-medium">Why approve?</span> ERC-20 tokens require you to authorize the contract before it can lock your {collateralSymbol} as collateral. This is a standard security feature that protects your assets.
+                </p>
+              </div>
+
+              {simulationError && (
+                <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
+                  <div className="flex gap-2 items-start">
+                    <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                    <div className="text-sm">
+                      <p className="text-red-400 font-medium">Error</p>
+                      <p className="text-gray-400 mt-1">{simulationError}</p>
+                    </div>
+                  </div>
                 </div>
               )}
 
-              {!hasApproval ? (
-                <Button
-                  onClick={handleApprove}
-                  loading={approveIsPending || isApprovalConfirming}
-                  className="w-full"
-                  disabled={isApproveDisabled}
-                >
-                  {approveIsPending ? 'Approving...' : isApprovalConfirming ? 'Confirming...' : `Approve ${collateralSymbol}`}
-                </Button>
-              ) : (
-                <Button
-                  onClick={handleAccept}
-                  loading={isAccepting || acceptIsPending}
-                  className="w-full"
-                  disabled={isAcceptDisabled}
-                >
-                  Confirm & Accept Offer
-                </Button>
-              )}
+              <Button
+                onClick={handleApprove}
+                loading={approveIsPending || isApprovalConfirming}
+                className="w-full"
+                disabled={isApproveDisabled}
+              >
+                {approveIsPending ? 'Approving...' : isApprovalConfirming ? 'Confirming...' : `Approve ${collateralSymbol}`}
+              </Button>
+
+              <Button
+                variant="secondary"
+                onClick={() => setAcceptStep('form')}
+                className="w-full"
+              >
+                Back
+              </Button>
             </div>
           )}
 
-          <Button
-            variant="secondary"
-            onClick={() => setShowAcceptModal(false)}
-            className="w-full"
-          >
-            Cancel
-          </Button>
+          {/* Confirm Step */}
+          {acceptStep === 'accept' && (
+            <div className="space-y-4">
+              {/* Final Summary */}
+              <div className="glass-card p-4 space-y-3">
+                <h4 className="font-semibold">Transaction Summary</h4>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">You Will Receive</span>
+                    <span className="text-accent-400 font-medium">
+                      {borrowAmountInput} {lendSymbol}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Collateral Locked</span>
+                    <span>{requiredCollateralFormatted} {collateralSymbol}</span>
+                  </div>
+                  {minCollateralUSD > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Collateral Value</span>
+                      <span className="text-primary-400">~${minCollateralUSD.toFixed(2)} USD</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Interest Rate</span>
+                    <span className="text-yellow-400">{offer && formatPercentage(offer.interestRate)} APY</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Duration</span>
+                    <span>{selectedDurationDays} days</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Simulation Error */}
+              {simulationError && (
+                <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
+                  <div className="flex gap-2 items-start">
+                    <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                    <div className="text-sm">
+                      <p className="text-red-400 font-medium">Transaction Error</p>
+                      <p className="text-gray-400 mt-1">{simulationError}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Info */}
+              <div className="flex gap-2 p-3 bg-primary-500/10 border border-primary-500/30 rounded-lg">
+                <AlertCircle className="w-4 h-4 text-primary-400 flex-shrink-0 mt-0.5" />
+                <p className="text-xs text-gray-300">
+                  Your collateral will be locked in the smart contract until the loan is repaid. The lender&apos;s funds will be sent directly to your wallet.
+                </p>
+              </div>
+
+              <Button
+                onClick={handleAccept}
+                loading={isAccepting || acceptIsPending || isAcceptConfirming}
+                className="w-full"
+                disabled={isAcceptDisabled}
+              >
+                Confirm & Accept Offer
+              </Button>
+
+              <Button
+                variant="secondary"
+                onClick={() => setAcceptStep('form')}
+                className="w-full"
+              >
+                Back
+              </Button>
+            </div>
+          )}
         </div>
       </Modal>
     </div>

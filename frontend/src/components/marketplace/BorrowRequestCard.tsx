@@ -98,7 +98,7 @@ export function CryptoBorrowRequestCard({ request, index = 0, chainId }: CryptoB
       whileHover={{ y: -4, transition: { duration: 0.2 } }}
       className="group"
     >
-      <Link href={`/loan/${request.requestId}`}>
+      <Link href={`/loan/${request.requestId}${chainId ? `?chainId=${chainId}` : ''}`}>
         <div className={`h-full glass-card p-6 rounded-2xl border transition-all duration-300 hover:shadow-lg ${
           isCrossChain
             ? 'border-accent-500/30 hover:border-accent-500/50 hover:shadow-accent-500/10'

@@ -3,7 +3,7 @@
 import { useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from 'wagmi';
 import { Address, Abi, formatUnits } from 'viem';
 import { useEffect, useCallback } from 'react';
-import { CONTRACT_ADDRESSES, getTokenByAddress, TOKEN_LIST, getActiveChainId, getContractAddresses, CONTRACT_ADDRESSES_BY_CHAIN } from '@/config/contracts';
+import { CONTRACT_ADDRESSES, getTokenByAddress, TOKEN_LIST, getActiveChainId, getContractAddresses, CONTRACT_ADDRESSES_BY_CHAIN, getGasOverrides } from '@/config/contracts';
 import { useContractStore } from '@/stores/contractStore';
 import { LoanRequest, LenderOffer, Loan } from '@/types';
 import LoanMarketPlaceABIJson from '@/contracts/LoanMarketPlaceABI.json';
@@ -34,8 +34,8 @@ export function useLoanRequest(requestId: bigint | undefined) {
 // Read loan request by ID across ALL configured chains.
 // Returns the first valid result (non-zero borrower) and the chainId it was found on.
 // Prioritises the active chain so same-chain requests resolve instantly.
-export function useLoanRequestMultiChain(requestId: bigint | undefined) {
-  const activeChainId = getActiveChainId();
+export function useLoanRequestMultiChain(requestId: bigint | undefined, preferredChainId?: number) {
+  const activeChainId = preferredChainId ?? getActiveChainId();
 
   // Build one read call per chain that has a non-zero marketplace address
   const ZERO = '0x0000000000000000000000000000000000000000';
@@ -432,6 +432,20 @@ export function useSupportedAssets() {
   };
 }
 
+// Configuration static maxLTV (what the contract actually validates against)
+export function useConfigMaxLTV(collateralAsset: Address | undefined) {
+  return useReadContract({
+    address: CONTRACT_ADDRESSES.configuration,
+    abi: ConfigurationABI,
+    functionName: 'getMaxLTV',
+    args: collateralAsset ? [collateralAsset] : undefined,
+    chainId: getActiveChainId(),
+    query: {
+      enabled: !!collateralAsset,
+    },
+  });
+}
+
 // LTV Config reads
 export function useLTV(collateralAsset: Address | undefined, durationDays: number | undefined) {
   return useReadContract({
@@ -627,6 +641,8 @@ export function useRefreshMockPrice() {
       abi: MockV3AggregatorABI,
       functionName: 'updateAnswer',
       args: [currentPrice],
+      chainId: getActiveChainId(),
+      ...getGasOverrides(),
     });
 
     // Update the store immediately with the new timestamp
@@ -790,6 +806,8 @@ export function useApproveToken() {
       abi: ERC20ABI,
       functionName: 'approve',
       args: [spenderAddress, amount],
+      chainId: getActiveChainId(),
+      ...getGasOverrides(),
     });
   };
 
@@ -800,6 +818,8 @@ export function useApproveToken() {
       abi: ERC20ABI,
       functionName: 'approve',
       args: [spenderAddress, amount],
+      chainId: getActiveChainId(),
+      ...getGasOverrides(),
     });
   };
 
@@ -823,6 +843,8 @@ export function useCreateLoanRequest() {
       abi: LoanMarketPlaceABI,
       functionName: 'createLoanRequest',
       args: [collateralToken, collateralAmount, borrowAsset, borrowAmount, interestRate, duration],
+      chainId: getActiveChainId(),
+      ...getGasOverrides(),
     });
   };
 
@@ -839,6 +861,8 @@ export function useFundLoanRequest() {
       abi: LoanMarketPlaceABI,
       functionName: 'fundLoanRequest',
       args: [requestId],
+      chainId: getActiveChainId(),
+      ...getGasOverrides(),
     });
   };
 
@@ -848,6 +872,8 @@ export function useFundLoanRequest() {
       abi: LoanMarketPlaceABI,
       functionName: 'fundLoanRequest',
       args: [requestId],
+      chainId: getActiveChainId(),
+      ...getGasOverrides(),
     });
   };
 
@@ -910,6 +936,8 @@ export function useCreateLenderOffer() {
       abi: LoanMarketPlaceABI,
       functionName: 'createLenderOffer',
       args: [lendAsset, lendAmount, requiredCollateralAsset, minCollateralAmount, interestRate, duration],
+      chainId: getActiveChainId(),
+      ...getGasOverrides(),
     });
   };
 
@@ -927,6 +955,8 @@ export function useCreateLenderOffer() {
       abi: LoanMarketPlaceABI,
       functionName: 'createLenderOffer',
       args: [lendAsset, lendAmount, requiredCollateralAsset, minCollateralAmount, interestRate, duration],
+      chainId: getActiveChainId(),
+      ...getGasOverrides(),
     });
   };
 
@@ -944,6 +974,8 @@ export function useAcceptLenderOffer() {
       abi: LoanMarketPlaceABI,
       functionName: 'acceptLenderOffer',
       args: [offerId, collateralAsset, collateralAmount, borrowAmount],
+      chainId: getActiveChainId(),
+      ...getGasOverrides(),
     });
   };
 
@@ -954,6 +986,8 @@ export function useAcceptLenderOffer() {
       abi: LoanMarketPlaceABI,
       functionName: 'acceptLenderOffer',
       args: [offerId, collateralAsset, collateralAmount, borrowAmount],
+      chainId: getActiveChainId(),
+      ...getGasOverrides(),
     });
   };
 
@@ -971,6 +1005,8 @@ export function useRepayLoan() {
       abi: LoanMarketPlaceABI,
       functionName: 'repayLoan',
       args: [loanId, amount],
+      chainId: getActiveChainId(),
+      ...getGasOverrides(),
     });
   };
 
@@ -981,6 +1017,8 @@ export function useRepayLoan() {
       abi: LoanMarketPlaceABI,
       functionName: 'repayLoan',
       args: [loanId, amount],
+      chainId: getActiveChainId(),
+      ...getGasOverrides(),
     });
   };
 
@@ -997,6 +1035,8 @@ export function useCancelLoanRequest() {
       abi: LoanMarketPlaceABI,
       functionName: 'cancelLoanRequest',
       args: [requestId],
+      chainId: getActiveChainId(),
+      ...getGasOverrides(),
     });
   };
 
@@ -1013,6 +1053,8 @@ export function useCancelLenderOffer() {
       abi: LoanMarketPlaceABI,
       functionName: 'cancelLenderOffer',
       args: [offerId],
+      chainId: getActiveChainId(),
+      ...getGasOverrides(),
     });
   };
 
@@ -1029,6 +1071,8 @@ export function useRequestExtension() {
       abi: LoanMarketPlaceABI,
       functionName: 'requestLoanExtension',
       args: [loanId, additionalDuration],
+      chainId: getActiveChainId(),
+      ...getGasOverrides(),
     });
   };
 
@@ -1045,6 +1089,8 @@ export function useApproveExtension() {
       abi: LoanMarketPlaceABI,
       functionName: 'approveLoanExtension',
       args: [loanId],
+      chainId: getActiveChainId(),
+      ...getGasOverrides(),
     });
   };
 
@@ -1061,6 +1107,8 @@ export function useLiquidateLoan() {
       abi: LoanMarketPlaceABI,
       functionName: 'liquidateLoan',
       args: [loanId],
+      chainId: getActiveChainId(),
+      ...getGasOverrides(),
     });
   };
 
@@ -1625,6 +1673,8 @@ export function useFundCrossChainLoanRequest() {
       abi: CrossChainLoanManagerABI,
       functionName: 'fundCrossChainLoanRequest',
       args: [requestId, sourceChainId, sourceLoanId],
+      chainId: getActiveChainId(),
+      ...getGasOverrides(),
     });
   };
 
@@ -1639,6 +1689,8 @@ export function useFundCrossChainLoanRequest() {
       abi: CrossChainLoanManagerABI,
       functionName: 'fundCrossChainLoanRequest',
       args: [requestId, sourceChainId, sourceLoanId],
+      chainId: getActiveChainId(),
+      ...getGasOverrides(),
     });
   };
 
@@ -1663,6 +1715,8 @@ export function useInitiateCrossChainLoanRequest() {
       abi: CrossChainLoanManagerABI,
       functionName: 'initiateCrossChainLoanRequest',
       args: [targetChainId, collateralToken, collateralAmount, borrowAsset, borrowAmount, interestRate, duration],
+      chainId: getActiveChainId(),
+      ...getGasOverrides(),
     });
   };
 

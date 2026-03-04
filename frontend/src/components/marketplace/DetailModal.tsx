@@ -97,9 +97,10 @@ interface CryptoBorrowRequestModalProps {
   isOpen: boolean;
   onClose: () => void;
   request: LoanRequest;
+  chainId?: number;
 }
 
-export function CryptoBorrowRequestModal({ isOpen, onClose, request }: CryptoBorrowRequestModalProps) {
+export function CryptoBorrowRequestModal({ isOpen, onClose, request, chainId }: CryptoBorrowRequestModalProps) {
   const collateralSymbol = getTokenSymbol(request.collateralToken);
   const borrowSymbol = getTokenSymbol(request.borrowAsset);
   const collateralDecimals = getTokenDecimals(request.collateralToken);
@@ -165,7 +166,7 @@ export function CryptoBorrowRequestModal({ isOpen, onClose, request }: CryptoBor
 
         {/* Actions */}
         <div className="flex gap-3">
-          <Link href={`/loan/${request.requestId}`} className="flex-1">
+          <Link href={`/loan/${request.requestId}${chainId ? `?chainId=${chainId}` : ''}`} className="flex-1">
             <Button variant="primary" className="w-full" size="lg">
               Fund Request
               <ArrowRight className="w-4 h-4 ml-2" />
@@ -181,9 +182,10 @@ interface CryptoLendingOfferModalProps {
   isOpen: boolean;
   onClose: () => void;
   offer: LenderOffer;
+  chainId?: number;
 }
 
-export function CryptoLendingOfferModal({ isOpen, onClose, offer }: CryptoLendingOfferModalProps) {
+export function CryptoLendingOfferModal({ isOpen, onClose, offer, chainId }: CryptoLendingOfferModalProps) {
   const lendSymbol = getTokenSymbol(offer.lendAsset);
   const lendDecimals = getTokenDecimals(offer.lendAsset);
   const isAnyCollateral = offer.requiredCollateralAsset === '0x0000000000000000000000000000000000000000';
@@ -253,7 +255,7 @@ export function CryptoLendingOfferModal({ isOpen, onClose, offer }: CryptoLendin
 
         {/* Actions */}
         <div className="flex gap-3">
-          <Link href={`/offer/${offer.offerId}`} className="flex-1">
+          <Link href={`/offer/${offer.offerId}${chainId ? `?chainId=${chainId}` : ''}`} className="flex-1">
             <Button variant="accent" className="w-full" size="lg">
               Accept Offer
               <ArrowRight className="w-4 h-4 ml-2" />
@@ -347,7 +349,7 @@ interface FiatLendingOfferModalProps {
 
 export function FiatLendingOfferModal({ isOpen, onClose, offer }: FiatLendingOfferModalProps) {
   const fiatAmountUSD = convertFiatToUSD(offer.fiatAmountCents, offer.currency, offer.exchangeRateAtCreation);
-  const minCollateralUSD = Number(offer.minCollateralValueUSD);
+  const minCollateralUSD = Number(offer.minCollateralValueUSD) / 1e8;
 
   return (
     <BaseModal isOpen={isOpen} onClose={onClose} title="Fiat Lending Offer Details">

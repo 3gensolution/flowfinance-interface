@@ -1,6 +1,6 @@
 'use client';
 
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { useLoanRequestMultiChain } from '@/hooks/useContracts';
 import { LoanRequestStatus } from '@/types';
 import { getActiveChainId, getTokensForChain } from '@/config/contracts';
@@ -14,11 +14,14 @@ import type { ParsedLoanRequest } from '@/components/loan/SameChainLoanDetail';
 
 export default function LoanDetailPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const requestId = params.id ? BigInt(params.id as string) : undefined;
 
-  // Fetch loan request from ALL configured chains (active chain checked first).
-  // This ensures the page works regardless of which chain the user's wallet is on.
-  const { data: requestData, foundChainId, isLoading: requestLoading } = useLoanRequestMultiChain(requestId);
+  // Use chainId from URL query param (set by marketplace) to prioritize the correct chain
+  const urlChainId = searchParams.get('chainId') ? Number(searchParams.get('chainId')) : undefined;
+
+  // Fetch loan request from ALL configured chains (preferred chain checked first).
+  const { data: requestData, foundChainId, isLoading: requestLoading } = useLoanRequestMultiChain(requestId, urlChainId);
 
   // Parse request data from contract tuple
   const requestTuple = requestData as readonly unknown[];

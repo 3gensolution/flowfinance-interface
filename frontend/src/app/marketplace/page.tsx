@@ -43,7 +43,7 @@ type MarketplaceItem = CryptoRequest | CryptoOffer | FiatOffer;
 const ITEMS_PER_PAGE = 12;
 const MAX_ITEMS_TO_FETCH = 50;
 
-// Hook to fetch crypto loan requests directly from contract
+// Hook to fetch crypto loan requests directly from contract (newest first)
 function useCryptoLoanRequests(chainId: number, addresses: ContractAddresses) {
   // Get total count
   const { data: nextRequestId, refetch: refetchCount, error: errorCount } = useReadContract({
@@ -54,15 +54,16 @@ function useCryptoLoanRequests(chainId: number, addresses: ContractAddresses) {
     config: wagmiConfig,
   });
 
-  const count = nextRequestId ? Math.min(Number(nextRequestId), MAX_ITEMS_TO_FETCH) : 0;
+  const totalCount = nextRequestId ? Number(nextRequestId) : 0;
+  const count = Math.min(totalCount, MAX_ITEMS_TO_FETCH);
 
-  // Batch fetch all requests
+  // Batch fetch newest requests first (from totalCount-1 descending)
   const { data: requestsData, isLoading, refetch: refetchData, error: errorData } = useReadContracts({
     contracts: Array.from({ length: count }, (_, i) => ({
       address: addresses.loanMarketPlace,
       abi: LoanMarketPlaceABI,
       functionName: 'loanRequests',
-      args: [BigInt(i)],
+      args: [BigInt(totalCount - 1 - i)],
       chainId,
     })),
     config: wagmiConfig,
@@ -70,8 +71,6 @@ function useCryptoLoanRequests(chainId: number, addresses: ContractAddresses) {
       enabled: count > 0,
     },
   });
-  console.log("request data", requestsData, "loading", isLoading);
-  
 
   const requests = useMemo(() => {
     if (!requestsData) return [];
@@ -114,7 +113,7 @@ function useCryptoLoanRequests(chainId: number, addresses: ContractAddresses) {
         }
 
         return {
-          requestId: BigInt(index),
+          requestId: BigInt(totalCount - 1 - index),
           borrower: requestData.borrower as Address,
           collateralAmount: requestData.collateralAmount as bigint,
           collateralToken: requestData.collateralToken as Address,
@@ -130,7 +129,7 @@ function useCryptoLoanRequests(chainId: number, addresses: ContractAddresses) {
         } as LoanRequest;
       })
       .filter((r): r is LoanRequest => r !== null);
-  }, [requestsData]);
+  }, [requestsData, totalCount]);
 
   const refetch = useCallback(() => {
     refetchCount();
@@ -140,7 +139,7 @@ function useCryptoLoanRequests(chainId: number, addresses: ContractAddresses) {
   return { data: requests, isLoading, refetch, error: errorCount || errorData };
 }
 
-// Hook to fetch crypto lender offers directly from contract
+// Hook to fetch crypto lender offers directly from contract (newest first)
 function useCryptoLenderOffers(chainId: number, addresses: ContractAddresses) {
   // Get total count
   const { data: nextOfferId, refetch: refetchCount, error: errorCount } = useReadContract({
@@ -151,15 +150,16 @@ function useCryptoLenderOffers(chainId: number, addresses: ContractAddresses) {
     config: wagmiConfig,
   });
 
-  const count = nextOfferId ? Math.min(Number(nextOfferId), MAX_ITEMS_TO_FETCH) : 0;
+  const totalCount = nextOfferId ? Number(nextOfferId) : 0;
+  const count = Math.min(totalCount, MAX_ITEMS_TO_FETCH);
 
-  // Batch fetch all offers
+  // Batch fetch newest offers first (from totalCount-1 descending)
   const { data: offersData, isLoading, refetch: refetchData, error: errorData } = useReadContracts({
     contracts: Array.from({ length: count }, (_, i) => ({
       address: addresses.loanMarketPlace,
       abi: LoanMarketPlaceABI,
       functionName: 'lenderOffers',
-      args: [BigInt(i)],
+      args: [BigInt(totalCount - 1 - i)],
       chainId,
     })),
     config: wagmiConfig,
@@ -210,7 +210,7 @@ function useCryptoLenderOffers(chainId: number, addresses: ContractAddresses) {
         }
 
         return {
-          offerId: BigInt(index),
+          offerId: BigInt(totalCount - 1 - index),
           lender: offerData.lender as Address,
           lendAsset: offerData.lendAsset as Address,
           lendAmount: offerData.lendAmount as bigint,
@@ -227,7 +227,7 @@ function useCryptoLenderOffers(chainId: number, addresses: ContractAddresses) {
         } as LenderOffer;
       })
       .filter((o): o is LenderOffer => o !== null);
-  }, [offersData]);
+  }, [offersData, totalCount]);
 
   const refetch = useCallback(() => {
     refetchCount();
@@ -404,18 +404,22 @@ function MarketplaceContent() {
       return false;
     };
 
-    // Filter by the marketplace-local network (not the global one)
+    // Show items whose tokens ALL exist on this chain (fundable here).
+    // Checks both asset addresses to filter corrupt old data.
     const matchesNetworkFilter = (item: MarketplaceItem): boolean => {
-      // Fiat offers always come from Base — always show them
       if (item.itemType === 'fiat_offer') return true;
-
-      const chainId = 'chainId' in item ? Number(item.chainId) : 0;
-
-      if (chainId === 0) {
-        return marketplaceNetwork.id === CHAIN_CONFIG.baseSepolia.id;
+      if (item.itemType === 'crypto_request') {
+        return !!getTokenByAddressForChain(item.borrowAsset, marketplaceNetwork.id)
+          && !!getTokenByAddressForChain(item.collateralToken, marketplaceNetwork.id);
       }
-
-      return chainId === marketplaceNetwork.id;
+      if (item.itemType === 'crypto_offer') {
+        const validLend = !!getTokenByAddressForChain(item.lendAsset, marketplaceNetwork.id);
+        // address(0) means "any collateral accepted" — always valid
+        const validCollateral = item.requiredCollateralAsset === '0x0000000000000000000000000000000000000000'
+          || !!getTokenByAddressForChain(item.requiredCollateralAsset, marketplaceNetwork.id);
+        return validLend && validCollateral;
+      }
+      return true;
     };
 
     const matchesTokenFilter = (item: MarketplaceItem): boolean => {
@@ -544,22 +548,34 @@ function MarketplaceContent() {
     setCurrentPage(1);
   };
 
-  // Get counts for tabs
+  // Get counts for tabs — filter by token existence + own-item exclusion so counts match displayed items
   const borrowRequestsCount = useMemo(() => {
     if (filters.assetType === 'fiat') return 0;
-    return cryptoRequests.length;
-  }, [cryptoRequests, filters.assetType]);
+    return cryptoRequests.filter(r => {
+      if (connectedAddress && r.borrower.toLowerCase() === connectedAddress.toLowerCase()) return false;
+      return !!getTokenByAddressForChain(r.borrowAsset, marketplaceNetwork.id)
+        && !!getTokenByAddressForChain(r.collateralToken, marketplaceNetwork.id);
+    }).length;
+  }, [cryptoRequests, filters.assetType, connectedAddress, marketplaceNetwork]);
 
   const lendingOffersCount = useMemo(() => {
     let count = 0;
     if (filters.assetType === 'all' || filters.assetType === 'crypto') {
-      count += cryptoOffers.length;
+      count += cryptoOffers.filter(o => {
+        if (connectedAddress && o.lender.toLowerCase() === connectedAddress.toLowerCase()) return false;
+        const validLend = !!getTokenByAddressForChain(o.lendAsset, marketplaceNetwork.id);
+        const validCollateral = o.requiredCollateralAsset === '0x0000000000000000000000000000000000000000'
+          || !!getTokenByAddressForChain(o.requiredCollateralAsset, marketplaceNetwork.id);
+        return validLend && validCollateral;
+      }).length;
     }
     if (filters.assetType === 'all' || filters.assetType === 'fiat') {
-      count += fiatOffers.length;
+      count += fiatOffers.filter(o =>
+        !(connectedAddress && o.lender.toLowerCase() === connectedAddress.toLowerCase())
+      ).length;
     }
     return count;
-  }, [cryptoOffers, fiatOffers, filters.assetType]);
+  }, [cryptoOffers, fiatOffers, filters.assetType, connectedAddress, marketplaceNetwork]);
 
   // Render item based on type
   const renderItem = (item: MarketplaceItem, index: number) => {

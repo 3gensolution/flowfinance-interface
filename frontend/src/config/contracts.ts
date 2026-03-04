@@ -1,7 +1,7 @@
-import { Address } from 'viem';
+import { Address, parseGwei } from 'viem';
 
 // Zero address constant
-const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as Address;
+export const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as Address;
 
 // Contract address type
 export type ContractAddresses = {
@@ -32,22 +32,34 @@ const BASE_SEPOLIA_CONTRACT_ADDRESSES: ContractAddresses = {
 export const CONTRACT_ADDRESSES: ContractAddresses = { ...BASE_SEPOLIA_CONTRACT_ADDRESSES };
 
 // Contract addresses on Polygon Amoy (Proxy Addresses)
-// Fiat contracts (fiatOracle, fiatLoanBridge) are Base-only — zeroed out here
 export const POLYGON_AMOY_CONTRACT_ADDRESSES: ContractAddresses = {
   loanMarketPlace: process.env.NEXT_PUBLIC_POLYGON_AMOY_LOAN_MARKETPLACE_ADDRESS as Address || ZERO_ADDRESS,
   configuration: process.env.NEXT_PUBLIC_POLYGON_AMOY_CONFIGURATION_ADDRESS as Address || ZERO_ADDRESS,
   collateralEscrow: process.env.NEXT_PUBLIC_POLYGON_AMOY_COLLATERAL_ESCROW_ADDRESS as Address || ZERO_ADDRESS,
   ltvConfig: process.env.NEXT_PUBLIC_POLYGON_AMOY_LTV_CONFIG_ADDRESS as Address || ZERO_ADDRESS,
   supplierRegistry: process.env.NEXT_PUBLIC_POLYGON_AMOY_SUPPLIER_REGISTRY_ADDRESS as Address || ZERO_ADDRESS,
-  fiatOracle: ZERO_ADDRESS,
-  fiatLoanBridge: ZERO_ADDRESS,
+  fiatOracle: process.env.NEXT_PUBLIC_POLYGON_AMOY_FIAT_ORACLE_ADDRESS as Address || ZERO_ADDRESS,
+  fiatLoanBridge: process.env.NEXT_PUBLIC_POLYGON_AMOY_FIAT_LOAN_BRIDGE_ADDRESS as Address || ZERO_ADDRESS,
   crossChainManager: process.env.NEXT_PUBLIC_POLYGON_AMOY_CROSS_CHAIN_MANAGER_ADDRESS as Address || ZERO_ADDRESS,
+};
+
+// Contract addresses on Ethereum Sepolia (Proxy Addresses)
+export const ETH_SEPOLIA_CONTRACT_ADDRESSES: ContractAddresses = {
+  loanMarketPlace: process.env.NEXT_PUBLIC_ETH_SEPOLIA_LOAN_MARKETPLACE_ADDRESS as Address || ZERO_ADDRESS,
+  configuration: process.env.NEXT_PUBLIC_ETH_SEPOLIA_CONFIGURATION_ADDRESS as Address || ZERO_ADDRESS,
+  collateralEscrow: process.env.NEXT_PUBLIC_ETH_SEPOLIA_COLLATERAL_ESCROW_ADDRESS as Address || ZERO_ADDRESS,
+  ltvConfig: process.env.NEXT_PUBLIC_ETH_SEPOLIA_LTV_CONFIG_ADDRESS as Address || ZERO_ADDRESS,
+  supplierRegistry: process.env.NEXT_PUBLIC_ETH_SEPOLIA_SUPPLIER_REGISTRY_ADDRESS as Address || ZERO_ADDRESS,
+  fiatOracle: process.env.NEXT_PUBLIC_ETH_SEPOLIA_FIAT_ORACLE_ADDRESS as Address || ZERO_ADDRESS,
+  fiatLoanBridge: process.env.NEXT_PUBLIC_ETH_SEPOLIA_FIAT_LOAN_BRIDGE_ADDRESS as Address || ZERO_ADDRESS,
+  crossChainManager: process.env.NEXT_PUBLIC_ETH_SEPOLIA_CROSS_CHAIN_MANAGER_ADDRESS as Address || ZERO_ADDRESS,
 };
 
 // Contract addresses indexed by chain ID
 export const CONTRACT_ADDRESSES_BY_CHAIN: Record<number, ContractAddresses> = {
   84532: BASE_SEPOLIA_CONTRACT_ADDRESSES,     // Base Sepolia
   80002: POLYGON_AMOY_CONTRACT_ADDRESSES,     // Polygon Amoy
+  11155111: ETH_SEPOLIA_CONTRACT_ADDRESSES,   // Ethereum Sepolia
 };
 
 // Get contract addresses for a specific chain (defaults to Base Sepolia)
@@ -74,7 +86,20 @@ export function getActiveChainId(): number {
   return _activeChainId;
 }
 
+// Polygon Amoy requires minimum 25 gwei gas tip for all RPC calls
+const POLYGON_AMOY_CHAIN_ID = 80002;
+export function getGasOverrides(): { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint } | undefined {
+  if (_activeChainId === POLYGON_AMOY_CHAIN_ID) {
+    return {
+      maxFeePerGas: parseGwei('50'),
+      maxPriorityFeePerGas: parseGwei('30'),
+    };
+  }
+  return undefined;
+}
+
 // Fiat features are only available on Base chains (Base Sepolia testnet, Base mainnet)
+// This controls offer CREATION and fiat tabs — NOT cross-chain acceptance
 export const FIAT_SUPPORTED_CHAIN_IDS = [84532, 8453] as const; // Base Sepolia, Base Mainnet
 
 export function isFiatSupportedChain(chainId: number): boolean {
@@ -83,6 +108,19 @@ export function isFiatSupportedChain(chainId: number): boolean {
 
 export function isFiatSupportedOnActiveChain(): boolean {
   return isFiatSupportedChain(_activeChainId);
+}
+
+// The supplier chain where fiat offers are created and stored
+export const SUPPLIER_CHAIN_ID = 84532; // Base Sepolia
+
+export function isSupplierChain(chainId: number): boolean {
+  return chainId === SUPPLIER_CHAIN_ID;
+}
+
+// Check if a chain can accept fiat offers (has FiatLoanBridge deployed)
+export function hasFiatLoanBridge(chainId: number): boolean {
+  const addresses = getContractAddresses(chainId);
+  return addresses.fiatLoanBridge !== ZERO_ADDRESS;
 }
 
 // Native ETH address (used as placeholder for native token)

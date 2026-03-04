@@ -8,6 +8,7 @@ import { useContractStore } from '@/stores/contractStore';
 export const NETWORKS_WITH_CONTRACTS = [
   CHAIN_CONFIG.baseSepolia.id,
   CHAIN_CONFIG.polygonAmoy.id,
+  CHAIN_CONFIG.sepolia.id,
 ] as const;
 
 // Check if a network has contracts deployed
@@ -20,8 +21,8 @@ export const AVAILABLE_NETWORKS = [
   // Networks with contracts first
   CHAIN_CONFIG.baseSepolia,
   CHAIN_CONFIG.polygonAmoy,
-  // Networks without contracts
   CHAIN_CONFIG.sepolia,
+  // Networks without contracts
   CHAIN_CONFIG.arbitrumSepolia,
   CHAIN_CONFIG.optimismSepolia,
   CHAIN_CONFIG.base,

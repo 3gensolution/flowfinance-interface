@@ -53,7 +53,7 @@ export function CryptoLendingOfferCard({ offer, index = 0, chainId }: CryptoLend
       whileHover={{ y: -4, transition: { duration: 0.2 } }}
       className="group"
     >
-      <Link href={`/offer/${offer.offerId}`}>
+      <Link href={`/offer/${offer.offerId}${chainId ? `?chainId=${chainId}` : ''}`}>
         <div className="h-full glass-card p-6 rounded-2xl border border-white/10 hover:border-accent-500/50 transition-all duration-300 hover:shadow-lg hover:shadow-accent-500/10">
           {/* Header */}
           <div className="mb-4">

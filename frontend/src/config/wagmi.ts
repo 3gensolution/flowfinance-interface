@@ -19,14 +19,18 @@ import { http } from 'wagmi';
 // Singleton pattern to prevent multiple WalletConnect initializations
 let configInstance: ReturnType<typeof getDefaultConfig> | null = null;
 
+if(!process.env["NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID"]) {
+  console.warn('Warning: NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID is not set. Please set it in your environment variables.');
+}
+
 function createConfig() {
   if (configInstance) {
     return configInstance;
   }
 
   configInstance = getDefaultConfig({
-    appName: 'Flow Lending',
-    projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || 'YOUR_PROJECT_ID',
+    appName: 'Awinfi',
+    projectId: process.env["NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID"]!,
     chains: [
       // Testnets (Base Sepolia first as default)
       baseSepolia,

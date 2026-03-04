@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAccount, useSwitchChain } from 'wagmi';
+import { useAccount, useSwitchChain, useReadContract } from 'wagmi';
 import { motion } from 'framer-motion';
 import { formatUnits, Address } from 'viem';
 import { Card } from '@/components/ui/Card';
@@ -123,7 +123,21 @@ export default function CrossChainLoanDetail({ request, requestId, foundOnChainI
   const isBorrower = address?.toLowerCase() === request.borrower.toLowerCase();
 
   // Wallet chain mismatch — lender must be on target chain to fund
-  const isWrongChain = walletChainId !== targetChainId;
+  // Only flag wrong chain when wallet is actually connected
+  const isWrongChain = isConnected && walletChainId !== targetChainId;
+
+  // ── Read source-chain requestId from CrossChainLoanManager ────
+  const { data: sourceRequestIdRaw } = useReadContract({
+    address: targetContracts.crossChainManager,
+    abi: CrossChainLoanManagerABI,
+    functionName: 'crossChainSourceRequestId',
+    args: [requestId],
+    chainId: targetChainId,
+    query: {
+      enabled: isCrossChain && requestId !== undefined,
+    },
+  });
+  const sourceLoanId = sourceRequestIdRaw !== undefined ? BigInt(sourceRequestIdRaw as bigint) : BigInt(0);
 
   // ── Balance & Allowance (using target chain token + explicit chainId) ────
   const { data: lenderBalance } = useTokenBalance(localBorrowAsset, address, targetChainId);
@@ -309,9 +323,6 @@ export default function CrossChainLoanDetail({ request, requestId, foundOnChainI
 
     // For cross-chain funding, we need sourceChainId and sourceLoanId
     const sourceChainIdBigInt = detectedSourceChainId ? BigInt(detectedSourceChainId) : BigInt(0);
-    // sourceLoanId: the original request ID on the source chain (relay should provide this)
-    // For now, pass 0 — the relay/contract may need to be updated to track this
-    const sourceLoanId = BigInt(0);
 
     console.log('[CrossChain] handleFund:', {
       requestId: requestId.toString(),
@@ -766,8 +777,8 @@ export default function CrossChainLoanDetail({ request, requestId, foundOnChainI
                   )}
                   <div className="flex justify-between">
                     <span className="text-gray-400">Your Wallet</span>
-                    <span className={isWrongChain ? 'text-yellow-400 font-medium' : 'text-green-400 font-medium'}>
-                      {isWrongChain ? 'Wrong chain' : 'Connected'}
+                    <span className={!isConnected ? 'text-gray-500 font-medium' : isWrongChain ? 'text-yellow-400 font-medium' : 'text-green-400 font-medium'}>
+                      {!isConnected ? 'Not connected' : isWrongChain ? 'Wrong chain' : 'Connected'}
                     </span>
                   </div>
                 </div>

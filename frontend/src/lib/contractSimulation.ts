@@ -7,6 +7,7 @@
 
 import { simulateContract, type SimulateContractParameters } from '@wagmi/core';
 import { config } from '@/config/wagmi';
+import { getActiveChainId, getGasOverrides } from '@/config/contracts';
 
 /**
  * Helper type for contract simulation error handling
@@ -445,8 +446,12 @@ export async function simulateContractWrite(
     errorMessage?: string;
 }> {
     try {
+        // Always target the active chain so simulation doesn't run on the wrong network
+        const activeChainId = getActiveChainId();
+        const gasOverrides = getGasOverrides() || {};
+
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const result = await simulateContract(config, params as any);
+        const result = await simulateContract(config, { ...params, ...gasOverrides, chainId: activeChainId } as any);
         return {
             success: true,
             request: result.request,

@@ -80,8 +80,9 @@ export function CreateFiatLenderOfferForm() {
   const totalRepaymentInCurrency = fiatAmountNumber + interestAmountInCurrency;
 
   // Auto-calculate min collateral based on 75% LTV (collateral = total repayment / 0.75)
+  // Store in 8-decimal format to match Chainlink price feed / calculateCollateralValueInUSD output
   const totalRepaymentUSD = fiatAmountUSD * (1 + interestDecimal);
-  const minCollateralUSDAmount = BigInt(Math.floor(totalRepaymentUSD / 0.75));
+  const minCollateralUSDAmount = BigInt(Math.floor(totalRepaymentUSD / 0.75 * 1e8));
 
   // Balance checks
   const hasZeroBalance = balanceAmount === 0;
@@ -356,7 +357,7 @@ export function CreateFiatLenderOfferForm() {
               )}
               <div className="flex justify-between text-xs text-gray-500 pt-2">
                 <span>Min Collateral (auto 75% LTV):</span>
-                <span>${Number(minCollateralUSDAmount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD</span>
+                <span>${(Number(minCollateralUSDAmount) / 1e8).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD</span>
               </div>
             </div>
           </div>

@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { Button } from '@/components/ui/Button';
 
 export function Hero() {
+  console.log("Rendering Hero component", process.env["NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID"]);
   return (
     <section className="relative min-h-screen flex items-center overflow-hidden bg-black">
       {/* Canvas decorative background elements */}
@@ -104,9 +105,21 @@ export function Hero() {
                 href="#how-it-works"
                 className="inline-flex items-center gap-2 px-6 py-3 bg-white/10 text-white border border-white/20 rounded-xl font-medium hover:bg-white/20 transition-all duration-200 backdrop-blur-sm"
               >
-                <ChevronDown className="w-5 h-5" />
                 How it Works
+                <ChevronDown className="w-5 h-5" />
               </a>
+            </motion.div>
+
+            {/* Cross-chain fiat info */}
+            <motion.div
+              className="p-4 rounded-xl bg-gradient-to-r from-green-500/10 to-emerald-500/5 border border-green-500/20 max-w-lg"
+              initial={{ opacity: 0, y: 20, filter: 'blur(4px)' }}
+              animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+              transition={{ duration: 0.6, delay: 0.3, ease: [0.33, 1, 0.68, 1] }}
+            >
+              <p className="text-sm text-gray-300">
+                <span className="text-green-400 font-semibold">Cross-chain fiat lending</span> &mdash; deposit collateral from any supported chain and receive fiat directly. No bridging required.
+              </p>
             </motion.div>
 
             {/* Trust indicators */}

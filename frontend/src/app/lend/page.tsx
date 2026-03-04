@@ -19,7 +19,7 @@ import {
 } from '@/components/lender';
 import { useIsVerifiedSupplier } from '@/hooks/useSupplyAssets';
 import { useLoanConfigLimits } from '@/hooks/useContracts';
-import { CONTRACT_ADDRESSES, isFiatSupportedChain } from '@/config/contracts';
+import { CONTRACT_ADDRESSES, isFiatSupportedChain, getTokenByAddressForChain } from '@/config/contracts';
 import { useNetwork } from '@/contexts/NetworkContext';
 import { config as wagmiConfig } from '@/config/wagmi';
 import { LoanRequestStatus } from '@/types';
@@ -63,7 +63,7 @@ export default function LendPage() {
 
   const cryptoRequestCount = nextCryptoRequestId ? Number(nextCryptoRequestId) : 0;
 
-  // Fetch crypto requests to filter out user's own requests
+  // Fetch crypto requests to filter out invalid/own requests
   const { data: cryptoRequestsData } = useReadContracts({
     contracts: Array.from({ length: cryptoRequestCount }, (_, i) => ({
       address: CONTRACT_ADDRESSES.loanMarketPlace,
@@ -74,7 +74,7 @@ export default function LendPage() {
     })),
     config: wagmiConfig,
     query: {
-      enabled: cryptoRequestCount > 0 && isConnected,
+      enabled: cryptoRequestCount > 0,
     },
   });
 
@@ -106,14 +106,9 @@ export default function LendPage() {
     },
   });
 
-  // Calculate total available borrow requests (excluding user's own requests)
+  // Calculate total available borrow requests (excluding user's own and invalid requests)
   const totalAvailableRequests = useMemo(() => {
-    if (!isConnected || !address) {
-      // If not connected, show total count
-      return cryptoRequestCount + fiatLoanIds.length;
-    }
-
-    // Filter out user's own crypto requests
+    // Filter crypto requests for validity and ownership
     let cryptoCount = 0;
     if (cryptoRequestsData) {
       cryptoCount = cryptoRequestsData.filter((result) => {
@@ -126,21 +121,29 @@ export default function LendPage() {
         if (isArray) {
           const arr = data as readonly unknown[];
           requestData = {
-            borrower: arr[1],
+            borrower: arr[1] as string,
+            collateralToken: arr[3] as string,
+            borrowAsset: arr[4] as string,
             status: arr[11],
           };
         } else {
           requestData = data as Record<string, unknown>;
         }
 
-        // Filter out user's own requests, empty requests, and non-pending requests
+        // Filter out empty requests and non-pending requests
         if (!requestData.borrower || requestData.borrower === '0x0000000000000000000000000000000000000000') {
           return false;
         }
-        if ((requestData.borrower as string).toLowerCase() === address.toLowerCase()) {
+        // Filter out user's own requests (only if connected)
+        if (isConnected && address && (requestData.borrower as string).toLowerCase() === address.toLowerCase()) {
           return false;
         }
         if (Number(requestData.status) !== LoanRequestStatus.PENDING) {
+          return false;
+        }
+        // Filter out invalid requests (garbage data) by checking token addresses exist on this chain
+        if (!getTokenByAddressForChain(requestData.collateralToken as `0x${string}`, selectedNetwork.id) ||
+            !getTokenByAddressForChain(requestData.borrowAsset as `0x${string}`, selectedNetwork.id)) {
           return false;
         }
 
@@ -168,11 +171,12 @@ export default function LendPage() {
           loanData = data as Record<string, unknown>;
         }
 
-        // Filter out user's own requests and empty requests
+        // Filter out empty requests
         if (!loanData.borrower || loanData.borrower === '0x0000000000000000000000000000000000000000') {
           return false;
         }
-        if ((loanData.borrower as string).toLowerCase() === address.toLowerCase()) {
+        // Filter out user's own requests (only if connected)
+        if (isConnected && address && (loanData.borrower as string).toLowerCase() === address.toLowerCase()) {
           return false;
         }
         // For fiat loans, status 0 = PENDING_SUPPLIER
@@ -185,7 +189,7 @@ export default function LendPage() {
     }
 
     return cryptoCount + fiatCount;
-  }, [isConnected, address, cryptoRequestsData, fiatRequestsData, cryptoRequestCount, fiatLoanIds.length]);
+  }, [isConnected, address, cryptoRequestsData, fiatRequestsData, selectedNetwork.id]);
 
   // Check if user is verified supplier (for cash/fiat)
   const { isVerified, isLoading: isVerificationLoading } = useIsVerifiedSupplier();

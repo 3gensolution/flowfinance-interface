@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAccount, useWriteContract, useWaitForTransactionReceipt, useSwitchChain } from 'wagmi';
 import { parseUnits } from 'viem';
+import { getGasOverrides } from '@/config/contracts';
 import { motion } from 'framer-motion';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -173,6 +174,7 @@ export default function FaucetPage() {
       functionName: 'mint',
       args: [amount],
       chainId: selectedNetwork.id,
+      ...getGasOverrides(),
     });
   };
 

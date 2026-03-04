@@ -115,7 +115,7 @@ export function LoanRequestCard({ request, onFund, onCancel, isOwner, loading, c
             Cancel
           </Button>
         )}
-        <Link href={`/loan/${request.requestId}`} className="flex-1">
+        <Link href={`/loan/${request.requestId}${chainId ? `?chainId=${chainId}` : ''}`} className="flex-1">
           <Button variant="secondary" className="w-full" icon={<ExternalLink className="w-4 h-4" />}>
             Details
           </Button>
@@ -257,7 +257,7 @@ export function LenderOfferCard({ offer, onAccept, onCancel, isOwner, loading, c
             Cancel
           </Button>
         )}
-        <Link href={`/offer/${offer.offerId}`} className="flex-1">
+        <Link href={`/offer/${offer.offerId}${chainId ? `?chainId=${chainId}` : ''}`} className="flex-1">
           <Button variant="secondary" className="w-full" icon={<ExternalLink className="w-4 h-4" />}>
             Details
           </Button>
@@ -562,7 +562,7 @@ interface FiatLenderOfferCardProps {
 
 export function FiatLenderOfferCard({ offer, onAccept, onCancel, isOwner, loading }: FiatLenderOfferCardProps) {
   // Convert fiat amount to display value
-  const minCollateralUSD = Number(offer.minCollateralValueUSD);
+  const minCollateralUSD = Number(offer.minCollateralValueUSD) / 1e8;
   const fiatAmountUSD = convertFiatToUSD(offer.fiatAmountCents, offer.currency, offer.exchangeRateAtCreation);
 
   // Get status badge
