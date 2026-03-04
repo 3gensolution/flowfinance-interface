@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useAccount, useSwitchChain } from 'wagmi';
+import { useAccount } from 'wagmi';
 import { motion } from 'framer-motion';
 import { parseUnits } from 'viem';
 import { Card } from '@/components/ui/Card';
@@ -107,15 +107,13 @@ export default function FiatOfferDetailPage() {
   const router = useRouter();
   const offerId = params.id ? BigInt(params.id as string) : undefined;
   const { address, isConnected, chain } = useAccount();
-  const { switchChain } = useSwitchChain();
 
-  // Cross-chain awareness
-  const activeChainId = getActiveChainId();
-  const activeAddresses = getContractAddresses(activeChainId);
-  const chainHasFiatBridge = hasFiatLoanBridge(activeChainId);
-  const isOnSupplierChain = isSupplierChain(activeChainId);
-  const activeChainName = Object.values(CHAIN_CONFIG).find(c => c.id === activeChainId)?.name || `Chain ${activeChainId}`;
-  const isWrongWalletChain = isConnected && chain?.id !== activeChainId;
+  // Cross-chain awareness - use wallet chain for bridge checks and contract interactions
+  const walletChainId = chain?.id || getActiveChainId();
+  const walletAddresses = getContractAddresses(walletChainId);
+  const walletHasFiatBridge = hasFiatLoanBridge(walletChainId);
+  const isOnSupplierChain = isSupplierChain(walletChainId);
+  const walletChainName = Object.values(CHAIN_CONFIG).find(c => c.id === walletChainId)?.name || `Chain ${walletChainId}`;
 
   const [showAcceptModal, setShowAcceptModal] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
@@ -173,7 +171,7 @@ export default function FiatOfferDetailPage() {
   const { data: borrowerCollateralAllowance, refetch: refetchAllowance } = useTokenAllowance(
     selectedCollateralToken as Address || undefined,
     address,
-    activeAddresses.fiatLoanBridge
+    walletAddresses.fiatLoanBridge
   );
 
   // Price data for USD value calculation
@@ -402,7 +400,7 @@ export default function FiatOfferDetailPage() {
     try {
       await approveAsync(
         selectedCollateralToken as Address,
-        activeAddresses.fiatLoanBridge,
+        walletAddresses.fiatLoanBridge,
         parsedCollateralAmount
       );
     } catch (error) {
@@ -419,7 +417,7 @@ export default function FiatOfferDetailPage() {
 
     try {
       const simulation = await simulateContractWrite({
-        address: activeAddresses.fiatLoanBridge,
+        address: walletAddresses.fiatLoanBridge,
         abi: FiatLoanBridgeABI,
         functionName: 'acceptFiatLenderOffer',
         args: [offerId, selectedCollateralToken, parsedCollateralAmount, parsedBorrowAmountCents],
@@ -489,7 +487,7 @@ export default function FiatOfferDetailPage() {
   }
 
   const statusConfig = STATUS_CONFIG[offer.status] || STATUS_CONFIG[FiatLenderOfferStatus.ACTIVE]!;
-  const canAccept = offer.status === FiatLenderOfferStatus.ACTIVE && !isLender && isConnected && chainHasFiatBridge && !isWrongWalletChain;
+  const canAccept = offer.status === FiatLenderOfferStatus.ACTIVE && !isLender && isConnected && walletHasFiatBridge;
   const canCancel = offer.status === FiatLenderOfferStatus.ACTIVE && isLender;
 
   return (
@@ -608,53 +606,32 @@ export default function FiatOfferDetailPage() {
               )}
             </div>
 
-            {/* Cross-chain info banner */}
-            {!isOnSupplierChain && chainHasFiatBridge && isConnected && !isLender && offer.status === FiatLenderOfferStatus.ACTIVE && (
+            {/* Cross-chain info banner - show when accepting from a non-Base chain */}
+            {!isOnSupplierChain && walletHasFiatBridge && isConnected && !isLender && offer.status === FiatLenderOfferStatus.ACTIVE && (
               <div className="mt-4 p-4 rounded-xl bg-blue-500/10 border border-blue-500/20">
                 <div className="flex items-start gap-3">
                   <AlertCircle className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
                   <div>
                     <p className="text-sm text-blue-400 font-medium">Cross-Chain Acceptance</p>
                     <p className="text-xs text-gray-400 mt-1">
-                      You are on {activeChainName}. Your collateral will be locked on this chain, and the relay will activate your loan shortly after.
+                      You are on {walletChainName}. Your collateral will be locked on this chain, and the relay will activate your loan shortly after.
                     </p>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* No FiatLoanBridge on this chain */}
-            {!chainHasFiatBridge && isConnected && !isLender && offer.status === FiatLenderOfferStatus.ACTIVE && (
+            {/* No FiatLoanBridge on wallet's chain */}
+            {!walletHasFiatBridge && isConnected && !isLender && offer.status === FiatLenderOfferStatus.ACTIVE && (
               <div className="mt-4 p-4 rounded-xl bg-red-500/10 border border-red-500/20">
                 <div className="flex items-start gap-3">
                   <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
                   <div>
                     <p className="text-sm text-red-400 font-medium">Fiat Loans Not Available</p>
                     <p className="text-xs text-gray-400 mt-1">
-                      Fiat loan acceptance is not available on {activeChainName}. Please switch to a chain with fiat loan support (e.g. Base Sepolia).
+                      Fiat loan acceptance is not available on {walletChainName}. Please switch to a chain with fiat loan support (e.g. Base Sepolia or Polygon Amoy).
                     </p>
                   </div>
-                </div>
-              </div>
-            )}
-
-            {/* Wrong wallet chain warning */}
-            {isWrongWalletChain && chainHasFiatBridge && isConnected && !isLender && offer.status === FiatLenderOfferStatus.ACTIVE && (
-              <div className="mt-4 p-4 rounded-xl bg-yellow-500/10 border border-yellow-500/20">
-                <div className="flex items-center gap-3">
-                  <AlertCircle className="w-5 h-5 text-yellow-400 flex-shrink-0" />
-                  <div className="flex-1">
-                    <p className="text-sm text-yellow-400 font-medium">Wrong Network</p>
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      Please switch your wallet to {activeChainName} to accept this offer.
-                    </p>
-                  </div>
-                  <Button
-                    size="sm"
-                    onClick={() => switchChain({ chainId: activeChainId })}
-                  >
-                    Switch to {activeChainName}
-                  </Button>
                 </div>
               </div>
             )}
@@ -798,7 +775,7 @@ export default function FiatOfferDetailPage() {
                       </div>
                     </div>
 
-                    {isConnected && chainHasFiatBridge && !isWrongWalletChain && (
+                    {isConnected && walletHasFiatBridge && (
                       <div className="mt-5 pt-5 border-t border-white/5">
                         <Button
                           onClick={() => setShowAcceptModal(true)}
@@ -810,25 +787,12 @@ export default function FiatOfferDetailPage() {
                       </div>
                     )}
 
-                    {isConnected && chainHasFiatBridge && isWrongWalletChain && (
-                      <div className="mt-5 pt-5 border-t border-white/5 space-y-2">
-                        <p className="text-xs text-yellow-400">Switch your wallet to {activeChainName} to accept this offer</p>
-                        <Button
-                          onClick={() => switchChain({ chainId: activeChainId })}
-                          className="w-full"
-                          variant="secondary"
-                        >
-                          Switch to {activeChainName}
-                        </Button>
-                      </div>
-                    )}
-
-                    {isConnected && !chainHasFiatBridge && (
+                    {isConnected && !walletHasFiatBridge && (
                       <div className="mt-5 p-3 rounded-xl bg-red-500/10 border border-red-500/20">
                         <div className="flex gap-2 items-center">
                           <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0" />
                           <p className="text-sm text-red-400">
-                            Fiat loans not available on {activeChainName}
+                            Fiat loans not available on {walletChainName}
                           </p>
                         </div>
                       </div>
@@ -1446,7 +1410,7 @@ export default function FiatOfferDetailPage() {
                 <p className="text-xs text-gray-300">
                   {isOnSupplierChain
                     ? 'Your collateral will be locked until the loan is repaid. The supplier will disburse the fiat amount to you off-chain after accepting.'
-                    : `Your collateral will be locked on ${activeChainName}. The cross-chain relay will activate your loan on the supplier chain shortly after.`
+                    : `Your collateral will be locked on ${walletChainName}. The cross-chain relay will activate your loan on the supplier chain shortly after.`
                   }
                 </p>
               </div>

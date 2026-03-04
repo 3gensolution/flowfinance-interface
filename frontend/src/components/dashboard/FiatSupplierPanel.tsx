@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useAccount, usePublicClient } from 'wagmi';
+import { useAccount, usePublicClient, useSwitchChain } from 'wagmi';
 import { formatEther } from 'viem';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
@@ -30,11 +30,13 @@ import {
   Loader2,
   ExternalLink,
   ArrowRight,
+  ArrowRightLeft,
   Banknote,
   Info,
   ChevronRight,
 } from 'lucide-react';
 import { getActiveChainId, CHAIN_CONFIG } from '@/config/contracts';
+import { useNetwork } from '@/contexts/NetworkContext';
 
 interface GeneratedLinkInfo {
   url: string;
@@ -45,9 +47,16 @@ interface GeneratedLinkInfo {
 type ActionState = 'idle' | 'link_ready';
 
 export function FiatSupplierPanel() {
-  const isOnBase = getActiveChainId() === CHAIN_CONFIG.baseSepolia.id;
   const { address } = useAccount();
   const publicClient = usePublicClient();
+  const { switchChain } = useSwitchChain();
+  const { selectedNetwork, setSelectedNetwork } = useNetwork();
+  const isOnBase = selectedNetwork.id === CHAIN_CONFIG.baseSepolia.id;
+
+  const handleSwitchToBase = () => {
+    setSelectedNetwork(CHAIN_CONFIG.baseSepolia);
+    switchChain({ chainId: CHAIN_CONFIG.baseSepolia.id });
+  };
   const { supplier, isRegistered, isVerified, isLoading: isLoadingSupplier } = useSupplierDetails(address);
   const { registerSupplier, isPending: isRegistering, isSimulating } = useRegisterSupplier();
 
@@ -112,6 +121,13 @@ export function FiatSupplierPanel() {
 
     if (!address) {
       toast.error('Please connect your wallet first');
+      return;
+    }
+
+    // Safety check: ensure we're on Base before registering
+    if (getActiveChainId() !== CHAIN_CONFIG.baseSepolia.id) {
+      handleSwitchToBase();
+      toast.error('Please switch to Base Sepolia first');
       return;
     }
 
@@ -216,12 +232,12 @@ export function FiatSupplierPanel() {
         <div className="text-left">
           <h3 className="font-semibold text-white">Fiat Supplier</h3>
           <p className="text-xs text-gray-400">
-            {isLoadingSupplier ? 'Loading...' :
+            {!isOnBase ? 'Switch to Base to access fiat features' :
+             isLoadingSupplier ? 'Loading...' :
              isVerified ? 'Manage your fiat funds' :
              isRegistered ? 'Complete verification to start' :
              'Become a liquidity provider'}
           </p>
-          {!isOnBase && <p className="text-xs text-blue-400/70 mt-0.5">Base Sepolia only</p>}
         </div>
       </div>
       <div className="flex items-center gap-2">
@@ -259,23 +275,37 @@ export function FiatSupplierPanel() {
             className="overflow-hidden"
           >
             <div className="glass-card p-6 rounded-t-none border-t-0 mt-[-1px]">
-              {/* Base-only info */}
+              {/* Not on Base - show switch prompt */}
               {!isOnBase && (
-                <div className="flex items-center gap-2 px-3 py-2 mb-4 rounded-lg bg-blue-500/10 border border-blue-500/20 text-xs text-blue-400">
-                  <Info className="w-3.5 h-3.5 flex-shrink-0" />
-                  <span>Fiat supplier features are currently available on Base Sepolia only.</span>
+                <div className="flex items-start gap-4">
+                  <div className="p-3 rounded-xl bg-blue-500/10">
+                    <ArrowRightLeft className="w-6 h-6 text-blue-400" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-lg font-semibold mb-2">Switch to Base Network</h3>
+                    <p className="text-gray-400 text-sm mb-4">
+                      Fiat supplier features — registration, verification, funding, and claiming — are only available on the Base network. Switch to Base Sepolia to access these features.
+                    </p>
+                    <button
+                      onClick={handleSwitchToBase}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-500 text-white font-semibold text-sm hover:bg-blue-400 transition-colors"
+                    >
+                      <ArrowRightLeft className="w-4 h-4" />
+                      Switch to Base Sepolia
+                    </button>
+                  </div>
                 </div>
               )}
 
               {/* Loading State */}
-              {isLoadingSupplier && (
+              {isOnBase && isLoadingSupplier && (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="w-6 h-6 animate-spin text-primary-400" />
                 </div>
               )}
 
               {/* Not Registered State */}
-              {!isLoadingSupplier && !isRegistered && (
+              {isOnBase && !isLoadingSupplier && !isRegistered && (
                 <div className="flex items-start gap-4">
                   <div className="p-3 rounded-xl bg-primary-500/10">
                     <UserPlus className="w-6 h-6 text-primary-400" />
@@ -307,7 +337,7 @@ export function FiatSupplierPanel() {
               )}
 
               {/* Pending Verification State */}
-              {!isLoadingSupplier && isRegistered && !isVerified && (
+              {isOnBase && !isLoadingSupplier && isRegistered && !isVerified && (
                 <div className="flex items-start gap-4">
                   <div className="p-3 rounded-xl bg-yellow-500/10">
                     <Clock className="w-6 h-6 text-yellow-400" />
@@ -364,7 +394,7 @@ export function FiatSupplierPanel() {
               )}
 
               {/* Verified State */}
-              {!isLoadingSupplier && isVerified && (
+              {isOnBase && !isLoadingSupplier && isVerified && (
                 <div>
                   <div className="flex items-center gap-3 mb-4">
                     <div className="p-2 rounded-xl bg-green-500/10">
@@ -463,74 +493,98 @@ export function FiatSupplierPanel() {
         title="Register as Supplier"
         size="lg"
       >
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Supplier Type</label>
-            <div className="grid grid-cols-2 gap-3">
+        {!isOnBase ? (
+          <div className="space-y-4 py-4">
+            <div className="flex flex-col items-center text-center">
+              <div className="p-4 rounded-xl bg-blue-500/10 mb-4">
+                <ArrowRightLeft className="w-8 h-8 text-blue-400" />
+              </div>
+              <h3 className="text-lg font-semibold mb-2">Switch to Base Network</h3>
+              <p className="text-gray-400 text-sm mb-6">
+                Supplier registration is only available on the Base network. Please switch to Base Sepolia to continue.
+              </p>
               <button
-                onClick={() => setSupplierType(SupplierType.INDIVIDUAL)}
-                className={`p-3 rounded-lg border transition-colors flex items-center gap-2 ${
-                  supplierType === SupplierType.INDIVIDUAL
-                    ? 'border-primary-500 bg-primary-500/10 text-primary-400'
-                    : 'border-gray-700 bg-white/5 text-gray-400 hover:border-gray-600'
-                }`}
+                onClick={() => {
+                  handleSwitchToBase();
+                  setRegisterModalOpen(false);
+                }}
+                className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg bg-blue-500 text-white font-semibold text-sm hover:bg-blue-400 transition-colors"
               >
-                <User className="w-4 h-4" />
-                <span className="text-sm font-medium">Individual</span>
-              </button>
-              <button
-                onClick={() => setSupplierType(SupplierType.BUSINESS)}
-                className={`p-3 rounded-lg border transition-colors flex items-center gap-2 ${
-                  supplierType === SupplierType.BUSINESS
-                    ? 'border-primary-500 bg-primary-500/10 text-primary-400'
-                    : 'border-gray-700 bg-white/5 text-gray-400 hover:border-gray-600'
-                }`}
-              >
-                <Building2 className="w-4 h-4" />
-                <span className="text-sm font-medium">Business</span>
+                <ArrowRightLeft className="w-4 h-4" />
+                Switch to Base Sepolia
               </button>
             </div>
           </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              {supplierType === SupplierType.BUSINESS ? 'Business Name' : 'Full Name'}
-            </label>
-            <input
-              type="text"
-              value={supplierName}
-              onChange={(e) => setSupplierName(e.target.value)}
-              placeholder={supplierType === SupplierType.BUSINESS ? 'Enter business name' : 'Enter your name'}
-              className="input-field w-full"
-            />
-          </div>
-
-          {supplierType === SupplierType.BUSINESS && (
+        ) : (
+          <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Business Registration Number</label>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Supplier Type</label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => setSupplierType(SupplierType.INDIVIDUAL)}
+                  className={`p-3 rounded-lg border transition-colors flex items-center gap-2 ${
+                    supplierType === SupplierType.INDIVIDUAL
+                      ? 'border-primary-500 bg-primary-500/10 text-primary-400'
+                      : 'border-gray-700 bg-white/5 text-gray-400 hover:border-gray-600'
+                  }`}
+                >
+                  <User className="w-4 h-4" />
+                  <span className="text-sm font-medium">Individual</span>
+                </button>
+                <button
+                  onClick={() => setSupplierType(SupplierType.BUSINESS)}
+                  className={`p-3 rounded-lg border transition-colors flex items-center gap-2 ${
+                    supplierType === SupplierType.BUSINESS
+                      ? 'border-primary-500 bg-primary-500/10 text-primary-400'
+                      : 'border-gray-700 bg-white/5 text-gray-400 hover:border-gray-600'
+                  }`}
+                >
+                  <Building2 className="w-4 h-4" />
+                  <span className="text-sm font-medium">Business</span>
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                {supplierType === SupplierType.BUSINESS ? 'Business Name' : 'Full Name'}
+              </label>
               <input
                 type="text"
-                value={businessRegNumber}
-                onChange={(e) => setBusinessRegNumber(e.target.value)}
-                placeholder="Enter registration number"
+                value={supplierName}
+                onChange={(e) => setSupplierName(e.target.value)}
+                placeholder={supplierType === SupplierType.BUSINESS ? 'Enter business name' : 'Enter your name'}
                 className="input-field w-full"
               />
             </div>
-          )}
 
-          <div className="p-3 bg-primary-500/10 border border-primary-500/30 rounded-lg">
-            <p className="text-xs text-gray-400">
-              After registration, you&apos;ll complete identity verification with our trusted partner.
-            </p>
-          </div>
+            {supplierType === SupplierType.BUSINESS && (
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Business Registration Number</label>
+                <input
+                  type="text"
+                  value={businessRegNumber}
+                  onChange={(e) => setBusinessRegNumber(e.target.value)}
+                  placeholder="Enter registration number"
+                  className="input-field w-full"
+                />
+              </div>
+            )}
 
-          <div className="flex gap-3 pt-2">
-            <Button variant="secondary" onClick={() => setRegisterModalOpen(false)} className="flex-1">Cancel</Button>
-            <Button onClick={handleRegister} loading={isRegistering} disabled={isRegistering || !supplierName.trim() || !address} className="flex-1">
-              {isSimulating ? 'Simulating...' : isRegistering ? 'Registering...' : 'Register'}
-            </Button>
+            <div className="p-3 bg-primary-500/10 border border-primary-500/30 rounded-lg">
+              <p className="text-xs text-gray-400">
+                After registration, you&apos;ll complete identity verification with our trusted partner.
+              </p>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <Button variant="secondary" onClick={() => setRegisterModalOpen(false)} className="flex-1">Cancel</Button>
+              <Button onClick={handleRegister} loading={isRegistering} disabled={isRegistering || !supplierName.trim() || !address} className="flex-1">
+                {isSimulating ? 'Simulating...' : isRegistering ? 'Registering...' : 'Register'}
+              </Button>
+            </div>
           </div>
-        </div>
+        )}
       </Modal>
     </motion.div>
   );

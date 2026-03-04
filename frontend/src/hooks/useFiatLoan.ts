@@ -10,7 +10,7 @@ import { convertToUSDCents } from './useFiatOracle';
 
 const FiatLoanBridgeABI = FiatLoanBridgeABIJson as Abi;
 
-// Fiat contracts only exist on Base Sepolia — always query from there
+// Fiat OFFERS only exist on Base Sepolia (supplier chain) - always query from there
 const BASE_CHAIN_ID = CHAIN_CONFIG.baseSepolia.id;
 const BASE_ADDRESSES = getContractAddresses(BASE_CHAIN_ID);
 
@@ -114,10 +114,13 @@ export function useActiveFiatLoans() {
 
 // Get borrower's fiat loan IDs
 export function useBorrowerFiatLoans(borrower: Address | undefined) {
+  const activeChainId = getActiveChainId();
+  const addresses = getContractAddresses(activeChainId);
+
   return useReadContract({
-    address: BASE_ADDRESSES.fiatLoanBridge,
+    address: addresses.fiatLoanBridge,
     abi: FiatLoanBridgeABI,
-    chainId: BASE_CHAIN_ID,
+    chainId: activeChainId,
     functionName: 'getBorrowerFiatLoans',
     args: borrower ? [borrower] : undefined,
     query: {
@@ -155,6 +158,7 @@ export function useFiatLenderOffer(offerId: bigint | undefined) {
 }
 
 // Get lender's fiat lender offer IDs
+// NOTE: Offers only exist on Base Sepolia - always query from there
 export function useLenderFiatOffers(lender: Address | undefined) {
   return useReadContract({
     address: BASE_ADDRESSES.fiatLoanBridge,
@@ -224,12 +228,14 @@ export function useFiatLoanHealthFactor(loanId: bigint | undefined) {
 
 // Batch fetch fiat loans by IDs
 export function useBatchFiatLoans(loanIds: bigint[]) {
+  const activeChainId = getActiveChainId();
+  const addresses = getContractAddresses(activeChainId);
   const setFiatLoans = useContractStore((state) => state.setFiatLoans);
   const { data: loansData, isLoading, isError, refetch } = useReadContracts({
     contracts: loanIds.map((id) => ({
-      address: BASE_ADDRESSES.fiatLoanBridge,
+      address: addresses.fiatLoanBridge,
       abi: FiatLoanBridgeABI,
-      chainId: BASE_CHAIN_ID,
+      chainId: activeChainId,
       functionName: 'getFiatLoan',
       args: [id],
     })),
@@ -320,6 +326,7 @@ export function useBatchFiatLoans(loanIds: bigint[]) {
 }
 
 // Batch fetch fiat lender offers by IDs
+// NOTE: Offers only exist on Base Sepolia - always query from there
 export function useBatchFiatLenderOffers(offerIds: bigint[]) {
   const setFiatLenderOffers = useContractStore((state) => state.setFiatLenderOffers);
   const { data: offersData, isLoading, isError, refetch } = useReadContracts({
