@@ -8,7 +8,7 @@ import { formatTokenAmount, formatPercentage, formatDuration, getTokenSymbol, ge
 import { useTokenPrice, useLTV } from '@/hooks/useContracts';
 import { FiatLoan, FiatLoanStatus, FiatLenderOffer, FiatLenderOfferStatus } from '@/hooks/useFiatLoan';
 import { formatCurrency } from '@/hooks/useFiatOracle';
-import { Clock, TrendingUp, Shield, ExternalLink, Banknote } from 'lucide-react';
+import { Clock, TrendingUp, Shield, ExternalLink, Banknote, Layers } from 'lucide-react';
 import Link from 'next/link';
 
 // Helper to format USD values
@@ -321,6 +321,12 @@ export function ActiveLoanCard({
             <span className="text-lg font-bold">
               Loan #{loan.loanId.toString()}
             </span>
+            {loan.isCrossChain && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/20 text-purple-400 border border-purple-500/30">
+                <Layers className="w-3 h-3" />
+                Cross-Chain
+              </span>
+            )}
           </div>
           <p className="text-sm text-gray-400">
             {isBorrower ? 'You borrowed' : 'You lent'}{' '}

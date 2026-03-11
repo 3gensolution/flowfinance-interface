@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useMemo, useRef, useCallback } from 'react';
-import { useAccount, usePublicClient } from 'wagmi';
+import { useAccount, usePublicClient, useSwitchChain } from 'wagmi';
 import { formatUnits, parseUnits, Abi, Address } from 'viem';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
-import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Layers } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import {
@@ -18,7 +18,7 @@ import {
   useRepaymentInfo,
   useMinRepaymentInTokens,
 } from '@/hooks/useContracts';
-import { CONTRACT_ADDRESSES, getTokenByAddress } from '@/config/contracts';
+import { CONTRACT_ADDRESSES, getTokenByAddress, getActiveChainId, getChainById, getContractAddresses, setActiveChainId } from '@/config/contracts';
 import { simulateContractWrite, formatSimulationError } from '@/lib/contractSimulation';
 import { useLoansByBorrower } from '@/stores/contractStore';
 import { useUIStore } from '@/stores/uiStore';
@@ -29,8 +29,9 @@ const LoanMarketPlaceABI = LoanMarketPlaceABIJson as Abi;
 type RepayStep = 'input' | 'approve' | 'repay';
 
 export function RepayLoanModal() {
-  const { address } = useAccount();
+  const { address, chainId: walletChainId } = useAccount();
   const publicClient = usePublicClient();
+  const { switchChain } = useSwitchChain();
 
   // Get modal state from store
   const { repayModalOpen, repayLoanId, closeRepayModal } = useUIStore();
@@ -46,6 +47,7 @@ export function RepayLoanModal() {
   const [simulationError, setSimulationError] = useState('');
   const [approvedForLoanId, setApprovedForLoanId] = useState<bigint | null>(null);
   const hasInitializedRepayAmount = useRef(false);
+  const [isSwitchingChain, setIsSwitchingChain] = useState(false);
 
   // Get selected loan
   const selectedLoan = useMemo(() => {
@@ -53,16 +55,35 @@ export function RepayLoanModal() {
     return borrowedLoans.find(l => l.loanId === repayLoanId) || null;
   }, [repayLoanId, borrowedLoans]);
 
-  // Contract hooks
-  const { repayAsync, isPending: isRepayPending } = useRepayLoan();
+  // ── Cross-chain detection ──────────────────────────────────
+  const isCrossChainLoan = selectedLoan?.isCrossChain ?? false;
+  const loanTargetChainId = isCrossChainLoan ? Number(selectedLoan!.targetChainId) : getActiveChainId();
+  const loanSourceChainId = isCrossChainLoan ? Number(selectedLoan!.sourceChainId) : 0;
+  const targetChain = getChainById(loanTargetChainId);
+  const sourceChain = loanSourceChainId ? getChainById(loanSourceChainId) : undefined;
+
+  // For cross-chain loans, the user must be on the target chain to repay
+  // (that's where the borrow tokens were received and where repayLoan transfers them back)
+  const isWrongChainForRepay = isCrossChainLoan && walletChainId !== loanTargetChainId;
+
+  // Resolve contract addresses for the repay chain
+  const repayContracts = isCrossChainLoan
+    ? getContractAddresses(loanTargetChainId)
+    : CONTRACT_ADDRESSES;
+
+  // Contract hooks — for cross-chain loans, use target chain's contract addresses and repayCrossChainLoan
+  const crossChainHookOptions = isCrossChainLoan
+    ? { contractAddress: repayContracts.loanMarketPlace, chainId: loanTargetChainId, isCrossChain: true }
+    : undefined;
+  const { repayAsync, isPending: isRepayPending } = useRepayLoan(crossChainHookOptions);
   const { approveAsync } = useApproveToken();
 
-  // Get comprehensive repayment info from contract
+  // Get comprehensive repayment info from contract (reads from target chain for cross-chain)
   const {
     data: repaymentInfoData,
     isLoading: isLoadingRepaymentInfo,
     refetch: refetchRepaymentInfo
-  } = useRepaymentInfo(repayLoanId || undefined);
+  } = useRepaymentInfo(repayLoanId || undefined, crossChainHookOptions);
 
   // Parse repayment info tuple
   const repaymentInfo = repaymentInfoData as readonly [bigint, bigint, bigint, bigint, bigint, boolean, bigint] | undefined;
@@ -72,18 +93,22 @@ export function RepayLoanModal() {
   const timeUntilFullRepay = repaymentInfo ? Number(repaymentInfo[6]) : 0;
 
   // Get minimum repayment in tokens directly from contract (handles conversion properly)
-  const { data: minRepaymentTokensData, isLoading: isLoadingMinTokens } = useMinRepaymentInTokens(repayLoanId || undefined);
+  const { data: minRepaymentTokensData, isLoading: isLoadingMinTokens } = useMinRepaymentInTokens(repayLoanId || undefined, crossChainHookOptions);
   const minRepaymentTokens = minRepaymentTokensData ? minRepaymentTokensData as bigint : BigInt(0);
 
+  // For cross-chain loans, check allowance on the target chain's LoanMarketPlace
   const { refetch: refetchAllowance } = useTokenAllowance(
     selectedLoan?.borrowAsset,
     address,
-    CONTRACT_ADDRESSES.loanMarketPlace
+    repayContracts.loanMarketPlace,
+    isCrossChainLoan ? loanTargetChainId : undefined
   );
 
+  // For cross-chain loans, check balance on the target chain
   const { data: userTokenBalance } = useTokenBalance(
     selectedLoan?.borrowAsset,
-    address
+    address,
+    isCrossChainLoan ? loanTargetChainId : undefined
   );
 
   const borrowAssetPrice = useTokenPrice(selectedLoan?.borrowAsset as Address | undefined);
@@ -151,9 +176,28 @@ export function RepayLoanModal() {
     setRepayStep('input');
     setRepayAmount('');
     setSimulationError('');
+    setIsSwitchingChain(false);
     hasInitializedRepayAmount.current = false;
     closeRepayModal();
   }, [closeRepayModal]);
+
+  // Handle switching to the target chain for cross-chain repayment
+  const handleSwitchToTargetChain = useCallback(() => {
+    if (!targetChain) return;
+    setIsSwitchingChain(true);
+    setActiveChainId(loanTargetChainId);
+    switchChain({ chainId: loanTargetChainId }, {
+      onSuccess: () => {
+        toast.success(`Switched to ${targetChain.name}. You can now repay your loan.`);
+        setIsSwitchingChain(false);
+      },
+      onError: (error) => {
+        console.error('Failed to switch chain:', error);
+        toast.error(`Failed to switch to ${targetChain.name}`);
+        setIsSwitchingChain(false);
+      },
+    });
+  }, [targetChain, loanTargetChainId, switchChain]);
 
   // Initialize repay amount when modal opens with new loan
   if (repayModalOpen && selectedLoan && remainingToRepay > BigInt(0) && selectedTokenInfo && !hasInitializedRepayAmount.current) {
@@ -201,9 +245,10 @@ export function RepayLoanModal() {
       const baseAmount = parseUnits(repayAmount, tokenInfo.decimals);
       const amountToApprove = baseAmount + (baseAmount / BigInt(100));
 
+      // For cross-chain loans, approve the target chain's LoanMarketPlace
       const approvalHash = await approveAsync(
         selectedLoan.borrowAsset,
-        CONTRACT_ADDRESSES.loanMarketPlace,
+        repayContracts.loanMarketPlace,
         amountToApprove
       );
 
@@ -241,7 +286,7 @@ export function RepayLoanModal() {
     } finally {
       setIsApprovingToken(false);
     }
-  }, [selectedLoan, repayAmount, address, publicClient, approveAsync, refetchAllowance, repayLoanId]);
+  }, [selectedLoan, repayAmount, address, publicClient, approveAsync, refetchAllowance, repayLoanId, repayContracts]);
 
   const handleRefreshPrice = useCallback(async () => {
     if (!priceFeedAddress || !currentPrice || !selectedLoan?.borrowAsset) {
@@ -317,10 +362,11 @@ export function RepayLoanModal() {
 
       toast.loading('Simulating transaction...', { id: toastId });
 
+      // For cross-chain loans, simulate repayCrossChainLoan (skips escrow interaction)
       const simulation = await simulateContractWrite({
-        address: CONTRACT_ADDRESSES.loanMarketPlace,
+        address: repayContracts.loanMarketPlace,
         abi: LoanMarketPlaceABI,
-        functionName: 'repayLoan',
+        functionName: isCrossChainLoan ? 'repayCrossChainLoan' : 'repayLoan',
         args: [selectedLoan.loanId, amountToRepay],
         account: address,
       });
@@ -344,6 +390,7 @@ export function RepayLoanModal() {
               'LoanNotActive': 'This loan is not active',
               'OnlyBorrowerCanRepay': 'Only the borrower can repay this loan',
               'AmountMustBeGreaterThanZero': 'Amount must be greater than zero',
+              'NotACrossChainLoan': 'This function is only for cross-chain loans',
             };
             errorMsg = errorMessages[customErrorName] || customErrorName;
           } else if (rawError.message && rawError.message.includes('revert')) {
@@ -399,7 +446,7 @@ export function RepayLoanModal() {
     } finally {
       setIsRepaying(false);
     }
-  }, [selectedLoan, repayAmount, address, publicClient, repayAsync, handleClose, refetchRepaymentInfo, minRepaymentTokens, formattedMinRepayment, minRepaymentUSD, selectedTokenInfo]);
+  }, [selectedLoan, repayAmount, address, publicClient, repayAsync, handleClose, refetchRepaymentInfo, minRepaymentTokens, formattedMinRepayment, minRepaymentUSD, selectedTokenInfo, repayContracts]);
 
   if (!selectedLoan) {
     return (
@@ -413,7 +460,7 @@ export function RepayLoanModal() {
   }
 
   return (
-    <Modal isOpen={repayModalOpen} onClose={handleClose} title="Repay Loan">
+    <Modal isOpen={repayModalOpen} onClose={handleClose} title={isCrossChainLoan ? "Repay Cross-Chain Loan" : "Repay Loan"}>
       <div className="space-y-4">
         {/* Loan Info */}
         <div className="p-4 bg-gray-800/50 rounded-lg space-y-2">
@@ -469,6 +516,57 @@ export function RepayLoanModal() {
             </p>
           )}
         </div>
+
+        {/* Cross-Chain Info Banner */}
+        {isCrossChainLoan && (
+          <div className="p-4 bg-accent-500/10 border border-accent-500/20 rounded-lg">
+            <div className="flex items-start gap-3">
+              <Layers className="w-5 h-5 text-accent-400 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <h4 className="font-semibold text-accent-400 mb-1">Cross-Chain Loan</h4>
+                <div className="grid grid-cols-2 gap-2 text-sm mb-2">
+                  <div>
+                    <span className="text-gray-400">Collateral on: </span>
+                    <span className="text-white font-medium">{sourceChain?.name || `Chain ${loanSourceChainId}`}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-400">Repay on: </span>
+                    <span className="text-white font-medium">{targetChain?.name || `Chain ${loanTargetChainId}`}</span>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-500">
+                  Repay your loan on {targetChain?.name || 'the target chain'}. After repayment, the relay service will automatically release your collateral on {sourceChain?.name || 'the source chain'}.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Wrong Chain Warning (cross-chain only) */}
+        {isWrongChainForRepay && (
+          <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <h4 className="font-medium text-yellow-400 mb-1">Wrong Network</h4>
+                <p className="text-sm text-gray-400 mb-3">
+                  This cross-chain loan must be repaid on <strong className="text-white">{targetChain?.name || 'the target chain'}</strong> where you received the borrowed funds.
+                  Please switch your wallet to continue.
+                </p>
+                <Button
+                  size="sm"
+                  onClick={handleSwitchToTargetChain}
+                  disabled={isSwitchingChain}
+                  loading={isSwitchingChain}
+                  className="w-full"
+                >
+                  {isSwitchingChain ? 'Switching...' : `Switch to ${targetChain?.name || 'Target Chain'}`}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Step Indicator */}
         {repayStep !== 'input' && (
           <div className="flex items-center justify-center gap-2 py-2">
@@ -643,10 +741,10 @@ export function RepayLoanModal() {
               </Button>
               <Button
                 onClick={handleProceedToApproveOrRepay}
-                disabled={!hasBalance || !repayAmount || repayAmountBigInt === BigInt(0) || isCalculationPending || exceedsDebt || isBelowMinimum || isFullRepayBlocked || (isPriceStale && isPartialRepayment)}
+                disabled={isWrongChainForRepay || !hasBalance || !repayAmount || repayAmountBigInt === BigInt(0) || isCalculationPending || exceedsDebt || isBelowMinimum || isFullRepayBlocked || (isPriceStale && isPartialRepayment)}
                 className="flex-1"
               >
-                {isCalculationPending ? 'Calculating...' : !hasBalance ? 'No Balance' : exceedsDebt ? 'Exceeds Debt' : isBelowMinimum ? 'Below Minimum' : isFullRepayBlocked ? 'Full Repay Not Allowed Yet' : (isPriceStale && isPartialRepayment) ? 'Refresh Price First' : 'Continue'}
+                {isWrongChainForRepay ? 'Switch Network First' : isCalculationPending ? 'Calculating...' : !hasBalance ? 'No Balance' : exceedsDebt ? 'Exceeds Debt' : isBelowMinimum ? 'Below Minimum' : isFullRepayBlocked ? 'Full Repay Not Allowed Yet' : (isPriceStale && isPartialRepayment) ? 'Refresh Price First' : 'Continue'}
               </Button>
             </div>
           </>
@@ -743,6 +841,11 @@ export function RepayLoanModal() {
                 <p className="text-sm text-gray-400">
                   You are about to repay {repayAmount} {getTokenByAddress(selectedLoan.borrowAsset)?.symbol} to your loan.
                   {!isPartialRepayment && ' This is a full repayment - all collateral will be returned.'}
+                  {isCrossChainLoan && (
+                    <>
+                      {' '}After confirmation, the relay service will release your collateral on {sourceChain?.name || 'the source chain'}.
+                    </>
+                  )}
                 </p>
               </div>
             )}
@@ -753,6 +856,11 @@ export function RepayLoanModal() {
                 <p className="text-sm text-gray-400">
                   You are about to fully repay {repayAmount} {getTokenByAddress(selectedLoan.borrowAsset)?.symbol}.
                   Full repayments do not require price data.
+                  {isCrossChainLoan && (
+                    <>
+                      {' '}After confirmation, the relay service will release your collateral on {sourceChain?.name || 'the source chain'}.
+                    </>
+                  )}
                 </p>
               </div>
             )}
@@ -768,11 +876,11 @@ export function RepayLoanModal() {
               </Button>
               <Button
                 onClick={handleRepaySubmit}
-                disabled={isRepaying || isRepayPending || (isPriceStale && isPartialRepayment)}
+                disabled={isWrongChainForRepay || isRepaying || isRepayPending || (isPriceStale && isPartialRepayment)}
                 loading={isRepaying || isRepayPending}
                 className="flex-1"
               >
-                {isRepaying || isRepayPending ? 'Repaying...' : 'Confirm Repay'}
+                {isWrongChainForRepay ? 'Switch Network First' : isRepaying || isRepayPending ? 'Repaying...' : 'Confirm Repay'}
               </Button>
             </div>
           </>

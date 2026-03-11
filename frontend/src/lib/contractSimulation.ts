@@ -448,10 +448,13 @@ export async function simulateContractWrite(
     try {
         // Always target the active chain so simulation doesn't run on the wrong network
         const activeChainId = getActiveChainId();
-        const gasOverrides = getGasOverrides() || {};
 
+        // NOTE: Do NOT pass gas overrides (maxFeePerGas/maxPriorityFeePerGas) to simulation.
+        // Polygon RPC nodes pre-check sender balance against block_gas_limit * maxFeePerGas
+        // which causes "insufficient funds for gas" errors even when the call would succeed.
+        // Gas overrides are only needed for the actual transaction, not for eth_call simulation.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const result = await simulateContract(config, { ...params, ...gasOverrides, chainId: activeChainId } as any);
+        const result = await simulateContract(config, { ...params, chainId: activeChainId } as any);
         return {
             success: true,
             request: result.request,

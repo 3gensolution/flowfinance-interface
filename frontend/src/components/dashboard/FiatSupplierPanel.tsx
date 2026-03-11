@@ -161,8 +161,15 @@ export function FiatSupplierPanel() {
 
     setCurrentAction(type);
 
+    // Map action type to portal route state
+    const stateMap: Record<string, string> = {
+      verification: 'kyc',
+      deposit: 'deposit',
+      withdraw: 'withdraw',
+    };
+
     generateLinkMutation(
-      { walletAddress: address },
+      { walletAddress: address, state: stateMap[type] || type },
       {
         onSuccess: (data) => {
           const response = data?.data as GenerateLinkResponse | undefined;

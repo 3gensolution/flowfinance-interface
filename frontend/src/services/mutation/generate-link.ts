@@ -4,6 +4,7 @@ import { AxiosResponse } from "axios";
 
 type GenerateLinkPayload = {
   walletAddress: string;
+  state?: string;
 };
 
 export type GenerateLinkResponse = {

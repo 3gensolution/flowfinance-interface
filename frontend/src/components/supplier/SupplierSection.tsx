@@ -137,7 +137,7 @@ export function SupplierSection() {
       return;
     }
     generateLinkMutation(
-      { walletAddress: address },
+      { walletAddress: address, state: isVerified ? 'dashboard' : 'kyc' },
       {
         onSuccess: (data) => {
           const response = data?.data as GenerateLinkResponse | undefined;

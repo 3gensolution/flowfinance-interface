@@ -278,13 +278,16 @@ export function useMinRepaymentAmount() {
 
 // Get comprehensive repayment info from contract
 // This is the recommended way to get all repayment-related data
-export function useRepaymentInfo(loanId: bigint | undefined) {
+// Optional chainId/contractAddress for cross-chain loan repayment
+export function useRepaymentInfo(loanId: bigint | undefined, options?: { chainId?: number; contractAddress?: Address }) {
+  const resolvedAddress = options?.contractAddress || CONTRACT_ADDRESSES.loanMarketPlace;
+  const resolvedChainId = options?.chainId || getActiveChainId();
   return useReadContract({
-    address: CONTRACT_ADDRESSES.loanMarketPlace,
+    address: resolvedAddress,
     abi: LoanMarketPlaceABI,
     functionName: 'getRepaymentInfo',
     args: loanId !== undefined ? [loanId] : undefined,
-    chainId: getActiveChainId(),
+    chainId: resolvedChainId,
     query: {
       enabled: loanId !== undefined,
     },
@@ -293,13 +296,16 @@ export function useRepaymentInfo(loanId: bigint | undefined) {
 
 // Get minimum repayment in token units from contract
 // This handles the USD to token conversion properly with correct decimals
-export function useMinRepaymentInTokens(loanId: bigint | undefined) {
+// Optional chainId/contractAddress for cross-chain loan repayment
+export function useMinRepaymentInTokens(loanId: bigint | undefined, options?: { chainId?: number; contractAddress?: Address }) {
+  const resolvedAddress = options?.contractAddress || CONTRACT_ADDRESSES.loanMarketPlace;
+  const resolvedChainId = options?.chainId || getActiveChainId();
   return useReadContract({
-    address: CONTRACT_ADDRESSES.loanMarketPlace,
+    address: resolvedAddress,
     abi: LoanMarketPlaceABI,
     functionName: 'getMinRepaymentInTokens',
     args: loanId !== undefined ? [loanId] : undefined,
-    chainId: getActiveChainId(),
+    chainId: resolvedChainId,
     query: {
       enabled: loanId !== undefined,
     },
@@ -994,18 +1000,23 @@ export function useAcceptLenderOffer() {
   return { acceptOffer, acceptOfferAsync, hash, isPending, isConfirming, isSuccess, error };
 }
 
-export function useRepayLoan() {
+export function useRepayLoan(options?: { contractAddress?: Address; chainId?: number; isCrossChain?: boolean }) {
   const { writeContract, writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+
+  const resolvedAddress = options?.contractAddress || CONTRACT_ADDRESSES.loanMarketPlace;
+  const resolvedChainId = options?.chainId || getActiveChainId();
+  // Cross-chain loans use repayCrossChainLoan (skips escrow collateral release on target chain)
+  const functionName = options?.isCrossChain ? 'repayCrossChainLoan' : 'repayLoan';
 
   // Fire-and-forget version (for backward compatibility)
   const repay = (loanId: bigint, amount: bigint) => {
     writeContract({
-      address: CONTRACT_ADDRESSES.loanMarketPlace,
+      address: resolvedAddress,
       abi: LoanMarketPlaceABI,
-      functionName: 'repayLoan',
+      functionName,
       args: [loanId, amount],
-      chainId: getActiveChainId(),
+      chainId: resolvedChainId,
       ...getGasOverrides(),
     });
   };
@@ -1013,11 +1024,11 @@ export function useRepayLoan() {
   // Async version that returns the transaction hash
   const repayAsync = async (loanId: bigint, amount: bigint) => {
     return await writeContractAsync({
-      address: CONTRACT_ADDRESSES.loanMarketPlace,
+      address: resolvedAddress,
       abi: LoanMarketPlaceABI,
-      functionName: 'repayLoan',
+      functionName,
       args: [loanId, amount],
-      chainId: getActiveChainId(),
+      chainId: resolvedChainId,
       ...getGasOverrides(),
     });
   };
