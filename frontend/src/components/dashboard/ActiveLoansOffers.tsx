@@ -19,6 +19,7 @@ import {
   useLoansByBorrower,
   useLoansByLender,
   useFiatLoansByBorrower,
+  useFiatLoansBySupplier,
   useFiatLenderOffersByLender,
 } from '@/stores/contractStore';
 import { useUIStore } from '@/stores/uiStore';
@@ -107,6 +108,7 @@ export function ActiveLoansOffers() {
 
   // Fiat loans and offers
   const fiatLoans = useFiatLoansByBorrower(address);
+  const fiatLoansAsSupplier = useFiatLoansBySupplier(address);
   const fiatOffers = useFiatLenderOffersByLender(address);
 
   const openRepayModal = useUIStore((state) => state.openRepayModal);
@@ -144,6 +146,12 @@ export function ActiveLoansOffers() {
     [fiatOffers]
   );
 
+  // Fiat loans where user is supplier (funded someone else's loan)
+  const activeFiatLoansAsSupplier = useMemo(() =>
+    fiatLoansAsSupplier.filter(l => l.status === FiatLoanStatus.ACTIVE || l.status === FiatLoanStatus.PENDING_SUPPLIER),
+    [fiatLoansAsSupplier]
+  );
+
   const allTabs: { id: Tab; label: string; shortLabel: string; icon: React.ReactNode; count: number; activeColor: string; fiatOnly?: boolean }[] = [
     {
       id: 'crypto_borrow',
@@ -175,7 +183,7 @@ export function ActiveLoansOffers() {
       label: 'Cash Offers',
       shortLabel: 'Fiat',
       icon: <Wallet className="w-4 h-4 flex-shrink-0" />,
-      count: activeFiatOffers.length,
+      count: activeFiatOffers.length + activeFiatLoansAsSupplier.length,
       activeColor: 'bg-orange-500 shadow-orange-500/25',
       fiatOnly: true,
     },
@@ -517,7 +525,7 @@ export function ActiveLoansOffers() {
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.2 }}
           >
-            {activeFiatOffers.length === 0 ? (
+            {activeFiatOffers.length === 0 && activeFiatLoansAsSupplier.length === 0 ? (
               <EmptyState
                 title="No Cash Lending Offers"
                 description={`You don't have any cash/fiat lending offers on ${selectedNetwork.name}.`}
@@ -532,14 +540,38 @@ export function ActiveLoansOffers() {
                 size="md"
               />
             ) : (
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {activeFiatOffers.map((offer) => (
-                  <DashboardFiatLenderOfferCard
-                    key={offer.offerId.toString()}
-                    offer={offer}
-                    chainId={dashboardChainId}
-                  />
-                ))}
+              <div className="space-y-6">
+                {/* Fiat loans where user is the supplier (funded loans) */}
+                {activeFiatLoansAsSupplier.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-400 mb-3">Funded Loans</h3>
+                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {activeFiatLoansAsSupplier.map((loan) => (
+                        <DashboardFiatLoanRequestCard
+                          key={`supplier-${loan.loanId.toString()}`}
+                          loan={loan}
+                          chainId={dashboardChainId}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Pending fiat lender offers */}
+                {activeFiatOffers.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-400 mb-3">Your Offers</h3>
+                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {activeFiatOffers.map((offer) => (
+                        <DashboardFiatLenderOfferCard
+                          key={offer.offerId.toString()}
+                          offer={offer}
+                          chainId={dashboardChainId}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </motion.div>

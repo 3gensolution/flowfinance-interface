@@ -8,7 +8,7 @@ import { formatTokenAmount, formatPercentage, formatDuration, getTokenSymbol, ge
 import { useTokenPrice, useLTV } from '@/hooks/useContracts';
 import { FiatLoan, FiatLoanStatus, FiatLenderOffer, FiatLenderOfferStatus } from '@/hooks/useFiatLoan';
 import { formatCurrency } from '@/hooks/useFiatOracle';
-import { Clock, TrendingUp, Shield, ExternalLink, Banknote, Layers } from 'lucide-react';
+import { Clock, TrendingUp, Shield, ExternalLink, Banknote, Layers, CheckCircle2, AlertCircle, Calendar } from 'lucide-react';
 import Link from 'next/link';
 
 // Helper to format USD values
@@ -419,13 +419,15 @@ interface FiatLoanRequestCardProps {
   loan: FiatLoan;
   onFund?: () => void;
   onCancel?: () => void;
+  onClaimFunds?: () => void;
+  onRepay?: () => void;
   isOwner?: boolean;
   isSupplier?: boolean;
   loading?: boolean;
   chainId?: number;
 }
 
-export function FiatLoanRequestCard({ loan, onFund, onCancel, isOwner, isSupplier, loading, chainId }: FiatLoanRequestCardProps) {
+export function FiatLoanRequestCard({ loan, onFund, onCancel, onClaimFunds, onRepay, isOwner, isSupplier, loading, chainId }: FiatLoanRequestCardProps) {
   const collateralSymbol = getTokenSymbol(loan.collateralAsset, chainId);
   const collateralDecimals = getTokenDecimals(loan.collateralAsset, chainId);
 
@@ -439,20 +441,13 @@ export function FiatLoanRequestCard({ loan, onFund, onCancel, isOwner, isSupplie
     ? (Number(loan.collateralAmount) / Math.pow(10, Number(collateralDecimals))) * Number(collateralPrice) / 1e8
     : 0;
 
-  // Get LTV from contract (duration is in seconds, convert to days)
-  const durationDays = Math.ceil(Number(loan.duration) / (24 * 60 * 60));
-  const { data: ltvBps } = useLTV(loan.collateralAsset, durationDays);
-
-  // LTV from contract is in basis points (10000 = 100%)
-  const ltv = ltvBps ? Number(ltvBps) / 100 : 0;
-
-  // Status badge color
+  // Status badge — ACTIVE loans use the fundsWithdrawn indicator instead
   const getStatusBadge = () => {
     switch (loan.status) {
       case FiatLoanStatus.PENDING_SUPPLIER:
         return <Badge variant="warning" size="sm">Pending</Badge>;
       case FiatLoanStatus.ACTIVE:
-        return <Badge variant="success" size="sm">Active</Badge>;
+        return null; // Funds Claimed / Pending Withdrawal badge serves as active indicator
       case FiatLoanStatus.REPAID:
         return <Badge variant="info" size="sm">Repaid</Badge>;
       case FiatLoanStatus.LIQUIDATED:
@@ -464,12 +459,17 @@ export function FiatLoanRequestCard({ loan, onFund, onCancel, isOwner, isSupplie
     }
   };
 
+  // Time calculations for active loans
+  const now = Date.now() / 1000;
+  const isOverdue = loan.status === FiatLoanStatus.ACTIVE && loan.dueDate > BigInt(0) && now > Number(loan.dueDate);
+  const isInGracePeriod = isOverdue && loan.gracePeriodEnd > BigInt(0) && now < Number(loan.gracePeriodEnd);
+  const gracePeriodExpired = isOverdue && loan.gracePeriodEnd > BigInt(0) && now >= Number(loan.gracePeriodEnd);
+
   return (
     <Card hover className="flex flex-col h-full border-green-500/20">
       <div className="flex items-start justify-between mb-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            {/* <DollarSign className="w-5 h-5 text-green-400" /> */}
             <span className="text-lg font-bold text-green-400">
               {formatCurrency(loan.fiatAmountCents, loan.currency)}
             </span>
@@ -486,7 +486,23 @@ export function FiatLoanRequestCard({ loan, onFund, onCancel, isOwner, isSupplie
             )}
           </p>
         </div>
-        {getStatusBadge()}
+        <div className="flex flex-col items-end gap-1.5">
+          {getStatusBadge()}
+          {/* Funds status indicator for active/repaid loans */}
+          {(loan.status === FiatLoanStatus.ACTIVE || loan.status === FiatLoanStatus.REPAID) && (
+            loan.fundsWithdrawn ? (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/15 text-green-400 border border-green-500/25">
+                <CheckCircle2 className="w-3 h-3" />
+                Funds Claimed
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-500/15 text-orange-400 border border-orange-500/25">
+                <AlertCircle className="w-3 h-3" />
+                Pending
+              </span>
+            )
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4 mb-4">
@@ -506,35 +522,61 @@ export function FiatLoanRequestCard({ loan, onFund, onCancel, isOwner, isSupplie
         </div>
       </div>
 
-      {/* LTV Display */}
-      {ltv > 0 && (
-        <div className="flex items-center justify-between mb-3 px-2 py-1.5 bg-green-500/10 rounded-lg border border-green-500/20">
-          <span className="text-xs text-gray-400">LTV Ratio</span>
-          <span className={`text-sm font-medium ${ltv > 80 ? 'text-red-400' : ltv > 70 ? 'text-yellow-400' : 'text-green-400'}`}>
-            {ltv.toFixed(1)}%
-          </span>
-        </div>
-      )}
-
-      {/* Health Factor for active fiat loans */}
+      {/* Health status for active fiat loans — simplified display */}
       {loan.status === FiatLoanStatus.ACTIVE && collateralUSD > 0 && fiatAmountUSD > 0 && (() => {
         const hf = calculateHealthFactorFromUSD(collateralUSD, fiatAmountUSD);
         const hfStatus = getHealthStatus(hf);
+        const statusColor = hfStatus === 'healthy' ? 'text-green-400' : hfStatus === 'warning' ? 'text-yellow-400' : 'text-red-400';
+        const statusLabel = hfStatus === 'healthy' ? 'Healthy' : hfStatus === 'warning' ? 'Warning' : 'At Risk';
         return (
-          <div className="glass-card p-3 mb-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-400">Health Factor</span>
-              <HealthBadge status={hfStatus} />
-            </div>
+          <div className={`flex items-center gap-1.5 mb-3 text-sm font-medium ${statusColor}`}>
+            <Shield className="w-3.5 h-3.5" />
+            {statusLabel}
           </div>
         );
       })()}
 
-      {loan.status === FiatLoanStatus.ACTIVE && loan.dueDate > BigInt(0) && (
-        <div className="text-sm text-gray-400 mb-4">
-          Due: {new Date(Number(loan.dueDate) * 1000).toLocaleDateString()}
-        </div>
-      )}
+      {/* Date info section */}
+      <div className="space-y-1.5 mb-4">
+        {/* Created date for pending loans */}
+        {loan.status === FiatLoanStatus.PENDING_SUPPLIER && loan.createdAt > BigInt(0) && (
+          <div className="flex items-center gap-1.5 text-sm text-gray-400">
+            <Calendar className="w-3.5 h-3.5" />
+            Created: {new Date(Number(loan.createdAt) * 1000).toLocaleDateString()}
+          </div>
+        )}
+
+        {/* Activated date for active loans */}
+        {loan.status === FiatLoanStatus.ACTIVE && loan.activatedAt > BigInt(0) && (
+          <div className="flex items-center gap-1.5 text-sm text-gray-400">
+            <Calendar className="w-3.5 h-3.5 text-green-400" />
+            Activated: {new Date(Number(loan.activatedAt) * 1000).toLocaleDateString()}
+          </div>
+        )}
+
+        {/* Due date */}
+        {loan.status === FiatLoanStatus.ACTIVE && loan.dueDate > BigInt(0) && (
+          <div className={`flex items-center gap-1.5 text-sm ${isOverdue ? 'text-red-400' : 'text-gray-400'}`}>
+            <Clock className={`w-3.5 h-3.5 ${isOverdue ? 'text-red-400' : ''}`} />
+            Due: {new Date(Number(loan.dueDate) * 1000).toLocaleDateString()}
+            {isOverdue && <span className="text-xs font-medium">(Overdue)</span>}
+          </div>
+        )}
+
+        {/* Grace period warning */}
+        {isInGracePeriod && (
+          <div className="flex items-center gap-1.5 text-sm text-yellow-400">
+            <AlertCircle className="w-3.5 h-3.5" />
+            Grace period ends: {new Date(Number(loan.gracePeriodEnd) * 1000).toLocaleDateString()}
+          </div>
+        )}
+        {gracePeriodExpired && (
+          <div className="flex items-center gap-1.5 text-sm text-red-400">
+            <AlertCircle className="w-3.5 h-3.5" />
+            Grace period expired
+          </div>
+        )}
+      </div>
 
       <div className="mt-auto flex gap-2">
         {loan.status === FiatLoanStatus.PENDING_SUPPLIER && !isOwner && isSupplier && onFund && (
@@ -545,6 +587,16 @@ export function FiatLoanRequestCard({ loan, onFund, onCancel, isOwner, isSupplie
         {loan.status === FiatLoanStatus.PENDING_SUPPLIER && isOwner && onCancel && (
           <Button variant="danger" onClick={onCancel} loading={loading} className="flex-1">
             Cancel
+          </Button>
+        )}
+        {loan.status === FiatLoanStatus.ACTIVE && !loan.fundsWithdrawn && onClaimFunds && (
+          <Button onClick={onClaimFunds} className="flex-1 bg-green-600 hover:bg-green-700" icon={<Banknote className="w-4 h-4" />}>
+            Claim Funds
+          </Button>
+        )}
+        {loan.status === FiatLoanStatus.ACTIVE && loan.fundsWithdrawn && onRepay && (
+          <Button onClick={onRepay} className="flex-1 bg-blue-600 hover:bg-blue-700" icon={<Banknote className="w-4 h-4" />}>
+            Repay
           </Button>
         )}
         <Link href={`/fiat-loan/${loan.loanId}`} className="flex-1">
@@ -642,6 +694,22 @@ export function FiatLenderOfferCard({ offer, onAccept, onCancel, isOwner, loadin
           </div>
         </div>
       )}
+
+      {/* Date info */}
+      <div className="space-y-1.5 mb-4">
+        {offer.createdAt > BigInt(0) && (
+          <div className="flex items-center gap-1.5 text-sm text-gray-400">
+            <Calendar className="w-3.5 h-3.5" />
+            Created: {new Date(Number(offer.createdAt) * 1000).toLocaleDateString()}
+          </div>
+        )}
+        {offer.expireAt > BigInt(0) && (
+          <div className={`flex items-center gap-1.5 text-sm ${Date.now() / 1000 > Number(offer.expireAt) ? 'text-red-400' : 'text-gray-400'}`}>
+            <Clock className={`w-3.5 h-3.5 ${Date.now() / 1000 > Number(offer.expireAt) ? 'text-red-400' : ''}`} />
+            {Date.now() / 1000 > Number(offer.expireAt) ? 'Expired' : 'Expires'}: {new Date(Number(offer.expireAt) * 1000).toLocaleDateString()}
+          </div>
+        )}
+      </div>
 
       <div className="mt-auto flex gap-2">
         {offer.status === FiatLenderOfferStatus.ACTIVE && !isOwner && onAccept && (

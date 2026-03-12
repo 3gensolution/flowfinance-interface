@@ -16,6 +16,8 @@ import {
 } from '@/hooks/useFiatLoan';
 import { useTokenPrice } from '@/hooks/useContracts';
 import { useSupplierDetails } from '@/hooks/useSupplier';
+import { useGenerateLinkApi } from '@/hooks/useGenerateLink';
+import { GenerateLinkResponse } from '@/services/mutation/generate-link';
 import { formatCurrency } from '@/hooks/useFiatOracle';
 import {
   formatTokenAmount,
@@ -49,10 +51,12 @@ import {
   Activity,
   Calendar,
   ArrowUpRight,
+  Layers,
+  Hash,
 } from 'lucide-react';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
-import { DEFAULT_CHAIN, CONTRACT_ADDRESSES } from '@/config/contracts';
+import { DEFAULT_CHAIN, CONTRACT_ADDRESSES, SUPPORTED_CHAINS } from '@/config/contracts';
 import { Address } from 'viem';
 import { simulateContractWrite, formatSimulationError } from '@/lib/contractSimulation';
 import FiatLoanBridgeABIJson from '@/contracts/FiatLoanBridgeABI.json';
@@ -107,6 +111,12 @@ export default function FiatLoanDetailPage() {
 
   const [showFundModal, setShowFundModal] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
+  const [showClaimModal, setShowClaimModal] = useState(false);
+  const [claimAccepted, setClaimAccepted] = useState(false);
+  const [showRepayModal, setShowRepayModal] = useState(false);
+  const [repayAccepted, setRepayAccepted] = useState(false);
+  const [generatedClaimLink, setGeneratedClaimLink] = useState<{ url: string; expiresAt: string } | null>(null);
+  const [generatedRepayLink, setGeneratedRepayLink] = useState<{ url: string; expiresAt: string } | null>(null);
   const [isFunding, setIsFunding] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
   const [simulationError, setSimulationError] = useState<string>('');
@@ -264,12 +274,58 @@ export default function FiatLoanDetailPage() {
     toast.success('Address copied!');
   };
 
+  // Generate link for claim/repay
+  const {
+    mutate: generateLinkMutation,
+    isPending: isGeneratingLink,
+  } = useGenerateLinkApi();
+
+  const handleGenerateLink = (target: 'claim' | 'repay') => {
+    if (!address) {
+      toast.error('Please connect your wallet first');
+      return;
+    }
+    generateLinkMutation(
+      { walletAddress: address, state: 'claims' },
+      {
+        onSuccess: (data) => {
+          const response = data?.data as GenerateLinkResponse | undefined;
+          if (response?.data?.url) {
+            const linkWithState = `${response.data.url}&state=claims`;
+            const linkInfo = { url: linkWithState, expiresAt: response.data.expiresAt };
+            if (target === 'claim') {
+              setGeneratedClaimLink(linkInfo);
+            } else {
+              setGeneratedRepayLink(linkInfo);
+            }
+            toast.success('Link generated successfully!');
+          }
+        },
+        onError: (error) => {
+          console.error('Failed to generate link:', error);
+          toast.error('Failed to generate link. Please try again.');
+        },
+      }
+    );
+  };
+
+  const handleContinueToLink = (url: string) => {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
   // Calculate health factor on frontend (FiatLoanBridge has no calculateHealthFactor function)
   const fiatAmountUSD = loan ? convertFiatToUSD(loan.fiatAmountCents, loan.currency, loan.exchangeRateAtCreation) : 0;
   const healthFactorValue = collateralUSD > 0 && fiatAmountUSD > 0
     ? calculateHealthFactorFromUSD(collateralUSD, fiatAmountUSD)
     : 0;
   const healthFactorDisplay = healthFactorValue > 0 ? `${healthFactorValue.toFixed(2)}` : '--';
+
+  // Chain info
+  const loanChainId = loan?.chainId ? Number(loan.chainId) : 0;
+  const loanChainName = loanChainId
+    ? SUPPORTED_CHAINS.find(c => c.id === loanChainId)?.name || `Chain ${loanChainId}`
+    : null;
+  const isCrossChain = loanChainId > 0 && loanChainId !== DEFAULT_CHAIN.id;
 
   // Format total debt
   const totalDebtCents = totalDebt ? Number(totalDebt as bigint) : 0;
@@ -303,10 +359,21 @@ export default function FiatLoanDetailPage() {
     );
   }
 
-  const statusConfig = STATUS_CONFIG[loan.status];
+  // Dynamic status: ACTIVE + not withdrawn = "Pending"
+  const statusConfig = (loan.status === FiatLoanStatus.ACTIVE && !loan.fundsWithdrawn)
+    ? {
+        label: 'Pending',
+        color: 'text-orange-400',
+        bgColor: 'bg-orange-500/15',
+        borderColor: 'border-orange-500/30',
+        icon: <Clock className="w-4 h-4" />,
+      }
+    : STATUS_CONFIG[loan.status];
   const canFund = loan.status === FiatLoanStatus.PENDING_SUPPLIER && !isBorrower && isConnected && canActAsSupplier;
   const showSupplierNotice = loan.status === FiatLoanStatus.PENDING_SUPPLIER && !isBorrower && isConnected && !canActAsSupplier;
   const canCancel = loan.status === FiatLoanStatus.PENDING_SUPPLIER && isBorrower;
+  const canClaimFunds = loan.status === FiatLoanStatus.ACTIVE && !loan.fundsWithdrawn && isBorrower;
+  const canRepay = loan.status === FiatLoanStatus.ACTIVE && loan.fundsWithdrawn && isBorrower;
 
   return (
     <div className="min-h-screen py-8 sm:py-12 px-4 sm:px-5 md:px-10 lg:px-20">
@@ -341,9 +408,17 @@ export default function FiatLoanDetailPage() {
                   <Banknote className="w-5 h-5 sm:w-6 sm:h-6 text-green-400" />
                 </div>
                 <div>
-                  <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold">
-                    Fiat Loan <span className="text-green-400">#{loan.loanId.toString()}</span>
-                  </h1>
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold">
+                      Fiat Loan <span className="text-green-400">#{loan.loanId.toString()}</span>
+                    </h1>
+                    {isCrossChain && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/20 text-purple-400 border border-purple-500/30">
+                        <Layers className="w-3 h-3" />
+                        Cross-Chain
+                      </span>
+                    )}
+                  </div>
                   <p className="text-sm text-gray-400 mt-0.5">
                     {isBorrower ? 'Your fiat loan request' : isSupplier ? 'You funded this loan' : 'Fiat loan request'}
                   </p>
@@ -433,6 +508,26 @@ export default function FiatLoanDetailPage() {
                   size="lg"
                 >
                   Cancel Request
+                </Button>
+              )}
+              {canClaimFunds && (
+                <Button
+                  onClick={() => { setShowClaimModal(true); setClaimAccepted(false); }}
+                  icon={<Banknote className="w-4 h-4" />}
+                  size="lg"
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  Claim Funds
+                </Button>
+              )}
+              {canRepay && (
+                <Button
+                  onClick={() => { setShowRepayModal(true); setRepayAccepted(false); }}
+                  icon={<DollarSign className="w-4 h-4" />}
+                  size="lg"
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  Repay Loan
                 </Button>
               )}
             </div>
@@ -533,11 +628,84 @@ export default function FiatLoanDetailPage() {
                     <span className="text-sm text-gray-400">Currency</span>
                     <span className="font-semibold">{loan.currency}</span>
                   </div>
+                  {/* Funds Withdrawn status */}
+                  {(loan.status === FiatLoanStatus.ACTIVE || loan.status === FiatLoanStatus.REPAID) && (
+                    <div className="flex items-center justify-between py-3 border-b border-white/5">
+                      <span className="text-sm text-gray-400">Funds Status</span>
+                      {loan.fundsWithdrawn ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-500/15 text-green-400 border border-green-500/25">
+                          <CheckCircle className="w-3.5 h-3.5" />
+                          Funds Claimed
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-orange-500/15 text-orange-400 border border-orange-500/25">
+                          <AlertCircle className="w-3.5 h-3.5" />
+                          Pending
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {/* Claimable amount */}
+                  {loan.claimableAmountCents > BigInt(0) && (
+                    <div className="flex items-center justify-between py-3 border-b border-white/5">
+                      <span className="text-sm text-gray-400">Claimable Amount</span>
+                      <span className="font-semibold text-green-400">
+                        {formatCurrency(loan.claimableAmountCents, loan.currency)}
+                      </span>
+                    </div>
+                  )}
                   {loan.exchangeRateAtCreation > BigInt(0) && (
-                    <div className="flex items-center justify-between py-3">
+                    <div className="flex items-center justify-between py-3 border-b border-white/5">
                       <span className="text-sm text-gray-400">Exchange Rate at Creation</span>
                       <span className="font-semibold">
                         {(Number(loan.exchangeRateAtCreation) / 1e8).toFixed(4)} {loan.currency}/USD
+                      </span>
+                    </div>
+                  )}
+                  {/* Collateral Asset Address */}
+                  <div className="flex items-center justify-between py-3 border-b border-white/5">
+                    <span className="text-sm text-gray-400">Collateral Asset</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-mono text-sm">{formatAddress(loan.collateralAsset, 6)}</span>
+                      <button onClick={() => copyAddress(loan.collateralAsset)} className="p-1 hover:bg-white/10 rounded transition-colors">
+                        <Copy className="w-3.5 h-3.5 text-gray-400" />
+                      </button>
+                      <a
+                        href={`${DEFAULT_CHAIN.blockExplorer}/address/${loan.collateralAsset}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-1 hover:bg-white/10 rounded transition-colors"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5 text-gray-400" />
+                      </a>
+                    </div>
+                  </div>
+                  {/* Repayment Deposit ID */}
+                  {loan.repaymentDepositId && loan.repaymentDepositId !== '0x0000000000000000000000000000000000000000000000000000000000000000' && (
+                    <div className="flex items-center justify-between py-3 border-b border-white/5">
+                      <span className="text-sm text-gray-400 flex items-center gap-1.5">
+                        <Hash className="w-3.5 h-3.5" />
+                        Repayment Deposit ID
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono text-xs text-gray-300">
+                          {loan.repaymentDepositId.slice(0, 10)}...{loan.repaymentDepositId.slice(-8)}
+                        </span>
+                        <button onClick={() => copyAddress(loan.repaymentDepositId)} className="p-1 hover:bg-white/10 rounded transition-colors">
+                          <Copy className="w-3.5 h-3.5 text-gray-400" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {/* Origin Chain */}
+                  {loanChainId > 0 && (
+                    <div className="flex items-center justify-between py-3">
+                      <span className="text-sm text-gray-400 flex items-center gap-1.5">
+                        <Layers className="w-3.5 h-3.5" />
+                        Origin Chain
+                      </span>
+                      <span className={`font-semibold ${isCrossChain ? 'text-purple-400' : ''}`}>
+                        {loanChainName}
                       </span>
                     </div>
                   )}
@@ -718,13 +886,24 @@ export default function FiatLoanDetailPage() {
                     </p>
                   </div>
                 )}
-                {loan.status === FiatLoanStatus.ACTIVE && (
+                {loan.status === FiatLoanStatus.ACTIVE && !loan.fundsWithdrawn && (
+                  <div className="text-center py-6">
+                    <div className="w-16 h-16 rounded-full bg-orange-500/10 border border-orange-500/20 flex items-center justify-center mx-auto mb-3">
+                      <Clock className="w-8 h-8 text-orange-400" />
+                    </div>
+                    <p className="text-orange-400 font-semibold">Pending</p>
+                    <p className="text-gray-400 text-sm mt-1 max-w-[200px] mx-auto">
+                      Funds are ready to be claimed
+                    </p>
+                  </div>
+                )}
+                {loan.status === FiatLoanStatus.ACTIVE && loan.fundsWithdrawn && (
                   <div className="text-center py-6">
                     <div className="w-16 h-16 rounded-full bg-green-500/10 border border-green-500/20 flex items-center justify-center mx-auto mb-3">
                       <CheckCircle className="w-8 h-8 text-green-400" />
                     </div>
                     <p className="text-green-400 font-semibold">Loan Active</p>
-                    <p className="text-gray-400 text-sm mt-1">This loan is currently active</p>
+                    <p className="text-gray-400 text-sm mt-1">Funds claimed, loan is active</p>
                   </div>
                 )}
                 {loan.status === FiatLoanStatus.REPAID && (
@@ -796,12 +975,38 @@ export default function FiatLoanDetailPage() {
 
                     {loan.dueDate > BigInt(0) && (
                       <div className="relative pb-4">
-                        <div className="absolute -left-6 top-1 w-4 h-4 rounded-full bg-yellow-500/20 border-2 border-yellow-500 flex items-center justify-center">
-                          <div className="w-1.5 h-1.5 rounded-full bg-yellow-400" />
+                        <div className={`absolute -left-6 top-1 w-4 h-4 rounded-full ${Date.now() / 1000 > Number(loan.dueDate) ? 'bg-red-500/20 border-2 border-red-500' : 'bg-yellow-500/20 border-2 border-yellow-500'} flex items-center justify-center`}>
+                          <div className={`w-1.5 h-1.5 rounded-full ${Date.now() / 1000 > Number(loan.dueDate) ? 'bg-red-400' : 'bg-yellow-400'}`} />
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-sm text-gray-400">Due Date</span>
-                          <span className="text-sm font-medium">{new Date(Number(loan.dueDate) * 1000).toLocaleDateString()}</span>
+                          <div className="text-right">
+                            <span className={`text-sm font-medium ${Date.now() / 1000 > Number(loan.dueDate) ? 'text-red-400' : ''}`}>
+                              {new Date(Number(loan.dueDate) * 1000).toLocaleDateString()}
+                            </span>
+                            {Date.now() / 1000 > Number(loan.dueDate) && (
+                              <p className="text-xs text-red-400">Overdue</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {loan.gracePeriodEnd > BigInt(0) && (
+                      <div className="relative pb-4">
+                        <div className={`absolute -left-6 top-1 w-4 h-4 rounded-full ${Date.now() / 1000 > Number(loan.gracePeriodEnd) ? 'bg-red-500/20 border-2 border-red-500' : 'bg-orange-500/20 border-2 border-orange-500'} flex items-center justify-center`}>
+                          <div className={`w-1.5 h-1.5 rounded-full ${Date.now() / 1000 > Number(loan.gracePeriodEnd) ? 'bg-red-400' : 'bg-orange-400'}`} />
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-400">Grace Period End</span>
+                          <div className="text-right">
+                            <span className={`text-sm font-medium ${Date.now() / 1000 > Number(loan.gracePeriodEnd) ? 'text-red-400' : 'text-orange-400'}`}>
+                              {new Date(Number(loan.gracePeriodEnd) * 1000).toLocaleDateString()}
+                            </span>
+                            {Date.now() / 1000 > Number(loan.gracePeriodEnd) && (
+                              <p className="text-xs text-red-400">Expired</p>
+                            )}
+                          </div>
                         </div>
                       </div>
                     )}
@@ -920,6 +1125,139 @@ export default function FiatLoanDetailPage() {
           <Button
             variant="secondary"
             onClick={() => setShowFundModal(false)}
+            className="w-full"
+          >
+            Cancel
+          </Button>
+        </div>
+      </Modal>
+
+      {/* Claim Funds Modal */}
+      <Modal
+        isOpen={showClaimModal}
+        onClose={() => { setShowClaimModal(false); setGeneratedClaimLink(null); }}
+        title="Claim Funds"
+        size="md"
+      >
+        <div className="space-y-5">
+          <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+            <div className="flex gap-3 items-start">
+              <AlertTriangle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
+              <div className="text-sm">
+                <p className="text-yellow-400 font-medium">Third-Party Redirect</p>
+                <p className="text-gray-400 mt-1">
+                  You will be redirected to a third-party service to claim your funds of{' '}
+                  <span className="text-green-400 font-medium">
+                    {loan && formatCurrency(loan.fiatAmountCents, loan.currency)}
+                  </span>.
+                  Please ensure you complete the withdrawal process on the external platform.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <label className="flex items-start gap-3 cursor-pointer select-none p-3 rounded-lg hover:bg-white/5 transition-colors">
+            <input
+              type="checkbox"
+              checked={claimAccepted}
+              onChange={(e) => setClaimAccepted(e.target.checked)}
+              className="mt-0.5 w-4 h-4 rounded border-gray-600 bg-white/5 text-green-500 focus:ring-green-500/50 focus:ring-offset-0 cursor-pointer"
+            />
+            <span className="text-sm text-gray-300">
+              I understand that I will be redirected to a third-party platform to receive my cash and that the funds claim is handled externally.
+            </span>
+          </label>
+
+          {generatedClaimLink ? (
+            <Button
+              onClick={() => handleContinueToLink(generatedClaimLink.url)}
+              className="w-full bg-green-600 hover:bg-green-700"
+              icon={<ExternalLink className="w-4 h-4" />}
+            >
+              Proceed to Claim Funds
+            </Button>
+          ) : (
+            <Button
+              onClick={() => handleGenerateLink('claim')}
+              disabled={!claimAccepted || isGeneratingLink}
+              loading={isGeneratingLink}
+              className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Continue
+            </Button>
+          )}
+
+          <Button
+            variant="secondary"
+            onClick={() => { setShowClaimModal(false); setGeneratedClaimLink(null); }}
+            className="w-full"
+          >
+            Cancel
+          </Button>
+        </div>
+      </Modal>
+
+      {/* Repay Modal */}
+      <Modal
+        isOpen={showRepayModal}
+        onClose={() => { setShowRepayModal(false); setGeneratedRepayLink(null); }}
+        title="Repay Loan"
+        size="md"
+      >
+        <div className="space-y-5">
+          <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+            <div className="flex gap-3 items-start">
+              <AlertTriangle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
+              <div className="text-sm">
+                <p className="text-yellow-400 font-medium">Third-Party Redirect</p>
+                <p className="text-gray-400 mt-1">
+                  You will be redirected to a third-party service to repay your loan of{' '}
+                  <span className="text-blue-400 font-medium">
+                    {loan && totalDebtCents > 0
+                      ? `${(totalDebtCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${loan.currency}`
+                      : loan && formatCurrency(loan.fiatAmountCents, loan.currency)
+                    }
+                  </span>.
+                  Please ensure you complete the repayment process on the external platform.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <label className="flex items-start gap-3 cursor-pointer select-none p-3 rounded-lg hover:bg-white/5 transition-colors">
+            <input
+              type="checkbox"
+              checked={repayAccepted}
+              onChange={(e) => setRepayAccepted(e.target.checked)}
+              className="mt-0.5 w-4 h-4 rounded border-gray-600 bg-white/5 text-blue-500 focus:ring-blue-500/50 focus:ring-offset-0 cursor-pointer"
+            />
+            <span className="text-sm text-gray-300">
+              I understand that I will be redirected to a third-party platform to complete my repayment and that the process is handled externally.
+            </span>
+          </label>
+
+          {generatedRepayLink ? (
+            <Button
+              onClick={() => handleContinueToLink(generatedRepayLink.url)}
+              className="w-full bg-blue-600 hover:bg-blue-700"
+              icon={<ExternalLink className="w-4 h-4" />}
+            >
+              Proceed to Repay
+            </Button>
+          ) : (
+            <Button
+              onClick={() => handleGenerateLink('repay')}
+              disabled={!repayAccepted || isGeneratingLink}
+              loading={isGeneratingLink}
+              className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Continue
+            </Button>
+          )}
+
+          <Button
+            variant="secondary"
+            onClick={() => { setShowRepayModal(false); setGeneratedRepayLink(null); }}
             className="w-full"
           >
             Cancel

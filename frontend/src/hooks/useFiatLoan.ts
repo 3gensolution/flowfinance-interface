@@ -194,6 +194,8 @@ export function useFiatLoan(loanId: bigint | undefined) {
     args: loanId !== undefined ? [loanId] : undefined,
     query: {
       enabled: loanId !== undefined,
+      refetchOnWindowFocus: 'always',
+      staleTime: 0,
     },
   });
 }

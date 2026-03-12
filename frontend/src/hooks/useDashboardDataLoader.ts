@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { Address } from 'viem';
 import { useUserDashboardData } from '@/hooks/useContracts';
-import { useUserFiatLenderOffers, useUserFiatLoansAsBorrower } from '@/hooks/useFiatLoan';
+import { useUserFiatLenderOffers, useUserFiatLoansAsBorrower, useUserFiatLoansAsSupplier } from '@/hooks/useFiatLoan';
 import { useContractStore } from '@/stores/contractStore';
 
 /**
@@ -43,6 +43,7 @@ export function useDashboardDataLoader(address: Address | undefined) {
   // Fetch fiat data (these hooks populate the store internally)
   useUserFiatLenderOffers(address);
   useUserFiatLoansAsBorrower(address);
+  useUserFiatLoansAsSupplier(address);
 
   // Populate store when fetched data changes
   useEffect(() => {

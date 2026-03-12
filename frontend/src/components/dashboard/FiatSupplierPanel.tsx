@@ -34,6 +34,7 @@ import {
   Banknote,
   Info,
   ChevronRight,
+  AlertTriangle,
 } from 'lucide-react';
 import { getActiveChainId, CHAIN_CONFIG } from '@/config/contracts';
 import { useNetwork } from '@/contexts/NetworkContext';
@@ -77,10 +78,18 @@ export function FiatSupplierPanel() {
     isPending: isGeneratingLink
   } = useGenerateLinkApi();
 
-  // Track generated link and action state
+  // Track generated link and action state (for verification flow)
   const [generatedLink, setGeneratedLink] = useState<GeneratedLinkInfo | null>(null);
   const [actionState, setActionState] = useState<ActionState>('idle');
   const [currentAction, setCurrentAction] = useState<'verification' | 'deposit' | 'withdraw' | null>(null);
+
+  // Fund/Claim modal states
+  const [showFundModal, setShowFundModal] = useState(false);
+  const [fundAccepted, setFundAccepted] = useState(false);
+  const [generatedFundLink, setGeneratedFundLink] = useState<string | null>(null);
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+  const [withdrawAccepted, setWithdrawAccepted] = useState(false);
+  const [generatedWithdrawLink, setGeneratedWithdrawLink] = useState<string | null>(null);
 
   // Fiat Oracle data
   const { data: supportedCurrencies, isLoading: isLoadingCurrencies } = useGetSupportedCurrencies();
@@ -202,6 +211,54 @@ export function FiatSupplierPanel() {
         setCurrentAction(null);
       }, 1000);
     }
+  };
+
+  // Modal-based link generation for Fund/Claim
+  const handleGenerateLinkForModal = (target: 'deposit' | 'withdraw') => {
+    if (!address) {
+      toast.error('Please connect your wallet first');
+      return;
+    }
+    setCurrentAction(target);
+    generateLinkMutation(
+      { walletAddress: address, state: target },
+      {
+        onSuccess: (data) => {
+          const response = data?.data as GenerateLinkResponse | undefined;
+          if (response?.data?.url) {
+            const url = `${response.data.url}&state=${target}`;
+            if (target === 'deposit') {
+              setGeneratedFundLink(url);
+            } else {
+              setGeneratedWithdrawLink(url);
+            }
+            toast.success('Link generated successfully!');
+          }
+          setCurrentAction(null);
+        },
+        onError: (error) => {
+          console.error('Failed to generate link:', error);
+          toast.error('Failed to generate link. Please try again.');
+          setCurrentAction(null);
+        },
+      }
+    );
+  };
+
+  const handleOpenFundModal = () => {
+    setShowFundModal(true);
+    setFundAccepted(false);
+    setGeneratedFundLink(null);
+  };
+
+  const handleOpenWithdrawModal = () => {
+    setShowWithdrawModal(true);
+    setWithdrawAccepted(false);
+    setGeneratedWithdrawLink(null);
+  };
+
+  const handleContinueToModalLink = (url: string) => {
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   const resetForm = () => {
@@ -458,28 +515,14 @@ export function FiatSupplierPanel() {
                   </div>
 
                   {/* Fund/Claim Actions */}
-                  <AnimatePresence mode="wait">
-                    {actionState === 'idle' ? (
-                      <motion.div key="buttons" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex gap-2">
-                        <Button onClick={() => handleGenerateLink('deposit')} loading={isGeneratingLink && currentAction === 'deposit'} size="sm" className="flex-1">
-                          Fund
-                        </Button>
-                        <Button variant="secondary" onClick={() => handleGenerateLink('withdraw')} loading={isGeneratingLink && currentAction === 'withdraw'} size="sm" className="flex-1">
-                          Claim
-                        </Button>
-                      </motion.div>
-                    ) : (
-                      <motion.div key="continue" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-2">
-                        <p className="text-sm text-green-400">Your link is ready.</p>
-                        <div className="flex gap-2">
-                          <Button onClick={handleContinueToLink} icon={<ArrowRight className="w-4 h-4" />} size="sm" className="flex-1 bg-green-600 hover:bg-green-700">
-                            Continue to {currentAction === 'deposit' ? 'Fund' : 'Claim'}
-                          </Button>
-                          <Button variant="ghost" onClick={resetActionState} size="sm">Cancel</Button>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+                  <div className="flex gap-2">
+                    <Button onClick={handleOpenFundModal} size="sm" className="flex-1">
+                      Fund
+                    </Button>
+                    <Button variant="secondary" onClick={handleOpenWithdrawModal} size="sm" className="flex-1">
+                      Claim
+                    </Button>
+                  </div>
 
                   {/* Trust Message */}
                   <div className="mt-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/20 text-sm text-blue-400">
@@ -492,6 +535,130 @@ export function FiatSupplierPanel() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Fund Modal */}
+      <Modal
+        isOpen={showFundModal}
+        onClose={() => setShowFundModal(false)}
+        title="Fund Account"
+        size="md"
+      >
+        <div className="space-y-5">
+          <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+            <div className="flex gap-3 items-start">
+              <AlertTriangle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
+              <div className="text-sm">
+                <p className="text-yellow-400 font-medium">Third-Party Redirect</p>
+                <p className="text-gray-400 mt-1">
+                  You will be redirected to a third-party service to fund your supplier account.
+                  Please ensure you complete the deposit process on the external platform.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <label className="flex items-start gap-3 cursor-pointer select-none p-3 rounded-lg hover:bg-white/5 transition-colors">
+            <input
+              type="checkbox"
+              checked={fundAccepted}
+              onChange={(e) => setFundAccepted(e.target.checked)}
+              className="mt-0.5 w-4 h-4 rounded border-gray-600 bg-white/5 text-green-500 focus:ring-green-500/50 focus:ring-offset-0 cursor-pointer"
+            />
+            <span className="text-sm text-gray-300">
+              I understand that I will be redirected to a third-party platform to deposit funds and that the process is handled externally.
+            </span>
+          </label>
+
+          {!generatedFundLink ? (
+            <Button
+              onClick={() => handleGenerateLinkForModal('deposit')}
+              disabled={!fundAccepted}
+              loading={isGeneratingLink && currentAction === 'deposit'}
+              className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Continue
+            </Button>
+          ) : (
+            <Button
+              onClick={() => handleContinueToModalLink(generatedFundLink)}
+              className="w-full bg-green-600 hover:bg-green-700"
+              icon={<ExternalLink className="w-4 h-4" />}
+            >
+              Proceed to Fund
+            </Button>
+          )}
+
+          <Button
+            variant="secondary"
+            onClick={() => setShowFundModal(false)}
+            className="w-full"
+          >
+            Cancel
+          </Button>
+        </div>
+      </Modal>
+
+      {/* Claim/Withdraw Modal */}
+      <Modal
+        isOpen={showWithdrawModal}
+        onClose={() => setShowWithdrawModal(false)}
+        title="Claim Funds"
+        size="md"
+      >
+        <div className="space-y-5">
+          <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+            <div className="flex gap-3 items-start">
+              <AlertTriangle className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
+              <div className="text-sm">
+                <p className="text-blue-400 font-medium">Third-Party Redirect</p>
+                <p className="text-gray-400 mt-1">
+                  You will be redirected to a third-party service to withdraw your funds.
+                  Please ensure you complete the withdrawal process on the external platform.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <label className="flex items-start gap-3 cursor-pointer select-none p-3 rounded-lg hover:bg-white/5 transition-colors">
+            <input
+              type="checkbox"
+              checked={withdrawAccepted}
+              onChange={(e) => setWithdrawAccepted(e.target.checked)}
+              className="mt-0.5 w-4 h-4 rounded border-gray-600 bg-white/5 text-blue-500 focus:ring-blue-500/50 focus:ring-offset-0 cursor-pointer"
+            />
+            <span className="text-sm text-gray-300">
+              I understand that I will be redirected to a third-party platform to withdraw my funds and that the process is handled externally.
+            </span>
+          </label>
+
+          {!generatedWithdrawLink ? (
+            <Button
+              onClick={() => handleGenerateLinkForModal('withdraw')}
+              disabled={!withdrawAccepted}
+              loading={isGeneratingLink && currentAction === 'withdraw'}
+              className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Continue
+            </Button>
+          ) : (
+            <Button
+              onClick={() => handleContinueToModalLink(generatedWithdrawLink)}
+              className="w-full bg-blue-600 hover:bg-blue-700"
+              icon={<ExternalLink className="w-4 h-4" />}
+            >
+              Proceed to Claim
+            </Button>
+          )}
+
+          <Button
+            variant="secondary"
+            onClick={() => setShowWithdrawModal(false)}
+            className="w-full"
+          >
+            Cancel
+          </Button>
+        </div>
+      </Modal>
 
       {/* Registration Modal */}
       <Modal
