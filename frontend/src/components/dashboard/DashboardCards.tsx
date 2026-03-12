@@ -10,7 +10,7 @@ import { formatSimulationError } from '@/lib/contractSimulation';
 import { formatCurrency } from '@/hooks/useFiatOracle';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
-import { ExternalLink, AlertTriangle, Banknote } from 'lucide-react';
+import { ExternalLink, AlertTriangle } from 'lucide-react';
 import { useGenerateLinkApi } from '@/hooks/useGenerateLink';
 import { GenerateLinkResponse } from '@/services/mutation/generate-link';
 import { useAccount } from 'wagmi';
