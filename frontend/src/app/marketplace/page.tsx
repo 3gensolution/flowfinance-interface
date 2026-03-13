@@ -617,34 +617,36 @@ function MarketplaceContent() {
           animate={{ opacity: 1, y: 0 }}
           className="text-center mb-8"
         >
-          <h1 className="text-3xl sm:text-4xl font-bold mb-4">
-            <span className="gradient-text">Marketplace</span>
-          </h1>
+          <div className="flex items-center justify-center gap-4 mb-4">
+            <h1 className="text-3xl sm:text-4xl font-bold">
+              <span className="gradient-text">Marketplace</span>
+            </h1>
+            <div className="hidden sm:block">
+              <MarketplaceNetworkSwitcher
+                selectedNetwork={marketplaceNetwork}
+                onNetworkChange={setMarketplaceNetwork}
+              />
+            </div>
+            {/* <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => refetch()}
+              loading={isLoading}
+              icon={<RefreshCw className="w-4 h-4" />}
+            >
+              Refresh
+            </Button> */}
+          </div>
           <p className="text-gray-400 max-w-2xl mx-auto">
             Browse loan requests and lending offers. Find the perfect match for your needs.
           </p>
-        </motion.div>
-
-        {/* Network Switcher + Refresh */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.05 }}
-          className="flex items-center justify-between mb-6"
-        >
-          <MarketplaceNetworkSwitcher
-            selectedNetwork={marketplaceNetwork}
-            onNetworkChange={setMarketplaceNetwork}
-          />
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => refetch()}
-            loading={isLoading}
-            icon={<RefreshCw className="w-4 h-4" />}
-          >
-            Refresh
-          </Button>
+          {/* Mobile network switcher */}
+          <div className="sm:hidden mt-4">
+            <MarketplaceNetworkSwitcher
+              selectedNetwork={marketplaceNetwork}
+              onNetworkChange={setMarketplaceNetwork}
+            />
+          </div>
         </motion.div>
 
         {/* Tabs */}

@@ -6,7 +6,6 @@ import Image from 'next/image';
 import { Button } from '@/components/ui/Button';
 
 export function Hero() {
-  console.log("Rendering Hero component", process.env["NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID"]);
   return (
     <section className="relative min-h-screen flex items-center overflow-hidden bg-black">
       {/* Canvas decorative background elements */}
@@ -208,22 +207,6 @@ export function Hero() {
           </motion.div>
         </div>
       </div>
-
-      {/* Scroll indicator */}
-      <motion.div
-        className="absolute bottom-8 left-1/2 -translate-x-1/2"
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 1, duration: 0.6 }}
-      >
-        <motion.div
-          className="w-6 h-10 border-2 border-white/30 rounded-full flex justify-center pt-2"
-          animate={{ y: [0, 5, 0] }}
-          transition={{ duration: 1.5, repeat: Infinity }}
-        >
-          <div className="w-1 h-2 bg-white/50 rounded-full" />
-        </motion.div>
-      </motion.div>
     </section>
   );
 }

@@ -7,7 +7,7 @@
 
 import { simulateContract, type SimulateContractParameters } from '@wagmi/core';
 import { config } from '@/config/wagmi';
-import { getActiveChainId } from '@/config/contracts';
+import { getActiveChainId, getGasOverrides } from '@/config/contracts';
 
 /**
  * Helper type for contract simulation error handling
