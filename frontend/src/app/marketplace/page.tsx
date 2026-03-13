@@ -2,7 +2,7 @@
 
 import { useState, useMemo, Suspense, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FileText, HandCoins, RefreshCw, Info } from 'lucide-react';
+import { FileText, HandCoins, Info } from 'lucide-react';
 import { useReadContracts, useReadContract, useAccount } from 'wagmi';
 import { Abi, Address } from 'viem';
 import { CHAIN_CONFIG, getContractAddresses, getActiveChainId, type ContractAddresses } from '@/config/contracts';
@@ -358,9 +358,9 @@ function MarketplaceContent() {
   });
 
   // Crypto hooks use the marketplace-local chain; fiat offers always from Base Sepolia
-  const { data: cryptoRequests, isLoading: isLoadingCryptoRequests, refetch: refetchCryptoRequests, error: errorCryptoRequests } = useCryptoLoanRequests(marketplaceNetwork.id, marketplaceAddresses);
-  const { data: cryptoOffers, isLoading: isLoadingCryptoOffers, refetch: refetchCryptoOffers, error: errorCryptoOffers } = useCryptoLenderOffers(marketplaceNetwork.id, marketplaceAddresses);
-  const { data: fiatOffers, isLoading: isLoadingFiatOffers, refetch: refetchFiatOffers, error: errorFiatOffers } = useFiatLenderOffersData();
+  const { data: cryptoRequests, isLoading: isLoadingCryptoRequests, error: errorCryptoRequests } = useCryptoLoanRequests(marketplaceNetwork.id, marketplaceAddresses);
+  const { data: cryptoOffers, isLoading: isLoadingCryptoOffers, error: errorCryptoOffers } = useCryptoLenderOffers(marketplaceNetwork.id, marketplaceAddresses);
+  const { data: fiatOffers, isLoading: isLoadingFiatOffers, error: errorFiatOffers } = useFiatLenderOffersData();
 
   const isLoadingCrypto = isLoadingCryptoRequests || isLoadingCryptoOffers;
   const isLoading = isLoadingCrypto || isLoadingFiatOffers;
@@ -381,12 +381,6 @@ function MarketplaceContent() {
 
   // If loading for too long or has error, treat as loaded with empty data
   const effectivelyLoading = isLoading && !showLoadingTimeout && !hasError;
-
-  const refetch = useCallback(() => {
-    refetchCryptoRequests();
-    refetchCryptoOffers();
-    refetchFiatOffers();
-  }, [refetchCryptoRequests, refetchCryptoOffers, refetchFiatOffers]);
 
   // Filter and sort data
   const filteredData = useMemo(() => {
