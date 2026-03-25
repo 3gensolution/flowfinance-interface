@@ -1,9 +1,11 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Clock, Shield, TrendingUp, ArrowRight, Globe, ArrowRightLeft } from 'lucide-react';
+import { Clock, Shield, TrendingUp, ArrowRight, Globe, ArrowRightLeft, Banknote } from 'lucide-react';
 import { LoanRequest, LoanRequestStatus } from '@/types';
-import { formatTokenAmount, formatPercentage, formatDuration, formatRelativeTime, getTokenSymbol, getTokenDecimals } from '@/lib/utils';
+import { FiatLoan, FiatLoanStatus } from '@/hooks/useFiatLoan';
+import { formatTokenAmount, formatPercentage, formatDuration, formatRelativeTime, getTokenSymbol, getTokenDecimals, convertFiatToUSD } from '@/lib/utils';
+import { formatCurrency } from '@/hooks/useFiatOracle';
 import { useTokenPrice } from '@/hooks/useContracts';
 import { getChainById, getTokenBySymbolForChain, getTokenByAddressForChain, findTokenChainId } from '@/config/contracts';
 import Link from 'next/link';
@@ -212,6 +214,122 @@ export function CryptoBorrowRequestCard({ request, index = 0, chainId }: CryptoB
             </span>
             <div className="flex items-center gap-1 text-primary-400 text-sm font-medium group-hover:gap-2 transition-all">
               View request
+              <ArrowRight className="w-4 h-4" />
+            </div>
+          </div>
+        </div>
+      </Link>
+    </motion.div>
+  );
+}
+
+// ─── Fiat Borrow Request Card ───────────────────────────────────────────
+
+interface FiatBorrowRequestCardProps {
+  request: FiatLoan;
+  index?: number;
+}
+
+export function FiatBorrowRequestCard({ request, index = 0 }: FiatBorrowRequestCardProps) {
+  const collateralSymbol = getTokenSymbol(request.collateralAsset);
+  const collateralDecimals = getTokenDecimals(request.collateralAsset);
+
+  // Get collateral USD price
+  const { price: collateralPrice } = useTokenPrice(request.collateralAsset);
+  const collateralAmount = Number(request.collateralAmount) / Math.pow(10, Number(collateralDecimals));
+  const collateralUSD = collateralPrice ? collateralAmount * Number(collateralPrice) / 1e8 : 0;
+
+  // Convert fiat amount to approximate USD
+  const fiatAmountUSD = convertFiatToUSD(request.fiatAmountCents, request.currency, request.exchangeRateAtCreation);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.05 }}
+      whileHover={{ y: -4, transition: { duration: 0.2 } }}
+      className="group"
+    >
+      <Link href={`/fiat-loan/${request.loanId}`}>
+        <div className="h-full glass-card p-6 rounded-2xl border border-green-500/20 hover:border-green-500/50 transition-all duration-300 hover:shadow-lg hover:shadow-green-500/10">
+          {/* Header */}
+          <div className="mb-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs text-gray-400 uppercase tracking-wider">Borrower wants</span>
+              <div className="flex items-center gap-1.5">
+                <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-500/20 text-green-400 border border-green-500/30">
+                  <Banknote className="w-3 h-3" />
+                  Fiat
+                </span>
+                {request.status === FiatLoanStatus.PENDING_SUPPLIER && (
+                  <span className="px-2 py-0.5 rounded-full text-xs bg-yellow-500/20 text-yellow-400">Awaiting Supplier</span>
+                )}
+              </div>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-bold text-green-400">
+                {formatCurrency(request.fiatAmountCents, request.currency)}
+              </span>
+            </div>
+            {request.currency !== 'USD' && fiatAmountUSD > 0 && (
+              <p className="text-sm text-gray-400 mt-1">~ {formatUSD(fiatAmountUSD)}</p>
+            )}
+          </div>
+
+          {/* Collateral Section */}
+          <div className="mb-4 p-3 rounded-xl bg-white/5">
+            <div className="flex items-center gap-2 mb-1">
+              <Shield className="w-4 h-4 text-accent-400" />
+              <span className="text-xs text-gray-400">Locked as collateral</span>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="font-semibold text-white">
+                {formatTokenAmount(request.collateralAmount, collateralDecimals)}
+              </span>
+              <span className="text-accent-400">{collateralSymbol}</span>
+            </div>
+            {collateralUSD > 0 && (
+              <p className="text-xs text-gray-500">{formatUSD(collateralUSD)}</p>
+            )}
+          </div>
+
+          {/* Stats Grid */}
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <div className="p-3 rounded-xl bg-white/5">
+              <div className="flex items-center gap-1.5 mb-1">
+                <TrendingUp className="w-3.5 h-3.5 text-orange-400" />
+                <span className="text-xs text-gray-400">Interest</span>
+              </div>
+              <span className="text-lg font-bold text-orange-400">
+                {formatPercentage(request.interestRate)}
+              </span>
+            </div>
+            <div className="p-3 rounded-xl bg-white/5">
+              <div className="flex items-center gap-1.5 mb-1">
+                <Clock className="w-3.5 h-3.5 text-primary-400" />
+                <span className="text-xs text-gray-400">Duration</span>
+              </div>
+              <span className="text-lg font-semibold text-white">
+                {formatDuration(request.duration)}
+              </span>
+            </div>
+          </div>
+
+          {/* Currency Section */}
+          <div className="mb-4 p-3 rounded-xl bg-gradient-to-r from-green-500/10 to-accent-500/10 border border-green-500/10">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-400">Currency</span>
+              <span className="font-semibold text-white">{request.currency}</span>
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="flex items-center justify-between pt-3 border-t border-white/5">
+            <span className="text-xs text-gray-500">
+              Posted {formatRelativeTime(request.createdAt)}
+            </span>
+            <div className="flex items-center gap-1 text-green-400 text-sm font-medium group-hover:gap-2 transition-all">
+              Fund request
               <ArrowRight className="w-4 h-4" />
             </div>
           </div>

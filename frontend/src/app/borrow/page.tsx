@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, ArrowRight, Info, Sparkles, Globe } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Info, Sparkles, Globe, Coins, Banknote } from 'lucide-react';
 import { useAccount, useReadContracts, useReadContract } from 'wagmi';
 import Link from 'next/link';
 import { Address, formatUnits, parseUnits, Abi } from 'viem';
@@ -26,7 +26,7 @@ import {
   useLTV,
   useLiquidationThreshold,
 } from '@/hooks/useContracts';
-import { getCurrencySymbol, useExchangeRate, convertFromUSDCents } from '@/hooks/useFiatOracle';
+import { getCurrencySymbol, useExchangeRate, convertFromUSDCents, SUPPORTED_FIAT_CURRENCIES } from '@/hooks/useFiatOracle';
 import { CONTRACT_ADDRESSES, TOKEN_LIST, isFiatSupportedChain, getTokenListForChain, getChainById } from '@/config/contracts';
 import { useNetwork, NETWORKS_WITH_CONTRACTS } from '@/contexts/NetworkContext';
 import { config as wagmiConfig } from '@/config/wagmi';
@@ -39,8 +39,9 @@ const ERC20ABI = ERC20ABIJson as Abi;
 const LoanMarketPlaceABI = LoanMarketPlaceABIJson as Abi;
 const FiatLoanBridgeABI = FiatLoanBridgeABIJson as Abi;
 
-// Define wizard steps - Start with borrow asset, then collateral
+// Define wizard steps - Step 0 is type selection, then asset, collateral, amount, terms, review
 const STEPS = [
+  { id: 0, title: 'Type', description: 'Choose whether to borrow crypto or cash' },
   { id: 1, title: 'Borrow', description: 'Choose the stablecoin you want to borrow' },
   { id: 2, title: 'Collateral', description: 'Select the crypto asset to lock as security' },
   { id: 3, title: 'Amount', description: 'Enter collateral amount and set your LTV' },
@@ -52,14 +53,15 @@ export default function BorrowPage() {
   const { address, isConnected } = useAccount();
   const { selectedNetwork } = useNetwork();
 
-  // Wizard state (1-indexed to match Step ids)
-  const [currentStep, setCurrentStep] = useState(1);
+  // Wizard state (0-indexed, Step 0 = type selection)
+  const [currentStep, setCurrentStep] = useState(0);
 
   // Form state
+  const [borrowType, setBorrowType] = useState<BorrowType>(null);
+  const [selectedFiatCurrency, setSelectedFiatCurrency] = useState<string | null>(null);
   const [selectedStablecoin, setSelectedStablecoin] = useState<StablecoinAsset | null>(null);
   const [selectedCollateral, setSelectedCollateral] = useState<CollateralAsset | null>(null);
   const [collateralAmount, setCollateralAmount] = useState('');
-  const [borrowType] = useState<BorrowType>('crypto'); // Default to crypto for now
   const [selectedBorrowAsset, setSelectedBorrowAsset] = useState<BorrowAsset | null>(null);
   const [selectedLTV, setSelectedLTV] = useState(0); // User-selected LTV percentage
   const [interestRate, setInterestRate] = useState(10);
@@ -276,9 +278,20 @@ export default function BorrowPage() {
       }));
   }, [availableTokens, isCrossChain, targetChainId]);
 
-  // Sync selectedBorrowAsset with selectedStablecoin
+  // Reset downstream state when borrowType changes
+  const handleBorrowTypeChange = (type: BorrowType) => {
+    setBorrowType(type);
+    setSelectedFiatCurrency(null);
+    setSelectedStablecoin(null);
+    setSelectedBorrowAsset(null);
+    setSelectedCollateral(null);
+    setCollateralAmount('');
+    setSelectedLTV(0);
+  };
+
+  // Sync selectedBorrowAsset with selectedStablecoin (crypto) or selectedFiatCurrency (cash)
   useEffect(() => {
-    if (selectedStablecoin) {
+    if (borrowType === 'crypto' && selectedStablecoin) {
       setSelectedBorrowAsset({
         symbol: selectedStablecoin.symbol,
         name: selectedStablecoin.name,
@@ -287,10 +300,17 @@ export default function BorrowPage() {
         icon: selectedStablecoin.icon,
         type: 'crypto',
       });
+    } else if (borrowType === 'cash' && selectedFiatCurrency) {
+      const currencyInfo = SUPPORTED_FIAT_CURRENCIES.find(c => c.code === selectedFiatCurrency);
+      setSelectedBorrowAsset({
+        symbol: selectedFiatCurrency,
+        name: currencyInfo?.name || selectedFiatCurrency,
+        type: 'fiat',
+      });
     } else {
       setSelectedBorrowAsset(null);
     }
-  }, [selectedStablecoin]);
+  }, [selectedStablecoin, selectedFiatCurrency, borrowType]);
 
   // Get collateral price
   const collateralPriceHook = useTokenPrice(selectedCollateral?.address as Address | undefined);
@@ -434,7 +454,11 @@ export default function BorrowPage() {
   // Step validation
   const canProceed = useMemo(() => {
     switch (currentStep) {
-      case 1: // Stablecoin selection (what to borrow)
+      case 0: // Type selection
+        if (!borrowType) return false;
+        if (borrowType === 'cash') return selectedFiatCurrency !== null && fiatSupported;
+        return true; // crypto just needs borrowType selected
+      case 1: // Stablecoin selection (only for crypto flow)
         return selectedStablecoin !== null;
       case 2: // Collateral selection
         return selectedCollateral !== null;
@@ -450,18 +474,28 @@ export default function BorrowPage() {
       default:
         return false;
     }
-  }, [currentStep, selectedStablecoin, selectedCollateral, collateralAmount, selectedLTV, maxLTVPercent, duration, interestRate]);
+  }, [currentStep, borrowType, selectedFiatCurrency, fiatSupported, selectedStablecoin, selectedCollateral, collateralAmount, selectedLTV, maxLTVPercent, duration, interestRate]);
 
   // Navigation
   const goNext = () => {
-    if (currentStep < STEPS.length && canProceed) {
-      setCurrentStep(currentStep + 1);
+    if (currentStep < STEPS.length - 1 && canProceed) {
+      // Skip step 1 (stablecoin selection) for cash loans — currency already chosen in step 0
+      if (currentStep === 0 && borrowType === 'cash') {
+        setCurrentStep(2);
+      } else {
+        setCurrentStep(currentStep + 1);
+      }
     }
   };
 
   const goBack = () => {
-    if (currentStep > 1) {
-      setCurrentStep(currentStep - 1);
+    if (currentStep > 0) {
+      // Skip step 1 (stablecoin selection) for cash loans
+      if (currentStep === 2 && borrowType === 'cash') {
+        setCurrentStep(0);
+      } else {
+        setCurrentStep(currentStep - 1);
+      }
     }
   };
 
@@ -472,18 +506,20 @@ export default function BorrowPage() {
 
   // Is form valid for submission
   const isFormValid = useMemo(() => {
-    return (
-      selectedStablecoin !== null &&
+    const baseValid =
       selectedCollateral !== null &&
       collateralAmount !== '' &&
       parseFloat(collateralAmount) > 0 &&
       selectedBorrowAsset !== null &&
       selectedLTV > 0 &&
       selectedLTV <= maxLTVPercent &&
-      duration > 0 &&
-      borrowAmount > 0
-    );
-  }, [selectedStablecoin, selectedCollateral, collateralAmount, selectedBorrowAsset, selectedLTV, maxLTVPercent, borrowAmount, duration]);
+      duration > 0;
+
+    if (borrowType === 'cash') {
+      return baseValid && selectedFiatCurrency !== null && fiatBorrowAmount.amount > 0;
+    }
+    return baseValid && selectedStablecoin !== null && borrowAmount > 0;
+  }, [borrowType, selectedFiatCurrency, fiatBorrowAmount.amount, selectedStablecoin, selectedCollateral, collateralAmount, selectedBorrowAsset, selectedLTV, maxLTVPercent, borrowAmount, duration]);
 
   // Get current step info
   const currentStepInfo = STEPS.find(s => s.id === currentStep);
@@ -494,6 +530,177 @@ export default function BorrowPage() {
   // Render current step content
   const renderStepContent = () => {
     switch (currentStep) {
+      case 0:
+        // Step 0: Choose borrow type (Crypto or Cash)
+        return (
+          <div className="space-y-6">
+            <div className="max-w-xl mx-auto">
+              <h2 className="text-xl font-semibold text-white mb-2 text-center">
+                What do you want to borrow?
+              </h2>
+              <p className="text-sm text-white/50 mb-6 text-center">
+                Choose between crypto tokens or cash
+              </p>
+
+              {/* Type Selection */}
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                {/* Crypto Option */}
+                <motion.button
+                  onClick={() => handleBorrowTypeChange('crypto')}
+                  className={`
+                    relative p-6 rounded-2xl border-2 transition-all duration-300
+                    ${borrowType === 'crypto'
+                      ? 'border-orange-500 bg-orange-500/10'
+                      : 'border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/10'
+                    }
+                  `}
+                  whileHover={{ y: -2 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  <div className={`
+                    w-12 h-12 mx-auto mb-3 rounded-xl flex items-center justify-center
+                    ${borrowType === 'crypto' ? 'bg-orange-500/20' : 'bg-white/10'}
+                  `}>
+                    <Coins className={`w-6 h-6 ${borrowType === 'crypto' ? 'text-orange-400' : 'text-white/60'}`} />
+                  </div>
+                  <h3 className={`font-semibold text-center ${borrowType === 'crypto' ? 'text-orange-400' : 'text-white'}`}>
+                    Crypto
+                  </h3>
+                  <p className="text-xs text-white/40 text-center mt-1">
+                    Borrow stablecoins
+                  </p>
+                  {borrowType === 'crypto' && (
+                    <motion.div
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-orange-500 flex items-center justify-center"
+                    >
+                      <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </motion.div>
+                  )}
+                </motion.button>
+
+                {/* Cash Option */}
+                <motion.button
+                  onClick={() => handleBorrowTypeChange('cash')}
+                  className={`
+                    relative p-6 rounded-2xl border-2 transition-all duration-300
+                    ${borrowType === 'cash'
+                      ? 'border-primary-500 bg-primary-500/10'
+                      : 'border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/10'
+                    }
+                  `}
+                  whileHover={{ y: -2 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  <div className={`
+                    w-12 h-12 mx-auto mb-3 rounded-xl flex items-center justify-center
+                    ${borrowType === 'cash' ? 'bg-primary-500/20' : 'bg-white/10'}
+                  `}>
+                    <Banknote className={`w-6 h-6 ${borrowType === 'cash' ? 'text-primary-400' : 'text-white/60'}`} />
+                  </div>
+                  <h3 className={`font-semibold text-center ${borrowType === 'cash' ? 'text-primary-400' : 'text-white'}`}>
+                    Cash
+                  </h3>
+                  <p className="text-xs text-white/40 text-center mt-1">
+                    Borrow local currency
+                  </p>
+                  {borrowType === 'cash' && (
+                    <motion.div
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center"
+                    >
+                      <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </motion.div>
+                  )}
+                </motion.button>
+              </div>
+
+              {/* Fiat Currency Grid (when Cash is selected) */}
+              <AnimatePresence>
+                {borrowType === 'cash' && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20 }}
+                  >
+                    {!fiatSupported ? (
+                      <div className="p-4 rounded-xl bg-yellow-500/10 border border-yellow-500/20 text-center">
+                        <p className="text-sm text-yellow-400 mb-2">
+                          Fiat loans are only available on Base Sepolia
+                        </p>
+                        <p className="text-xs text-white/50">
+                          Please switch to Base Sepolia network to borrow cash
+                        </p>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="text-sm text-white/50 mb-3 text-center">Select a currency</p>
+                        <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                          {SUPPORTED_FIAT_CURRENCIES.map((currency, index) => {
+                            const isSelected = selectedFiatCurrency === currency.code;
+                            return (
+                              <motion.button
+                                key={currency.code}
+                                onClick={() => setSelectedFiatCurrency(currency.code)}
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: index * 0.05 }}
+                                className={`
+                                  relative p-4 rounded-xl text-center transition-all duration-300
+                                  border-2 group
+                                  ${isSelected
+                                    ? 'border-primary-500 bg-primary-500/10'
+                                    : 'border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/10'
+                                  }
+                                `}
+                                whileHover={{ y: -2 }}
+                                whileTap={{ scale: 0.95 }}
+                              >
+                                <div
+                                  className={`
+                                    w-10 h-10 mx-auto mb-2 rounded-full flex items-center justify-center
+                                    text-sm font-bold
+                                    ${isSelected
+                                      ? 'bg-blue-500 text-white'
+                                      : 'bg-white/10 text-white/60 group-hover:bg-white/20'
+                                    }
+                                  `}
+                                >
+                                  {getCurrencySymbol(currency.code)}
+                                </div>
+                                <p className={`font-semibold text-sm ${isSelected ? 'text-primary-400' : 'text-white'}`}>
+                                  {currency.code}
+                                </p>
+                                <p className="text-xs text-white/40 mt-1">{currency.name}</p>
+                                {isSelected && (
+                                  <motion.div
+                                    initial={{ scale: 0 }}
+                                    animate={{ scale: 1 }}
+                                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center"
+                                  >
+                                    <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                  </motion.div>
+                                )}
+                              </motion.button>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
+        );
       case 1:
         // Step 1: Select stablecoin to borrow
         return (
@@ -601,7 +808,7 @@ export default function BorrowPage() {
             <CollateralSelector
               selected={selectedCollateral}
               onSelect={handleCollateralSelect}
-              assets={collateralAssets.filter(a => a.symbol !== selectedStablecoin?.symbol)}
+              assets={collateralAssets.filter(a => !stablecoinSymbols.includes(a.symbol))}
               isLoading={isLoadingAssets}
             />
 
@@ -657,7 +864,17 @@ export default function BorrowPage() {
                   <span>Max: {maxLTVPercent.toFixed(0)}%</span>
                 </div>
                 {/* Borrow amount preview */}
-                {borrowAmount > 0 && (
+                {borrowType === 'cash' && fiatBorrowAmount.formatted ? (
+                  <div className="mt-4 p-3 bg-primary-500/10 border border-primary-500/30 rounded-lg">
+                    <p className="text-sm text-white/70">You will receive:</p>
+                    <p className="text-xl font-bold text-primary-400">
+                      {fiatBorrowAmount.formatted}
+                    </p>
+                    <p className="text-xs text-white/50">
+                      via bank transfer / mobile money
+                    </p>
+                  </div>
+                ) : borrowAmount > 0 && (
                   <div className="mt-4 p-3 bg-primary-500/10 border border-primary-500/30 rounded-lg">
                     <p className="text-sm text-white/70">You will receive:</p>
                     <p className="text-xl font-bold text-primary-400">
@@ -789,7 +1006,7 @@ export default function BorrowPage() {
         >
           {/* Step Counter Badge */}
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 mb-4">
-            <span className="text-primary-400 font-semibold">Step {currentStep}</span>
+            <span className="text-primary-400 font-semibold">Step {currentStep + 1}</span>
             <span className="text-white/40">of {STEPS.length}</span>
           </div>
 
@@ -830,7 +1047,7 @@ export default function BorrowPage() {
         >
           {/* Back Button */}
           <div className="w-20 sm:w-28 flex-shrink-0">
-            {currentStep > 1 && (
+            {currentStep > 0 && (
               <motion.div
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
@@ -850,7 +1067,7 @@ export default function BorrowPage() {
 
           {/* Continue Button (not shown on review step) */}
           <div className="flex-1 min-w-0 max-w-xs">
-            {currentStep < STEPS.length && (
+            {currentStep < STEPS.length - 1 && (
               <Button
                 variant="primary"
                 size="lg"

@@ -2,7 +2,7 @@
 export { FilterBar } from './FilterBar';
 export type { FilterState } from './FilterBar';
 
-export { CryptoBorrowRequestCard } from './BorrowRequestCard';
+export { CryptoBorrowRequestCard, FiatBorrowRequestCard } from './BorrowRequestCard';
 export { CryptoLendingOfferCard, FiatLendingOfferCard } from './LendingOfferCard';
 export { ListingsGrid, Pagination } from './ListingsGrid';
 

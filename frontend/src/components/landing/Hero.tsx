@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { ArrowRight, ChevronDown } from 'lucide-react';
+import { ArrowRight, ChevronDown, TrendingUp } from 'lucide-react';
 import Image from 'next/image';
 import { Button } from '@/components/ui/Button';
 
@@ -141,6 +141,25 @@ export function Hero() {
                 <span className="text-sm text-gray-400">Withdraw anytime</span>
               </div>
             </motion.div>
+
+            {/* Stocks announcement badge */}
+            <motion.a
+              href="#stocks"
+              className="inline-flex items-center gap-3 px-4 py-2.5 rounded-full bg-purple-500/10 border border-purple-500/20 hover:bg-purple-500/20 hover:border-purple-500/30 transition-all duration-300 group cursor-pointer max-w-fit"
+              initial={{ opacity: 0, y: 20, filter: 'blur(4px)' }}
+              animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+              transition={{ duration: 0.6, delay: 0.5, ease: [0.33, 1, 0.68, 1] }}
+            >
+              <span className="flex items-center justify-center w-6 h-6 rounded-full bg-purple-500/20">
+                <TrendingUp className="w-3.5 h-3.5 text-purple-400" />
+              </span>
+              <span className="text-sm text-gray-300">
+                <span className="text-purple-400 font-semibold">Stock Lending</span> — Borrow against your equities
+              </span>
+              <span className="text-xs text-purple-400 font-medium px-2 py-0.5 rounded-full bg-purple-500/20">
+                Soon
+              </span>
+            </motion.a>
           </div>
 
           {/* Right side - Dashboard Preview with floating animation */}

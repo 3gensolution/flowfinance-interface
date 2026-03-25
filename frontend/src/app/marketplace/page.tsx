@@ -15,13 +15,14 @@ import {
   FilterBar,
   FilterState,
   CryptoBorrowRequestCard,
+  FiatBorrowRequestCard,
   CryptoLendingOfferCard,
   FiatLendingOfferCard,
   ListingsGrid,
   Pagination,
 } from '@/components/marketplace';
 import { LoanRequest, LenderOffer, LoanRequestStatus } from '@/types';
-import { FiatLenderOffer, FiatLenderOfferStatus } from '@/hooks/useFiatLoan';
+import { FiatLoan, FiatLoanStatus, FiatLenderOffer, FiatLenderOfferStatus } from '@/hooks/useFiatLoan';
 import { getTokenSymbol } from '@/lib/utils';
 import { getTokenByAddressForChain } from '@/config/contracts';
 import { cn } from '@/lib/utils';
@@ -35,10 +36,11 @@ type Tab = 'borrow_requests' | 'lending_offers';
 
 // Tagged union types for proper type discrimination
 type CryptoRequest = LoanRequest & { itemType: 'crypto_request' };
+type FiatRequest = FiatLoan & { itemType: 'fiat_request' };
 type CryptoOffer = LenderOffer & { itemType: 'crypto_offer' };
 type FiatOffer = FiatLenderOffer & { itemType: 'fiat_offer' };
 
-type MarketplaceItem = CryptoRequest | CryptoOffer | FiatOffer;
+type MarketplaceItem = CryptoRequest | FiatRequest | CryptoOffer | FiatOffer;
 
 const ITEMS_PER_PAGE = 12;
 const MAX_ITEMS_TO_FETCH = 50;
@@ -333,6 +335,116 @@ function useFiatLenderOffersData() {
   return { data: offers, isLoading: isLoadingIds || isLoadingOffers, refetch, error: errorIds || errorOffers };
 }
 
+// Hook to fetch pending fiat loan requests (borrower requests awaiting supplier) — always from Base Sepolia
+function useFiatLoanRequests() {
+  const baseChainId = CHAIN_CONFIG.baseSepolia.id;
+  const baseAddresses = getContractAddresses(baseChainId);
+
+  // Get pending fiat loan IDs
+  const { data: pendingIds, isLoading: isLoadingIds, refetch: refetchIds, error: errorIds } = useReadContract({
+    address: baseAddresses.fiatLoanBridge,
+    abi: FiatLoanBridgeABI,
+    functionName: 'getPendingFiatLoans',
+    chainId: baseChainId,
+    config: wagmiConfig,
+  });
+
+  const loanIds = useMemo(() => (pendingIds as bigint[]) || [], [pendingIds]);
+
+  // Batch fetch loan details
+  const { data: loansData, isLoading: isLoadingLoans, refetch: refetchLoans, error: errorLoans } = useReadContracts({
+    contracts: loanIds.map((id) => ({
+      address: baseAddresses.fiatLoanBridge,
+      abi: FiatLoanBridgeABI,
+      functionName: 'getFiatLoan',
+      args: [id],
+      chainId: baseChainId,
+    })),
+    config: wagmiConfig,
+    query: {
+      enabled: loanIds.length > 0,
+    },
+  });
+
+  const loans = useMemo(() => {
+    if (!loansData) return [];
+
+    return loansData
+      .map((result, index) => {
+        if (result.status !== 'success' || !result.result) return null;
+
+        const data = result.result;
+        const isArray = Array.isArray(data);
+
+        let loanData;
+        if (isArray) {
+          const arr = data as readonly unknown[];
+          loanData = {
+            loanId: arr[0],
+            borrower: arr[1],
+            supplier: arr[2],
+            collateralAsset: arr[3],
+            collateralAmount: arr[4],
+            fiatAmountCents: arr[5],
+            currency: arr[6],
+            interestRate: arr[7],
+            duration: arr[8],
+            status: arr[9],
+            createdAt: arr[10],
+            activatedAt: arr[11],
+            dueDate: arr[12],
+            gracePeriodEnd: arr[13],
+            claimableAmountCents: arr[14],
+            fundsWithdrawn: arr[15],
+            repaymentDepositId: arr[16],
+            exchangeRateAtCreation: arr[17],
+            chainId: arr[18],
+          };
+        } else {
+          loanData = data as Record<string, unknown>;
+        }
+
+        // Filter out empty or non-pending loans
+        if (!loanData.borrower || loanData.borrower === '0x0000000000000000000000000000000000000000') {
+          return null;
+        }
+        if (Number(loanData.status) !== FiatLoanStatus.PENDING_SUPPLIER) {
+          return null;
+        }
+
+        return {
+          loanId: loanIds[index],
+          borrower: loanData.borrower as Address,
+          supplier: loanData.supplier as Address,
+          collateralAsset: loanData.collateralAsset as Address,
+          collateralAmount: loanData.collateralAmount as bigint,
+          fiatAmountCents: loanData.fiatAmountCents as bigint,
+          currency: loanData.currency as string,
+          interestRate: loanData.interestRate as bigint,
+          duration: loanData.duration as bigint,
+          status: Number(loanData.status) as FiatLoanStatus,
+          createdAt: loanData.createdAt as bigint,
+          activatedAt: loanData.activatedAt as bigint,
+          dueDate: loanData.dueDate as bigint,
+          gracePeriodEnd: loanData.gracePeriodEnd as bigint,
+          claimableAmountCents: loanData.claimableAmountCents as bigint,
+          fundsWithdrawn: loanData.fundsWithdrawn as boolean,
+          repaymentDepositId: loanData.repaymentDepositId as `0x${string}`,
+          exchangeRateAtCreation: (loanData.exchangeRateAtCreation as bigint) || BigInt(0),
+          chainId: (loanData.chainId as bigint) || BigInt(0),
+        } as FiatLoan;
+      })
+      .filter((l): l is FiatLoan => l !== null);
+  }, [loansData, loanIds]);
+
+  const refetch = useCallback(() => {
+    refetchIds();
+    refetchLoans();
+  }, [refetchIds, refetchLoans]);
+
+  return { data: loans, isLoading: isLoadingIds || isLoadingLoans, refetch, error: errorIds || errorLoans };
+}
+
 function MarketplaceContent() {
   const { address: connectedAddress } = useAccount();
 
@@ -357,15 +469,16 @@ function MarketplaceContent() {
     crossChain: 'all',
   });
 
-  // Crypto hooks use the marketplace-local chain; fiat offers always from Base Sepolia
-  const { data: cryptoRequests, isLoading: isLoadingCryptoRequests, error: errorCryptoRequests } = useCryptoLoanRequests(marketplaceNetwork.id, marketplaceAddresses);
-  const { data: cryptoOffers, isLoading: isLoadingCryptoOffers, error: errorCryptoOffers } = useCryptoLenderOffers(marketplaceNetwork.id, marketplaceAddresses);
-  const { data: fiatOffers, isLoading: isLoadingFiatOffers, error: errorFiatOffers } = useFiatLenderOffersData();
+  // Crypto hooks use the marketplace-local chain; fiat hooks always from Base Sepolia
+  const { data: cryptoRequests, isLoading: isLoadingCryptoRequests, refetch: refetchCryptoRequests, error: errorCryptoRequests } = useCryptoLoanRequests(marketplaceNetwork.id, marketplaceAddresses);
+  const { data: cryptoOffers, isLoading: isLoadingCryptoOffers, refetch: refetchCryptoOffers, error: errorCryptoOffers } = useCryptoLenderOffers(marketplaceNetwork.id, marketplaceAddresses);
+  const { data: fiatOffers, isLoading: isLoadingFiatOffers, refetch: refetchFiatOffers, error: errorFiatOffers } = useFiatLenderOffersData();
+  const { data: fiatRequests, isLoading: isLoadingFiatRequests, refetch: refetchFiatRequests, error: errorFiatRequests } = useFiatLoanRequests();
 
   const isLoadingCrypto = isLoadingCryptoRequests || isLoadingCryptoOffers;
-  const isLoading = isLoadingCrypto || isLoadingFiatOffers;
+  const isLoading = isLoadingCrypto || isLoadingFiatOffers || isLoadingFiatRequests;
 
-  const hasError = errorCryptoRequests || errorCryptoOffers || errorFiatOffers;
+  const hasError = errorCryptoRequests || errorCryptoOffers || errorFiatOffers || errorFiatRequests;
 
   // Set timeout to stop showing loading spinner after 5 seconds
   useEffect(() => {
@@ -382,6 +495,14 @@ function MarketplaceContent() {
   // If loading for too long or has error, treat as loaded with empty data
   const effectivelyLoading = isLoading && !showLoadingTimeout && !hasError;
 
+  const _refetch = useCallback(() => {
+    refetchCryptoRequests();
+    refetchCryptoOffers();
+    refetchFiatOffers();
+    refetchFiatRequests();
+  }, [refetchCryptoRequests, refetchCryptoOffers, refetchFiatOffers, refetchFiatRequests]);
+  void _refetch; // Reserved for refresh button
+
   // Filter and sort data
   const filteredData = useMemo(() => {
     // Helper: Check if item belongs to connected user
@@ -389,7 +510,7 @@ function MarketplaceContent() {
       if (!connectedAddress) return false;
       const normalizedAddress = connectedAddress.toLowerCase();
 
-      if (item.itemType === 'crypto_request') {
+      if (item.itemType === 'crypto_request' || item.itemType === 'fiat_request') {
         return item.borrower.toLowerCase() === normalizedAddress;
       }
       if (item.itemType === 'crypto_offer' || item.itemType === 'fiat_offer') {
@@ -401,7 +522,7 @@ function MarketplaceContent() {
     // Show items whose tokens ALL exist on this chain (fundable here).
     // Checks both asset addresses to filter corrupt old data.
     const matchesNetworkFilter = (item: MarketplaceItem): boolean => {
-      if (item.itemType === 'fiat_offer') return true;
+      if (item.itemType === 'fiat_offer' || item.itemType === 'fiat_request') return true;
       if (item.itemType === 'crypto_request') {
         return !!getTokenByAddressForChain(item.borrowAsset, marketplaceNetwork.id)
           && !!getTokenByAddressForChain(item.collateralToken, marketplaceNetwork.id);
@@ -425,7 +546,7 @@ function MarketplaceContent() {
       } else if (item.itemType === 'crypto_offer') {
         const symbol = getTokenSymbol(item.lendAsset);
         return filters.tokens.some(t => symbol.toLowerCase().includes(t.toLowerCase()));
-      } else if (item.itemType === 'fiat_offer') {
+      } else if (item.itemType === 'fiat_offer' || item.itemType === 'fiat_request') {
         return filters.tokens.some(t => item.currency?.toLowerCase().includes(t.toLowerCase()));
       }
       return false;
@@ -447,8 +568,8 @@ function MarketplaceContent() {
 
     const matchesCrossChainFilter = (item: MarketplaceItem): boolean => {
       if (filters.crossChain === 'all') return true;
-      // Fiat offers are always same-chain (Base Sepolia only)
-      if (item.itemType === 'fiat_offer') {
+      // Fiat items are always same-chain (Base Sepolia only)
+      if (item.itemType === 'fiat_offer' || item.itemType === 'fiat_request') {
         return filters.crossChain === 'same_chain';
       }
       // Determine if the item is cross-chain
@@ -471,6 +592,8 @@ function MarketplaceContent() {
       switch (item.itemType) {
         case 'crypto_request':
           return Number(item.borrowAmount);
+        case 'fiat_request':
+          return Number(item.fiatAmountCents);
         case 'crypto_offer':
           return Number(item.lendAmount);
         case 'fiat_offer':
@@ -483,6 +606,9 @@ function MarketplaceContent() {
     if (activeTab === 'borrow_requests') {
       if (filters.assetType === 'all' || filters.assetType === 'crypto') {
         items = [...items, ...cryptoRequests.map(r => ({ ...r, itemType: 'crypto_request' as const }))];
+      }
+      if (filters.assetType === 'all' || filters.assetType === 'fiat') {
+        items = [...items, ...fiatRequests.map(r => ({ ...r, itemType: 'fiat_request' as const }))];
       }
     } else {
       if (filters.assetType === 'all' || filters.assetType === 'crypto') {
@@ -522,7 +648,7 @@ function MarketplaceContent() {
     }
 
     return items;
-  }, [activeTab, cryptoRequests, cryptoOffers, fiatOffers, filters, connectedAddress, marketplaceNetwork]);
+  }, [activeTab, cryptoRequests, fiatRequests, cryptoOffers, fiatOffers, filters, connectedAddress, marketplaceNetwork]);
 
   // Pagination
   const totalPages = Math.ceil(filteredData.length / ITEMS_PER_PAGE);
@@ -544,13 +670,21 @@ function MarketplaceContent() {
 
   // Get counts for tabs — filter by token existence + own-item exclusion so counts match displayed items
   const borrowRequestsCount = useMemo(() => {
-    if (filters.assetType === 'fiat') return 0;
-    return cryptoRequests.filter(r => {
-      if (connectedAddress && r.borrower.toLowerCase() === connectedAddress.toLowerCase()) return false;
-      return !!getTokenByAddressForChain(r.borrowAsset, marketplaceNetwork.id)
-        && !!getTokenByAddressForChain(r.collateralToken, marketplaceNetwork.id);
-    }).length;
-  }, [cryptoRequests, filters.assetType, connectedAddress, marketplaceNetwork]);
+    let count = 0;
+    if (filters.assetType === 'all' || filters.assetType === 'crypto') {
+      count += cryptoRequests.filter(r => {
+        if (connectedAddress && r.borrower.toLowerCase() === connectedAddress.toLowerCase()) return false;
+        return !!getTokenByAddressForChain(r.borrowAsset, marketplaceNetwork.id)
+          && !!getTokenByAddressForChain(r.collateralToken, marketplaceNetwork.id);
+      }).length;
+    }
+    if (filters.assetType === 'all' || filters.assetType === 'fiat') {
+      count += fiatRequests.filter(r =>
+        !(connectedAddress && r.borrower.toLowerCase() === connectedAddress.toLowerCase())
+      ).length;
+    }
+    return count;
+  }, [cryptoRequests, fiatRequests, filters.assetType, connectedAddress, marketplaceNetwork]);
 
   const lendingOffersCount = useMemo(() => {
     let count = 0;
@@ -581,6 +715,14 @@ function MarketplaceContent() {
             request={item}
             index={index}
             chainId={marketplaceNetwork.id}
+          />
+        );
+      case 'fiat_request':
+        return (
+          <FiatBorrowRequestCard
+            key={`fiat-request-${item.loanId}`}
+            request={item}
+            index={index}
           />
         );
       case 'crypto_offer':

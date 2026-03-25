@@ -37,8 +37,11 @@ export function AssetSelector({ assetType, selected, onSelect }: AssetSelectorPr
   const isLoading = isCrypto ? isCryptoLoading : isFiatLoading;
 
   // Transform assets to common format
+  const stablecoinSymbols = ['USDC', 'USDT', 'DAI'];
   const allAssets: Asset[] = isCrypto
-    ? cryptoAssets.map((a: CryptoAsset) => ({
+    ? cryptoAssets
+        .filter((a: CryptoAsset) => stablecoinSymbols.includes(a.symbol))
+        .map((a: CryptoAsset) => ({
         symbol: a.symbol,
         name: a.name,
         balance: a.balance,

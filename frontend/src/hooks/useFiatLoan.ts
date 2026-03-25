@@ -113,14 +113,12 @@ export function useActiveFiatLoans() {
 }
 
 // Get borrower's fiat loan IDs
+// NOTE: Fiat loans only exist on Base Sepolia - always query from there
 export function useBorrowerFiatLoans(borrower: Address | undefined) {
-  const activeChainId = getActiveChainId();
-  const addresses = getContractAddresses(activeChainId);
-
   return useReadContract({
-    address: addresses.fiatLoanBridge,
+    address: BASE_ADDRESSES.fiatLoanBridge,
     abi: FiatLoanBridgeABI,
-    chainId: activeChainId,
+    chainId: BASE_CHAIN_ID,
     functionName: 'getBorrowerFiatLoans',
     args: borrower ? [borrower] : undefined,
     query: {

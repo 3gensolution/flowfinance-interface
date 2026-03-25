@@ -359,8 +359,8 @@ export default function FiatLoanDetailPage() {
     );
   }
 
-  // Dynamic status: ACTIVE + not withdrawn = "Pending"
-  const statusConfig = (loan.status === FiatLoanStatus.ACTIVE && !loan.fundsWithdrawn)
+  // Dynamic status: ACTIVE + not withdrawn = "Pending" (only for borrower)
+  const statusConfig = (loan.status === FiatLoanStatus.ACTIVE && !loan.fundsWithdrawn && isBorrower)
     ? {
         label: 'Pending',
         color: 'text-orange-400',
@@ -886,7 +886,7 @@ export default function FiatLoanDetailPage() {
                     </p>
                   </div>
                 )}
-                {loan.status === FiatLoanStatus.ACTIVE && !loan.fundsWithdrawn && (
+                {loan.status === FiatLoanStatus.ACTIVE && !loan.fundsWithdrawn && isBorrower && (
                   <div className="text-center py-6">
                     <div className="w-16 h-16 rounded-full bg-orange-500/10 border border-orange-500/20 flex items-center justify-center mx-auto mb-3">
                       <Clock className="w-8 h-8 text-orange-400" />
@@ -894,6 +894,17 @@ export default function FiatLoanDetailPage() {
                     <p className="text-orange-400 font-semibold">Pending</p>
                     <p className="text-gray-400 text-sm mt-1 max-w-[200px] mx-auto">
                       Funds are ready to be claimed
+                    </p>
+                  </div>
+                )}
+                {loan.status === FiatLoanStatus.ACTIVE && !loan.fundsWithdrawn && !isBorrower && (
+                  <div className="text-center py-6">
+                    <div className="w-16 h-16 rounded-full bg-green-500/10 border border-green-500/20 flex items-center justify-center mx-auto mb-3">
+                      <Activity className="w-8 h-8 text-green-400" />
+                    </div>
+                    <p className="text-green-400 font-semibold">Loan Active</p>
+                    <p className="text-gray-400 text-sm mt-1 max-w-[200px] mx-auto">
+                      Awaiting borrower to claim funds
                     </p>
                   </div>
                 )}
