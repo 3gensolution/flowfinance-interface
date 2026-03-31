@@ -818,13 +818,13 @@ export function useApproveToken() {
   };
 
   // Async version that returns the transaction hash
-  const approveAsync = async (tokenAddress: Address, spenderAddress: Address, amount: bigint) => {
+  const approveAsync = async (tokenAddress: Address, spenderAddress: Address, amount: bigint, chainId?: number) => {
     return await writeContractAsync({
       address: tokenAddress,
       abi: ERC20ABI,
       functionName: 'approve',
       args: [spenderAddress, amount],
-      chainId: getActiveChainId(),
+      chainId: chainId || getActiveChainId(),
       ...getGasOverrides(),
     });
   };

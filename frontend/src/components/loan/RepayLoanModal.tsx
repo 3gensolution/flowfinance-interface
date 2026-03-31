@@ -245,11 +245,12 @@ export function RepayLoanModal() {
       const baseAmount = parseUnits(repayAmount, tokenInfo.decimals);
       const amountToApprove = baseAmount + (baseAmount / BigInt(100));
 
-      // For cross-chain loans, approve the target chain's LoanMarketPlace
+      // For cross-chain loans, approve the target chain's LoanMarketPlace on the target chain
       const approvalHash = await approveAsync(
         selectedLoan.borrowAsset,
         repayContracts.loanMarketPlace,
-        amountToApprove
+        amountToApprove,
+        isCrossChainLoan ? loanTargetChainId : undefined
       );
 
       toast.loading('Waiting for confirmation...', { id: toastId });
