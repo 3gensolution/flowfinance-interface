@@ -79,6 +79,7 @@ const CUSTOM_ERROR_NAMES: Record<string, string> = {
     'ExtensionAlreadyRequested': 'A loan extension has already been requested.',
     'GracePeriodNotExpired': 'The grace period has not expired yet.',
     'InsufficientCollateral': 'Insufficient collateral provided. Please increase your collateral amount.',
+    'StablecoinCollateralNotAllowed': 'Stablecoins cannot be used as collateral. Please select a non-stablecoin token (e.g., WETH, WBTC, LINK).',
     'InvalidConfigAddress': 'Invalid configuration address.',
     'InvalidEscrowAddress': 'Invalid escrow address.',
     'InvalidLiquidator': 'Invalid liquidator address.',

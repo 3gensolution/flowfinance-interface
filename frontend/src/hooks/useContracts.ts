@@ -618,8 +618,12 @@ export function useTokenPrice(tokenAddress: Address | undefined, chainId?: numbe
     ? storedPrice.updatedAt
     : contractUpdatedAt ?? storedPrice?.updatedAt;
 
-  // Check if price is stale (>15 minutes old) - matches contract requirement
-  const STALENESS_THRESHOLD = 15 * 60; // 15 minutes in seconds
+  // Check if price is stale
+  // Testnet mock feeds need manual refresh, so use a longer threshold (24 hours)
+  // Mainnet Chainlink feeds auto-update, so 15 minutes is appropriate
+  const TESTNET_CHAIN_IDS = [84532, 80002, 11155111]; // Base Sepolia, Polygon Amoy, Eth Sepolia
+  const isTestnet = TESTNET_CHAIN_IDS.includes(effectiveChainId);
+  const STALENESS_THRESHOLD = isTestnet ? 24 * 60 * 60 : 15 * 60; // 24 hours for testnet, 15 min for mainnet
   const currentTime = Math.floor(Date.now() / 1000);
   const isStale = updatedAt ? (currentTime - updatedAt) > STALENESS_THRESHOLD : false;
   const secondsUntilStale = updatedAt ? Math.max(0, STALENESS_THRESHOLD - (currentTime - updatedAt)) : 0;

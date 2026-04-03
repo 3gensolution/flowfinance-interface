@@ -1226,7 +1226,7 @@ export default function OfferDetailPage() {
                 </div>
               </div>
 
-              {/* Collateral Token Selection */}
+              {/* Collateral Token Selection (stablecoins excluded) */}
               <div>
                 <label className="block text-sm text-gray-400 mb-2">Collateral Token</label>
                 <select
@@ -1235,12 +1235,16 @@ export default function OfferDetailPage() {
                   className="w-full input-field bg-gray-800 border border-gray-700 rounded-lg px-4 py-3"
                 >
                   <option value="">Select a token</option>
-                  {availableTokens.filter(t => t.address.toLowerCase() !== offer?.lendAsset?.toLowerCase()).map((token) => (
+                  {availableTokens
+                    .filter(t => t.address.toLowerCase() !== offer?.lendAsset?.toLowerCase())
+                    .filter(t => !['USDC', 'USDT', 'DAI'].includes(t.symbol))
+                    .map((token) => (
                     <option key={token.address} value={token.address}>
                       {token.symbol}
                     </option>
                   ))}
                 </select>
+                <p className="text-xs text-gray-500 mt-1">Stablecoins (USDC, USDT, DAI) cannot be used as collateral</p>
               </div>
 
               {/* Collateral Amount (Auto-calculated) */}
