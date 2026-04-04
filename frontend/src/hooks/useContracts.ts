@@ -1500,15 +1500,28 @@ function getApproxUSDPrice(tokenSymbol: string | undefined): number {
 
 // Platform Statistics - aggregates data from multiple contract calls using efficient multicall
 export function usePlatformStats() {
-  const { data: nextLoanId } = useNextLoanId();
+  const { data: nextLoanId, isLoading: isLoadingNextId, isError: isErrorNextId } = useNextLoanId();
+  const { data: nextOfferId } = useNextLenderOfferId();
 
   // Calculate total loans and batch size
+  // nextLoanId is the NEXT id (0-indexed), so if it's 1, loan at index 0 exists
   const maxLoansToCheck = 100;
-  const totalLoans = nextLoanId ? Number(nextLoanId) - 1 : 0;
+  const totalLoans = nextLoanId ? Number(nextLoanId) : 0;
   const loansToFetch = Math.min(totalLoans, maxLoansToCheck);
 
-  // Fetch all loans using efficient multicall
-  const { data: loans, isLoading, isError } = useBatchLoans(1, loansToFetch);
+  // Also fetch offers to count lenders who haven't had loans accepted yet
+  const totalOffers = nextOfferId ? Number(nextOfferId) : 0;
+  const offersToFetch = Math.min(totalOffers, maxLoansToCheck);
+
+  // Fetch all loans using efficient multicall (start from 0)
+  const { data: loans, isLoading: isLoadingLoans, isError: isErrorLoans } = useBatchLoans(0, loansToFetch);
+  const { data: offers } = useBatchLenderOffers(0, offersToFetch);
+
+  // Debug: log what we're getting
+  console.log('[PlatformStats] nextLoanId:', nextLoanId?.toString(), 'nextOfferId:', nextOfferId?.toString(), 'loans:', loans?.length, 'offers:', offers?.length, 'isLoadingNextId:', isLoadingNextId, 'isErrorNextId:', isErrorNextId);
+
+  const isLoading = isLoadingNextId || isLoadingLoans;
+  const isError = isErrorNextId || isErrorLoans;
 
   // Calculate stats from loan data
   // Use numbers for formatted values in USD
@@ -1548,6 +1561,13 @@ export function usePlatformStats() {
     stats.uniqueBorrowers.add(loan.borrower as Address);
     stats.uniqueLenders.add(loan.lender as Address);
   });
+
+  // Also count unique lenders from offers (they may not have funded loans yet)
+  (offers || []).forEach((offer) => {
+    stats.uniqueLenders.add(offer.lender as Address);
+  });
+
+  console.log('[PlatformStats] computed:', { totalLoans, activeLoans: stats.activeLoans, uniqueBorrowers: stats.uniqueBorrowers.size, uniqueLenders: stats.uniqueLenders.size, tvl: stats.totalCollateralUSD });
 
   return {
     data: {
