@@ -7,7 +7,7 @@ export const FooterScript = () => {
           strategy="afterInteractive"
           data-site-id="39bb4c66-9342-465a-95bb-02ee66ad4688"
           data-token="pk_live_LRuDCmTwv0HYf1Rt73e2Ocj_L1oH6yAI2UgMara53ww"
-          data-api-url="http://api.3guideai.com"
+          data-api-url="https://api.3guideai.com"
           data-cdn-url="https://cdn.jsdelivr.net/gh/3gensolution/guideai-scanner@cdn-v0.1.5/cdn/guideai.js"
           data-track-all="true"
           data-behavioral-triggers="true"
