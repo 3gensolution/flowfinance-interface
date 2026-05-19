@@ -4,6 +4,7 @@ import { useRef } from 'react';
 import { motion, useInView } from 'framer-motion';
 import { ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { guideaiTrack } from '@/lib/guideai/events';
 
 export function CTA() {
   const sectionRef = useRef<HTMLElement>(null);
@@ -47,6 +48,7 @@ export function CTA() {
               variant="primary"
               size="xl"
               href="/dashboard"
+              onClick={() => guideaiTrack('onboarding_started', { source: 'landing_cta' })}
               icon={<ArrowRight className="w-6 h-6" />}
               iconPosition="right"
               className="shadow-lg shadow-orange-500/30"

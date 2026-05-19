@@ -8,6 +8,8 @@ import { ContractEventListener } from './ContractEventListener';
 import { ChainSync } from './ChainSync';
 import '@rainbow-me/rainbowkit/styles.css';
 import { queryClient } from '@/lib/react-query-client';
+import { WalletIdentity } from '@/components/guideai/WalletIdentity';
+import { GuideAINetworkLogger } from '@/components/guideai/GuideAINetworkLogger';
 
 export function Web3Provider({ children }: { children: React.ReactNode }) {
   return (
@@ -22,6 +24,8 @@ export function Web3Provider({ children }: { children: React.ReactNode }) {
           })}
           modalSize="compact"
         >
+          <GuideAINetworkLogger />
+          <WalletIdentity />
           <ContractEventListener />
           <ChainSync />
           {children}

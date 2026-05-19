@@ -8,6 +8,7 @@ import { Footer } from '@/components/layout/Footer';
 import { Toaster } from 'react-hot-toast';
 import { LenisProvider } from '@/components/providers/LenisProvider';
 import { NetworkProvider } from '@/contexts/NetworkContext';
+import { FooterScript } from './header';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -68,6 +69,7 @@ export default function RootLayout({
             </LenisProvider>
           </Web3Provider>
         </NetworkProvider>
+        <FooterScript />
       </body>
     </html>
   );

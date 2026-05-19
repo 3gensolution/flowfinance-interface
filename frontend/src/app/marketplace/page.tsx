@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { FileText, HandCoins, Info } from 'lucide-react';
 import { useReadContracts, useReadContract, useAccount } from 'wagmi';
 import { Abi, Address } from 'viem';
-import { CHAIN_CONFIG, getContractAddresses, getActiveChainId, type ContractAddresses } from '@/config/contracts';
+import { CHAIN_CONFIG, getContractAddresses, getActiveChainId, ZERO_ADDRESS, type ContractAddresses } from '@/config/contracts';
 import { AVAILABLE_NETWORKS, type AvailableNetwork } from '@/contexts/NetworkContext';
 import { config as wagmiConfig } from '@/config/wagmi';
 import { MarketplaceNetworkSwitcher } from '@/components/network/MarketplaceNetworkSwitcher';
@@ -47,6 +47,9 @@ const MAX_ITEMS_TO_FETCH = 50;
 
 // Hook to fetch crypto loan requests directly from contract (newest first)
 function useCryptoLoanRequests(chainId: number, addresses: ContractAddresses) {
+  const { isConnected } = useAccount();
+  const enabled = isConnected && addresses.loanMarketPlace !== ZERO_ADDRESS;
+
   // Get total count
   const { data: nextRequestId, refetch: refetchCount, error: errorCount } = useReadContract({
     address: addresses.loanMarketPlace,
@@ -54,6 +57,7 @@ function useCryptoLoanRequests(chainId: number, addresses: ContractAddresses) {
     functionName: 'nextLoanRequestId',
     chainId,
     config: wagmiConfig,
+    query: { enabled },
   });
 
   const totalCount = nextRequestId ? Number(nextRequestId) : 0;
@@ -61,16 +65,18 @@ function useCryptoLoanRequests(chainId: number, addresses: ContractAddresses) {
 
   // Batch fetch newest requests first (from totalCount-1 descending)
   const { data: requestsData, isLoading, refetch: refetchData, error: errorData } = useReadContracts({
-    contracts: Array.from({ length: count }, (_, i) => ({
-      address: addresses.loanMarketPlace,
-      abi: LoanMarketPlaceABI,
-      functionName: 'loanRequests',
-      args: [BigInt(totalCount - 1 - i)],
-      chainId,
-    })),
+    contracts: enabled
+      ? Array.from({ length: count }, (_, i) => ({
+          address: addresses.loanMarketPlace,
+          abi: LoanMarketPlaceABI,
+          functionName: 'loanRequests',
+          args: [BigInt(totalCount - 1 - i)],
+          chainId,
+        }))
+      : [],
     config: wagmiConfig,
     query: {
-      enabled: count > 0,
+      enabled: enabled && count > 0,
     },
   });
 
@@ -143,6 +149,9 @@ function useCryptoLoanRequests(chainId: number, addresses: ContractAddresses) {
 
 // Hook to fetch crypto lender offers directly from contract (newest first)
 function useCryptoLenderOffers(chainId: number, addresses: ContractAddresses) {
+  const { isConnected } = useAccount();
+  const enabled = isConnected && addresses.loanMarketPlace !== ZERO_ADDRESS;
+
   // Get total count
   const { data: nextOfferId, refetch: refetchCount, error: errorCount } = useReadContract({
     address: addresses.loanMarketPlace,
@@ -150,6 +159,7 @@ function useCryptoLenderOffers(chainId: number, addresses: ContractAddresses) {
     functionName: 'nextLenderOfferId',
     chainId,
     config: wagmiConfig,
+    query: { enabled },
   });
 
   const totalCount = nextOfferId ? Number(nextOfferId) : 0;
@@ -157,16 +167,18 @@ function useCryptoLenderOffers(chainId: number, addresses: ContractAddresses) {
 
   // Batch fetch newest offers first (from totalCount-1 descending)
   const { data: offersData, isLoading, refetch: refetchData, error: errorData } = useReadContracts({
-    contracts: Array.from({ length: count }, (_, i) => ({
-      address: addresses.loanMarketPlace,
-      abi: LoanMarketPlaceABI,
-      functionName: 'lenderOffers',
-      args: [BigInt(totalCount - 1 - i)],
-      chainId,
-    })),
+    contracts: enabled
+      ? Array.from({ length: count }, (_, i) => ({
+          address: addresses.loanMarketPlace,
+          abi: LoanMarketPlaceABI,
+          functionName: 'lenderOffers',
+          args: [BigInt(totalCount - 1 - i)],
+          chainId,
+        }))
+      : [],
     config: wagmiConfig,
     query: {
-      enabled: count > 0,
+      enabled: enabled && count > 0,
     },
   });
 
@@ -241,8 +253,10 @@ function useCryptoLenderOffers(chainId: number, addresses: ContractAddresses) {
 
 // Hook to fetch active fiat lender offers — always from Base Sepolia regardless of marketplace chain
 function useFiatLenderOffersData() {
+  const { isConnected } = useAccount();
   const baseChainId = CHAIN_CONFIG.baseSepolia.id;
   const baseAddresses = getContractAddresses(baseChainId);
+  const enabled = isConnected && baseAddresses.fiatLoanBridge !== ZERO_ADDRESS;
 
   // Get active offer IDs
   const { data: activeIds, isLoading: isLoadingIds, refetch: refetchIds, error: errorIds } = useReadContract({
@@ -251,22 +265,25 @@ function useFiatLenderOffersData() {
     functionName: 'getActiveFiatLenderOffers',
     chainId: baseChainId,
     config: wagmiConfig,
+    query: { enabled },
   });
 
   const offerIds = useMemo(() => (activeIds as bigint[]) || [], [activeIds]);
 
   // Batch fetch offer details
   const { data: offersData, isLoading: isLoadingOffers, refetch: refetchOffers, error: errorOffers } = useReadContracts({
-    contracts: offerIds.map((id) => ({
-      address: baseAddresses.fiatLoanBridge,
-      abi: FiatLoanBridgeABI,
-      functionName: 'fiatLenderOffers',
-      args: [id],
-      chainId: baseChainId,
-    })),
+    contracts: enabled
+      ? offerIds.map((id) => ({
+          address: baseAddresses.fiatLoanBridge,
+          abi: FiatLoanBridgeABI,
+          functionName: 'fiatLenderOffers',
+          args: [id],
+          chainId: baseChainId,
+        }))
+      : [],
     config: wagmiConfig,
     query: {
-      enabled: offerIds.length > 0,
+      enabled: enabled && offerIds.length > 0,
     },
   });
 
@@ -337,8 +354,10 @@ function useFiatLenderOffersData() {
 
 // Hook to fetch pending fiat loan requests (borrower requests awaiting supplier) — always from Base Sepolia
 function useFiatLoanRequests() {
+  const { isConnected } = useAccount();
   const baseChainId = CHAIN_CONFIG.baseSepolia.id;
   const baseAddresses = getContractAddresses(baseChainId);
+  const enabled = isConnected && baseAddresses.fiatLoanBridge !== ZERO_ADDRESS;
 
   // Get pending fiat loan IDs
   const { data: pendingIds, isLoading: isLoadingIds, refetch: refetchIds, error: errorIds } = useReadContract({
@@ -347,22 +366,25 @@ function useFiatLoanRequests() {
     functionName: 'getPendingFiatLoans',
     chainId: baseChainId,
     config: wagmiConfig,
+    query: { enabled },
   });
 
   const loanIds = useMemo(() => (pendingIds as bigint[]) || [], [pendingIds]);
 
   // Batch fetch loan details
   const { data: loansData, isLoading: isLoadingLoans, refetch: refetchLoans, error: errorLoans } = useReadContracts({
-    contracts: loanIds.map((id) => ({
-      address: baseAddresses.fiatLoanBridge,
-      abi: FiatLoanBridgeABI,
-      functionName: 'getFiatLoan',
-      args: [id],
-      chainId: baseChainId,
-    })),
+    contracts: enabled
+      ? loanIds.map((id) => ({
+          address: baseAddresses.fiatLoanBridge,
+          abi: FiatLoanBridgeABI,
+          functionName: 'getFiatLoan',
+          args: [id],
+          chainId: baseChainId,
+        }))
+      : [],
     config: wagmiConfig,
     query: {
-      enabled: loanIds.length > 0,
+      enabled: enabled && loanIds.length > 0,
     },
   });
 

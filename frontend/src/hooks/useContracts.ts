@@ -1,9 +1,9 @@
 'use client';
 
-import { useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from 'wagmi';
+import { useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt, usePublicClient, useAccount } from 'wagmi';
 import { Address, Abi, formatUnits } from 'viem';
 import { useEffect, useCallback } from 'react';
-import { CONTRACT_ADDRESSES, getTokenByAddress, TOKEN_LIST, getActiveChainId, getContractAddresses, CONTRACT_ADDRESSES_BY_CHAIN, getGasOverrides } from '@/config/contracts';
+import { CONTRACT_ADDRESSES, getTokenByAddress, TOKEN_LIST, getActiveChainId, getContractAddresses, CONTRACT_ADDRESSES_BY_CHAIN, getGasOverrides, ZERO_ADDRESS } from '@/config/contracts';
 import { useContractStore } from '@/stores/contractStore';
 import { LoanRequest, LenderOffer, Loan } from '@/types';
 import LoanMarketPlaceABIJson from '@/contracts/LoanMarketPlaceABI.json';
@@ -411,16 +411,23 @@ export function useIsAssetSupported(assetAddress: Address | undefined) {
 
 // Batch check which assets are supported from TOKEN_LIST
 export function useSupportedAssets() {
+  const { isConnected } = useAccount();
+  const chainId = getActiveChainId();
+  const hasConfig = CONTRACT_ADDRESSES.configuration && CONTRACT_ADDRESSES.configuration !== ZERO_ADDRESS;
+  const enabled = isConnected && hasConfig;
+
   const { data: supportedData, isLoading, isError, refetch } = useReadContracts({
-    contracts: TOKEN_LIST.map((token) => ({
-      address: CONTRACT_ADDRESSES.configuration,
-      abi: ConfigurationABI,
-      functionName: 'isAssetSupported',
-      args: [token.address],
-      chainId: getActiveChainId(),
-    })),
+    contracts: enabled
+      ? TOKEN_LIST.map((token) => ({
+          address: CONTRACT_ADDRESSES.configuration,
+          abi: ConfigurationABI,
+          functionName: 'isAssetSupported',
+          args: [token.address],
+          chainId,
+        }))
+      : [],
     query: {
-      enabled: true,
+      enabled,
     },
   });
 

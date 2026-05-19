@@ -166,8 +166,11 @@ export function useLenderFiatOffers(lender: Address | undefined) {
     args: lender ? [lender] : undefined,
     query: {
       enabled: !!lender,
-      refetchOnMount: 'always',
-      staleTime: 0,
+      // Prevent excessive background refetching on public RPCs.
+      refetchOnMount: true,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      staleTime: 15_000,
     },
   });
 }
@@ -192,8 +195,10 @@ export function useFiatLoan(loanId: bigint | undefined) {
     args: loanId !== undefined ? [loanId] : undefined,
     query: {
       enabled: loanId !== undefined,
-      refetchOnWindowFocus: 'always',
-      staleTime: 0,
+      // Prevent excessive background refetching on public RPCs.
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      staleTime: 15_000,
     },
   });
 }

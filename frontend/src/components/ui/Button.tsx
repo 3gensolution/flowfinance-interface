@@ -30,6 +30,7 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       disabled,
       href,
       fullWidth,
+      onClick,
       ...props
     },
     ref
@@ -114,6 +115,7 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         <Link href={href}>
           <motion.span
             className={allClasses}
+            onClick={onClick}
             whileHover={{ scale: disabled || loading ? 1 : 1.03 }}
             whileTap={{ scale: disabled || loading ? 1 : 0.98 }}
           >

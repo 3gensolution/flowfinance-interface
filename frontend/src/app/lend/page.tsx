@@ -20,7 +20,7 @@ import {
 import { useIsVerifiedSupplier } from '@/hooks/useSupplyAssets';
 import { useLoanConfigLimits } from '@/hooks/useContracts';
 import { CONTRACT_ADDRESSES, isFiatSupportedChain, getTokenByAddressForChain } from '@/config/contracts';
-import { useNetwork } from '@/contexts/NetworkContext';
+import { hasContracts, useNetwork } from '@/contexts/NetworkContext';
 import { config as wagmiConfig } from '@/config/wagmi';
 import { LoanRequestStatus } from '@/types';
 import { FiatLoanStatus } from '@/hooks/useFiatLoan';
@@ -42,6 +42,7 @@ const STEPS = [
 export default function LendPage() {
   const { address, isConnected } = useAccount();
   const { selectedNetwork } = useNetwork();
+  const hasNetContracts = hasContracts(selectedNetwork.id);
 
   // Wizard state
   const [currentStep, setCurrentStep] = useState(1);
@@ -59,6 +60,7 @@ export default function LendPage() {
     functionName: 'nextLoanRequestId',
     chainId: selectedNetwork.id,
     config: wagmiConfig,
+    query: { enabled: isConnected && hasNetContracts },
   });
 
   const cryptoRequestCount = nextCryptoRequestId ? Number(nextCryptoRequestId) : 0;
@@ -74,7 +76,7 @@ export default function LendPage() {
     })),
     config: wagmiConfig,
     query: {
-      enabled: cryptoRequestCount > 0,
+      enabled: isConnected && hasNetContracts && cryptoRequestCount > 0,
     },
   });
 

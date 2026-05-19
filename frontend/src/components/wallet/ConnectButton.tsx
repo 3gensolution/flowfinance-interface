@@ -1,6 +1,7 @@
 'use client';
 
 import { ConnectButton as RainbowConnectButton } from '@rainbow-me/rainbowkit';
+import { guideaiTrack } from '@/lib/guideai/events';
 
 export function ConnectButton({ stacked = false }: { stacked?: boolean }) {
   return (
@@ -31,7 +32,10 @@ export function ConnectButton({ stacked = false }: { stacked?: boolean }) {
               if (!connected) {
                 return (
                   <button
-                    onClick={openConnectModal}
+                    onClick={() => {
+                      guideaiTrack('signup_started', { source: 'connect_wallet_button' });
+                      openConnectModal();
+                    }}
                     className="btn-primary"
                     type="button"
                   >
