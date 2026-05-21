@@ -67,6 +67,20 @@ export function useDashboardDataLoader(address: Address | undefined) {
     refetch: refetchFiatSupplier,
   } = useUserFiatLoansAsSupplier(address);
 
+  // Always refetch once when the dashboard is mounted / address changes.
+  // We keep React Query stale times high to avoid background polling, but we still want
+  // dashboard navigation to show fresh data without a manual reload.
+  const didInitialRefetchRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!address) return;
+    if (didInitialRefetchRef.current === address) return;
+    didInitialRefetchRef.current = address;
+    refetchCrypto();
+    refetchFiatOffers();
+    refetchFiatBorrower();
+    refetchFiatSupplier();
+  }, [address, refetchCrypto, refetchFiatOffers, refetchFiatBorrower, refetchFiatSupplier]);
+
   // Populate store when fetched data changes
   useEffect(() => {
     if (!address) return;
