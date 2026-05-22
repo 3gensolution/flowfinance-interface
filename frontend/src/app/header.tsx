@@ -1,6 +1,10 @@
 import Script from "next/script";
 
 export const FooterScript = () => {
+    // const trackAll = process.env.NEXT_PUBLIC_GUIDEAI_TRACK_ALL ?? 'false';
+    // const behavioralTriggers = process.env.NEXT_PUBLIC_GUIDEAI_BEHAVIORAL_TRIGGERS ?? 'false';
+    // const apiUrl = process.env.NEXT_PUBLIC_GUIDEAI_API_URL ?? 'https://api.3guideai.com';
+
     return (
         <Script
           src="https://cdn.jsdelivr.net/gh/3gensolution/guideai-scanner@cdn-v0.1.6/cdn/guideai.js"
