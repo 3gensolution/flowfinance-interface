@@ -21,7 +21,7 @@ import {
   useFiatLoansByBorrower,
   useFiatLoansBySupplier,
   useFiatLenderOffersByLender,
-} from '@/stores/contractStore';
+} from '@/hooks/useContractData';
 import { useUIStore } from '@/stores/uiStore';
 import { Plus, Coins, Banknote, HandCoins, Wallet, Network, ChevronDown, Check, Lock } from 'lucide-react';
 import { getActiveChainId, setActiveChainId, TESTNET_CHAINS, MAINNET_CHAINS } from '@/config/contracts';

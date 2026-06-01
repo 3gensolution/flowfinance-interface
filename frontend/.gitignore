@@ -45,5 +45,3 @@ build/
 .cache/
 temp/
 tmp/
-README.md
-scanner.json

@@ -15,6 +15,7 @@ import { formatTokenAmount, getTokenDecimals } from '@/lib/utils';
 import { Shield, AlertCircle, CheckCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { simulateContractWrite, formatSimulationError } from '@/lib/contractSimulation';
+import { useTransactionFlowEffects } from '@/features/transactions/hooks/useTransactionFlowEffects';
 import FiatLoanBridgeABIJson from '@/contracts/FiatLoanBridgeABI.json';
 import { Abi } from 'viem';
 
@@ -134,21 +135,19 @@ export function AcceptFiatLenderOfferModal({ offer, isOpen, onClose, onSuccess }
     }
   }, [isOpen]);
 
-  useEffect(() => {
-    if (approveSuccess) {
-      toast.success('Collateral approved successfully!');
-      refetchAllowance();
-      setStep('confirm');
-    }
-  }, [approveSuccess, refetchAllowance]);
-
-  useEffect(() => {
-    if (acceptSuccess) {
-      toast.success('Fiat lender offer accepted successfully!');
+  useTransactionFlowEffects({
+    approvalSuccess: approveSuccess,
+    approvalSuccessMessage: 'Collateral approved successfully!',
+    refetchAllowance,
+    setStep,
+    nextStep: 'confirm',
+    actionSuccess: acceptSuccess,
+    actionSuccessMessage: 'Fiat lender offer accepted successfully!',
+    onActionSuccess: () => {
       onSuccess?.();
       onClose();
-    }
-  }, [acceptSuccess, onSuccess, onClose]);
+    },
+  });
 
   const handleMaxClick = () => {
     setCollateralAmount(maxCollateralBalance);

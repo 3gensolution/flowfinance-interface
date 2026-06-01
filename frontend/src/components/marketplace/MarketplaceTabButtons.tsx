@@ -3,16 +3,14 @@
 import { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/Button';
-import { LoanRequestStatus } from '@/types';
+import { getActiveChainId } from '@/config/contracts';
 import {
-  useNextLoanRequestId,
-  useNextLenderOfferId,
-  useBatchLoanRequests,
-  useBatchLenderOffers,
-} from '@/hooks/useContracts';
+  useCryptoMarketplaceRequests,
+  useCryptoMarketplaceOffers,
+  useFiatMarketplaceRequests,
+  useFiatMarketplaceOffers,
+} from '@/hooks/useMarketplaceListings';
 import {
-  usePendingFiatLoansWithDetails,
-  useActiveFiatLenderOffersWithDetails,
   FiatLenderOfferStatus,
   FiatLoanStatus,
 } from '@/hooks/useFiatLoan';
@@ -38,25 +36,18 @@ export function CryptoTabButtons({
   isLoading,
   onRefresh,
 }: CryptoTabButtonsProps) {
-  // Get counts directly from contract
-  const { data: nextRequestId } = useNextLoanRequestId();
-  const { data: nextOfferId } = useNextLenderOfferId();
-
-  const requestCount = nextRequestId ? Number(nextRequestId) : 0;
-  const offerCount = nextOfferId ? Number(nextOfferId) : 0;
-
-  // Fetch actual pending data to get accurate counts
-  const { data: allRequests } = useBatchLoanRequests(0, Math.min(requestCount, 50));
-  const { data: allOffers } = useBatchLenderOffers(0, Math.min(offerCount, 50));
+  const activeChainId = getActiveChainId();
+  const { data: allRequests } = useCryptoMarketplaceRequests(activeChainId);
+  const { data: allOffers } = useCryptoMarketplaceOffers(activeChainId);
 
   const counts = useMemo(() => {
     const now = BigInt(Math.floor(Date.now() / 1000));
     return {
       requests: (allRequests || []).filter(r =>
-        r.status === LoanRequestStatus.PENDING && r.expireAt > now
+        r.expireAt > now
       ).length,
       offers: (allOffers || []).filter(o =>
-        o.status === LoanRequestStatus.PENDING && o.expireAt > now
+        o.expireAt > now
       ).length,
     };
   }, [allRequests, allOffers]);
@@ -126,8 +117,8 @@ export function FiatTabButtons({
   onRefresh,
 }: FiatTabButtonsProps) {
   // Get counts directly from contract hooks
-  const { data: pendingFiatLoans } = usePendingFiatLoansWithDetails();
-  const { data: fiatLenderOffers } = useActiveFiatLenderOffersWithDetails();
+  const { data: pendingFiatLoans } = useFiatMarketplaceRequests();
+  const { data: fiatLenderOffers } = useFiatMarketplaceOffers();
 
   const counts = useMemo(() => {
     const now = BigInt(Math.floor(Date.now() / 1000));

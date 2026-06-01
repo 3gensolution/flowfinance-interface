@@ -5,14 +5,13 @@ import { useAccount } from 'wagmi';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { LoanRequestCard, LenderOfferCard, FiatLoanRequestCard, FiatLenderOfferCard } from '@/components/loan/LoanCard';
+import { getActiveChainId } from '@/config/contracts';
 import {
-  usePendingLoanRequests,
-  useActiveLenderOffers,
-  usePendingFiatLoansFromStore,
-  useActiveFiatLenderOffersFromStore,
-} from '@/stores/contractStore';
-import { LoanRequestStatus } from '@/types';
-import { FiatLoanStatus, FiatLenderOfferStatus } from '@/hooks/useFiatLoan';
+  useCryptoMarketplaceRequests,
+  useCryptoMarketplaceOffers,
+  useFiatMarketplaceRequests,
+  useFiatMarketplaceOffers,
+} from '@/hooks/useMarketplaceListings';
 import { FileText, TrendingUp, Banknote, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -23,19 +22,17 @@ interface CryptoRequestsTabProps {
 
 export function CryptoRequestsTab({ isLoading }: CryptoRequestsTabProps) {
   const { address } = useAccount();
-  const storeLoanRequests = usePendingLoanRequests();
+  const { data: requests } = useCryptoMarketplaceRequests(getActiveChainId());
 
   const loanRequests = useMemo(() => {
     const now = BigInt(Math.floor(Date.now() / 1000));
-    return storeLoanRequests.filter((r) => {
+    return requests.filter((r) => {
       // Filter out user's own requests
       if (address && r.borrower.toLowerCase() === address.toLowerCase()) return false;
-      // Only show pending and not expired
-      if (r.status !== LoanRequestStatus.PENDING) return false;
       if (r.expireAt <= now) return false;
       return true;
     });
-  }, [storeLoanRequests, address]);
+  }, [requests, address]);
 
   if (isLoading) {
     return (
@@ -80,19 +77,17 @@ interface CryptoOffersTabProps {
 
 export function CryptoOffersTab({ isLoading }: CryptoOffersTabProps) {
   const { address } = useAccount();
-  const storeLenderOffers = useActiveLenderOffers();
+  const { data: offers } = useCryptoMarketplaceOffers(getActiveChainId());
 
   const lenderOffers = useMemo(() => {
     const now = BigInt(Math.floor(Date.now() / 1000));
-    return storeLenderOffers.filter((o) => {
+    return offers.filter((o) => {
       // Filter out user's own offers
       if (address && o.lender.toLowerCase() === address.toLowerCase()) return false;
-      // Only show pending and not expired
-      if (o.status !== LoanRequestStatus.PENDING) return false;
       if (o.expireAt <= now) return false;
       return true;
     });
-  }, [storeLenderOffers, address]);
+  }, [offers, address]);
 
   if (isLoading) {
     return (
@@ -138,21 +133,19 @@ interface FiatRequestsTabProps {
 
 export function FiatRequestsTab({ isLoading, isVerifiedSupplier }: FiatRequestsTabProps) {
   const { address } = useAccount();
-  const storeFiatLoans = usePendingFiatLoansFromStore();
+  const { data: loans } = useFiatMarketplaceRequests();
 
   const displayPendingFiatLoans = useMemo(() => {
     const now = BigInt(Math.floor(Date.now() / 1000));
-    return storeFiatLoans.filter((loan) => {
+    return loans.filter((loan) => {
       // Filter out user's own loans
       if (address && loan.borrower.toLowerCase() === address.toLowerCase()) return false;
-      // Only show pending
-      if (loan.status !== FiatLoanStatus.PENDING_SUPPLIER) return false;
       // Calculate expiration (7 days from creation)
       const expiresAt = BigInt(Number(loan.createdAt) + (7 * 24 * 60 * 60));
       if (expiresAt <= now) return false;
       return true;
     });
-  }, [storeFiatLoans, address]);
+  }, [loans, address]);
 
   if (isLoading) {
     return (
@@ -223,19 +216,17 @@ interface FiatOffersTabProps {
 
 export function FiatOffersTab({ isLoading, isVerifiedSupplier }: FiatOffersTabProps) {
   const { address } = useAccount();
-  const storeFiatLenderOffers = useActiveFiatLenderOffersFromStore();
+  const { data: offers } = useFiatMarketplaceOffers();
 
   const displayFiatLenderOffers = useMemo(() => {
     const now = BigInt(Math.floor(Date.now() / 1000));
-    return storeFiatLenderOffers.filter((offer) => {
+    return offers.filter((offer) => {
       // Filter out user's own offers
       if (address && offer.lender.toLowerCase() === address.toLowerCase()) return false;
-      // Only show active and not expired
-      if (offer.status !== FiatLenderOfferStatus.ACTIVE) return false;
       if (offer.expireAt <= now) return false;
       return true;
     });
-  }, [storeFiatLenderOffers, address]);
+  }, [offers, address]);
 
   if (isLoading) {
     return (

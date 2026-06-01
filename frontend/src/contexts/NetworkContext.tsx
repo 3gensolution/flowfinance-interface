@@ -2,7 +2,6 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { CHAIN_CONFIG, setActiveChainId } from '@/config/contracts';
-import { useContractStore } from '@/stores/contractStore';
 
 // Networks with deployed contracts
 export const NETWORKS_WITH_CONTRACTS = [
@@ -89,8 +88,6 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
     }
     // Update global contract addresses & token list BEFORE React re-render
     setActiveChainId(network.id);
-    // Clear stale data from the previous network
-    useContractStore.getState().clearAll();
     setSelectedNetworkState(network);
     if (typeof window !== 'undefined') {
       localStorage.setItem('selectedNetworkId', network.id.toString());

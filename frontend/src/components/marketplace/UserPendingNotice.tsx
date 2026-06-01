@@ -5,24 +5,25 @@ import { motion } from 'framer-motion';
 import { useAccount } from 'wagmi';
 import { Clock, Banknote } from 'lucide-react';
 import Link from 'next/link';
+import { getActiveChainId } from '@/config/contracts';
 import {
-  usePendingLoanRequests,
-  useActiveLenderOffers,
-  usePendingFiatLoansFromStore,
-  useActiveFiatLenderOffersFromStore,
-} from '@/stores/contractStore';
+  useCryptoMarketplaceRequests,
+  useCryptoMarketplaceOffers,
+  useFiatMarketplaceRequests,
+  useFiatMarketplaceOffers,
+} from '@/hooks/useMarketplaceListings';
 
 // ============ Crypto Notices ============
 export function CryptoRequestsUserNotice() {
   const { address } = useAccount();
-  const storeLoanRequests = usePendingLoanRequests();
+  const { data: requests } = useCryptoMarketplaceRequests(getActiveChainId());
 
   const userPendingRequests = useMemo(() => {
     if (!address) return 0;
-    return storeLoanRequests.filter((r) =>
+    return requests.filter((r) =>
       r.borrower.toLowerCase() === address.toLowerCase()
     ).length;
-  }, [storeLoanRequests, address]);
+  }, [requests, address]);
 
   if (userPendingRequests === 0) return null;
 
@@ -52,14 +53,14 @@ export function CryptoRequestsUserNotice() {
 
 export function CryptoOffersUserNotice() {
   const { address } = useAccount();
-  const storeLenderOffers = useActiveLenderOffers();
+  const { data: offers } = useCryptoMarketplaceOffers(getActiveChainId());
 
   const userPendingOffers = useMemo(() => {
     if (!address) return 0;
-    return storeLenderOffers.filter((o) =>
+    return offers.filter((o) =>
       o.lender.toLowerCase() === address.toLowerCase()
     ).length;
-  }, [storeLenderOffers, address]);
+  }, [offers, address]);
 
   if (userPendingOffers === 0) return null;
 
@@ -90,14 +91,14 @@ export function CryptoOffersUserNotice() {
 // ============ Fiat Notices ============
 export function FiatRequestsUserNotice() {
   const { address } = useAccount();
-  const storeFiatLoans = usePendingFiatLoansFromStore();
+  const { data: loans } = useFiatMarketplaceRequests();
 
   const userPendingFiatLoans = useMemo(() => {
     if (!address) return 0;
-    return storeFiatLoans.filter((loan) =>
+    return loans.filter((loan) =>
       loan.borrower.toLowerCase() === address.toLowerCase()
     ).length;
-  }, [storeFiatLoans, address]);
+  }, [loans, address]);
 
   if (userPendingFiatLoans === 0) return null;
 
@@ -127,14 +128,14 @@ export function FiatRequestsUserNotice() {
 
 export function FiatOffersUserNotice() {
   const { address } = useAccount();
-  const storeFiatLenderOffers = useActiveFiatLenderOffersFromStore();
+  const { data: offers } = useFiatMarketplaceOffers();
 
   const userPendingFiatOffers = useMemo(() => {
     if (!address) return 0;
-    return storeFiatLenderOffers.filter((offer) =>
+    return offers.filter((offer) =>
       offer.lender.toLowerCase() === address.toLowerCase()
     ).length;
-  }, [storeFiatLenderOffers, address]);
+  }, [offers, address]);
 
   if (userPendingFiatOffers === 0) return null;
 

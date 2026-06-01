@@ -20,7 +20,7 @@ import {
 } from '@/hooks/useContracts';
 import { CONTRACT_ADDRESSES, getTokenByAddress, getActiveChainId, getChainById, getContractAddresses, setActiveChainId } from '@/config/contracts';
 import { simulateContractWrite, formatSimulationError } from '@/lib/contractSimulation';
-import { useLoansByBorrower } from '@/stores/contractStore';
+import { useLoansByBorrower } from '@/hooks/useContractData';
 import { useUIStore } from '@/stores/uiStore';
 import LoanMarketPlaceABIJson from '@/contracts/LoanMarketPlaceABI.json';
 
@@ -287,7 +287,7 @@ export function RepayLoanModal() {
     } finally {
       setIsApprovingToken(false);
     }
-  }, [selectedLoan, repayAmount, address, publicClient, approveAsync, refetchAllowance, repayLoanId, repayContracts]);
+  }, [selectedLoan, repayAmount, address, publicClient, approveAsync, refetchAllowance, repayLoanId, repayContracts, isCrossChainLoan, loanTargetChainId]);
 
   const handleRefreshPrice = useCallback(async () => {
     if (!priceFeedAddress || !currentPrice || !selectedLoan?.borrowAsset) {
@@ -447,7 +447,7 @@ export function RepayLoanModal() {
     } finally {
       setIsRepaying(false);
     }
-  }, [selectedLoan, repayAmount, address, publicClient, repayAsync, handleClose, refetchRepaymentInfo, minRepaymentTokens, formattedMinRepayment, minRepaymentUSD, selectedTokenInfo, repayContracts]);
+  }, [selectedLoan, repayAmount, address, publicClient, repayAsync, handleClose, refetchRepaymentInfo, minRepaymentTokens, formattedMinRepayment, minRepaymentUSD, selectedTokenInfo, repayContracts, isCrossChainLoan]);
 
   if (!selectedLoan) {
     return (

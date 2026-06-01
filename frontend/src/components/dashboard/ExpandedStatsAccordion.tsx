@@ -14,7 +14,7 @@ import {
   useLoansByLender,
   useFiatLenderOffersByLender,
   useFiatLoansByBorrower,
-} from '@/stores/contractStore';
+} from '@/hooks/useContractData';
 import {
   ChevronDown,
   TrendingDown,

@@ -13,7 +13,7 @@ import {
   // useLenderOffersByLender,
   useLoansByBorrower,
   useLoansByLender,
-} from '@/stores/contractStore';
+} from '@/hooks/useContractData';
 import { useAccount } from 'wagmi';
 
 interface SummaryCardProps {

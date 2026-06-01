@@ -10,7 +10,7 @@ import {
   useLenderOffersByLender,
   useFiatLenderOffersByLender,
   useFiatLoansByBorrower,
-} from '@/stores/contractStore';
+} from '@/hooks/useContractData';
 import { Clock, ArrowRight, FileText, TrendingUp, Banknote } from 'lucide-react';
 import { isFiatSupportedOnActiveChain } from '@/config/contracts';
 import Link from 'next/link';

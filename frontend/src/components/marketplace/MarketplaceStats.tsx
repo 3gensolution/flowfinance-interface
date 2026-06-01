@@ -3,21 +3,20 @@
 import { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Card } from '@/components/ui/Card';
-import {
-  usePendingLoanRequests,
-  useActiveLenderOffers,
-} from '@/stores/contractStore';
+import { getActiveChainId } from '@/config/contracts';
+import { useCryptoMarketplaceOffers, useCryptoMarketplaceRequests } from '@/hooks/useMarketplaceListings';
 import { useFiatLoanStats } from '@/hooks/useFiatLoan';
 import { getTokenDecimals } from '@/lib/utils';
 
 // ============ Crypto Stats ============
 export function CryptoMarketplaceStats() {
-  const storeLoanRequests = usePendingLoanRequests();
-  const storeLenderOffers = useActiveLenderOffers();
+  const activeChainId = getActiveChainId();
+  const { data: requests } = useCryptoMarketplaceRequests(activeChainId);
+  const { data: offers } = useCryptoMarketplaceOffers(activeChainId);
 
   const stats = useMemo(() => {
-    const allPendingRequests = storeLoanRequests;
-    const allPendingOffers = storeLenderOffers;
+    const allPendingRequests = requests;
+    const allPendingOffers = offers;
 
     // Calculate average interest rate
     let totalInterestRate = BigInt(0);
@@ -63,7 +62,7 @@ export function CryptoMarketplaceStats() {
       avgInterestRate: `${avgInterestRate}%`,
       totalVolume: formattedVolume
     };
-  }, [storeLoanRequests, storeLenderOffers]);
+  }, [requests, offers]);
 
   return (
     <motion.div

@@ -5,8 +5,8 @@ import { useCallback, useEffect, useMemo } from 'react';
 import { Address, Abi } from 'viem';
 import { getContractAddresses, CHAIN_CONFIG, getActiveChainId, ZERO_ADDRESS } from '@/config/contracts';
 import FiatLoanBridgeABIJson from '@/contracts/FiatLoanBridgeABI.json';
-import { useContractStore } from '@/stores/contractStore';
 import { convertToUSDCents } from './useFiatOracle';
+import { queryClient } from '@/lib/react-query-client';
 
 const FiatLoanBridgeABI = FiatLoanBridgeABIJson as Abi;
 
@@ -21,6 +21,7 @@ export enum FiatLoanStatus {
   REPAID = 2,
   LIQUIDATED = 3,
   CANCELLED = 4,
+  PENDING_RELAY = 5,
 }
 
 // Fiat lender offer status enum matching contract
@@ -233,14 +234,11 @@ export function useFiatLoanHealthFactor(loanId: bigint | undefined) {
 
 // Batch fetch fiat loans by IDs
 export function useBatchFiatLoans(loanIds: bigint[]) {
-  const activeChainId = getActiveChainId();
-  const addresses = getContractAddresses(activeChainId);
-  const setFiatLoans = useContractStore((state) => state.setFiatLoans);
   const { data: loansData, isLoading, isError, refetch } = useReadContracts({
     contracts: loanIds.map((id) => ({
-      address: addresses.fiatLoanBridge,
+      address: BASE_ADDRESSES.fiatLoanBridge,
       abi: FiatLoanBridgeABI,
-      chainId: activeChainId,
+      chainId: BASE_CHAIN_ID,
       functionName: 'getFiatLoan',
       args: [id],
     })),
@@ -258,33 +256,33 @@ export function useBatchFiatLoans(loanIds: bigint[]) {
         const isArray = Array.isArray(data);
 
         // Map based on FiatLoanBridge.FiatLoan struct order:
-        // loanId, borrower, supplier, collateralAsset, collateralAmount, fiatAmountCents,
-        // currency, interestRate, duration, status, createdAt, activatedAt, dueDate,
-        // gracePeriodEnd, claimableAmountCents, fundsWithdrawn, repaymentDepositId,
-        // exchangeRateAtCreation, chainId
+        // loanId, escrowKey, borrower, supplier, collateralAsset, collateralAmount,
+        // fiatAmountCents, currency, interestRate, duration, status, createdAt,
+        // activatedAt, dueDate, gracePeriodEnd, claimableAmountCents, fundsWithdrawn,
+        // repaymentDepositId, exchangeRateAtCreation, chainId
         let loanData;
         if (isArray) {
           const arr = data as readonly unknown[];
           loanData = {
             loanId: arr[0],
-            borrower: arr[1],
-            supplier: arr[2],
-            collateralAsset: arr[3],
-            collateralAmount: arr[4],
-            fiatAmountCents: arr[5],
-            currency: arr[6],
-            interestRate: arr[7],
-            duration: arr[8],
-            status: arr[9],
-            createdAt: arr[10],
-            activatedAt: arr[11],
-            dueDate: arr[12],
-            gracePeriodEnd: arr[13],
-            claimableAmountCents: arr[14],
-            fundsWithdrawn: arr[15],
-            repaymentDepositId: arr[16],
-            exchangeRateAtCreation: arr[17],
-            chainId: arr[18],
+            borrower: arr[2],
+            supplier: arr[3],
+            collateralAsset: arr[4],
+            collateralAmount: arr[5],
+            fiatAmountCents: arr[6],
+            currency: arr[7],
+            interestRate: arr[8],
+            duration: arr[9],
+            status: arr[10],
+            createdAt: arr[11],
+            activatedAt: arr[12],
+            dueDate: arr[13],
+            gracePeriodEnd: arr[14],
+            claimableAmountCents: arr[15],
+            fundsWithdrawn: arr[16],
+            repaymentDepositId: arr[17],
+            exchangeRateAtCreation: arr[18],
+            chainId: arr[19],
           };
         } else {
           loanData = data as Record<string, unknown>;
@@ -320,20 +318,12 @@ export function useBatchFiatLoans(loanIds: bigint[]) {
       .filter((l): l is FiatLoan => l !== null);
   }, [loansData, loanIds]);
 
-  // Update store when data loads
-  useEffect(() => {
-    if (loans.length > 0) {
-      setFiatLoans(loans);
-    }
-  }, [loans, setFiatLoans]);
-
   return { data: loans, isLoading, isError, refetch };
 }
 
 // Batch fetch fiat lender offers by IDs
 // NOTE: Offers only exist on Base Sepolia - always query from there
 export function useBatchFiatLenderOffers(offerIds: bigint[]) {
-  const setFiatLenderOffers = useContractStore((state) => state.setFiatLenderOffers);
   const { data: offersData, isLoading, isError, refetch } = useReadContracts({
     contracts: offerIds.map((id) => ({
       address: BASE_ADDRESSES.fiatLoanBridge,
@@ -408,13 +398,6 @@ export function useBatchFiatLenderOffers(offerIds: bigint[]) {
       })
       .filter((o): o is FiatLenderOffer => o !== null);
   }, [offersData, offerIds]);
-
-  // Update store when data loads
-  useEffect(() => {
-    if (offers.length > 0) {
-      setFiatLenderOffers(offers);
-    }
-  }, [offers, setFiatLenderOffers]);
 
   return { data: offers, isLoading, isError, refetch };
 }
@@ -542,6 +525,12 @@ export function useCreateFiatLoanRequest() {
   const { address } = useAccount();
   const publicClient = usePublicClient();
 
+  useEffect(() => {
+    if (isSuccess) {
+      void queryClient.invalidateQueries();
+    }
+  }, [isSuccess]);
+
   // Simulate the transaction before executing
   const simulateCreateFiatLoanRequest = async (
     collateralAsset: Address,
@@ -628,6 +617,12 @@ export function useCancelFiatLoanRequest() {
   const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
+  useEffect(() => {
+    if (isSuccess) {
+      void queryClient.invalidateQueries();
+    }
+  }, [isSuccess]);
+
   const cancelFiatLoanRequest = async (loanId: bigint) => {
     return await writeContractAsync({
       address: BASE_ADDRESSES.fiatLoanBridge,
@@ -646,6 +641,12 @@ export function useAcceptFiatLoanRequest() {
   const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
+  useEffect(() => {
+    if (isSuccess) {
+      void queryClient.invalidateQueries();
+    }
+  }, [isSuccess]);
+
   const acceptFiatLoanRequest = async (loanId: bigint) => {
     return await writeContractAsync({
       address: BASE_ADDRESSES.fiatLoanBridge,
@@ -663,6 +664,12 @@ export function useAcceptFiatLoanRequest() {
 export function useCreateFiatLenderOffer() {
   const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+
+  useEffect(() => {
+    if (isSuccess) {
+      void queryClient.invalidateQueries();
+    }
+  }, [isSuccess]);
 
   const createFiatLenderOffer = async (
     fiatAmountCents: bigint,
@@ -689,6 +696,12 @@ export function useCreateFiatLenderOffer() {
 export function useAcceptFiatLenderOffer() {
   const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+
+  useEffect(() => {
+    if (isSuccess) {
+      void queryClient.invalidateQueries();
+    }
+  }, [isSuccess]);
 
   const acceptFiatLenderOffer = async (
     offerId: bigint,
@@ -719,6 +732,12 @@ export function useAcceptFiatLenderOffer() {
 export function useCancelFiatLenderOffer() {
   const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+
+  useEffect(() => {
+    if (isSuccess) {
+      void queryClient.invalidateQueries();
+    }
+  }, [isSuccess]);
 
   const cancelFiatLenderOffer = async (offerId: bigint) => {
     return await writeContractAsync({

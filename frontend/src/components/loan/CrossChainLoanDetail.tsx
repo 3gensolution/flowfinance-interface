@@ -53,6 +53,7 @@ import {
   getContractAddresses,
 } from '@/config/contracts';
 import { simulateContractWrite, formatSimulationError } from '@/lib/contractSimulation';
+import { useTransactionFlowEffects } from '@/features/transactions/hooks/useTransactionFlowEffects';
 import CrossChainLoanManagerABIJson from '@/contracts/CrossChainLoanManagerABI.json';
 import { Abi } from 'viem';
 import { ParsedLoanRequest } from './SameChainLoanDetail';
@@ -208,32 +209,27 @@ export default function CrossChainLoanDetail({ request, requestId, foundOnChainI
   const { approveAsync, isPending: approveIsPending, isConfirming: isApprovalConfirming, isSuccess: approveSuccess } = useApproveToken();
   const { fundRequestAsync, isPending: fundIsPending, isSuccess: fundSuccess, error: fundError } = useFundCrossChainLoanRequest();
 
-  useEffect(() => {
-    if (approveSuccess) {
-      toast.success('Approval successful!');
-      refetchAllowance();
-      setFundingStep('fund');
-    }
-  }, [approveSuccess, refetchAllowance]);
-
-  useEffect(() => {
-    if (fundSuccess) {
-      toast.success('Cross-chain loan funded successfully!');
+  useTransactionFlowEffects({
+    approvalSuccess: approveSuccess,
+    approvalSuccessMessage: 'Approval successful!',
+    refetchAllowance,
+    setStep: setFundingStep,
+    nextStep: 'fund',
+    actionSuccess: fundSuccess,
+    actionSuccessMessage: 'Cross-chain loan funded successfully!',
+    onActionSuccess: () => {
       setShowFundModal(false);
       setIsFunding(false);
       router.push('/dashboard');
-    }
-  }, [fundSuccess, router]);
-
-  useEffect(() => {
-    if (fundError) {
+    },
+    actionError: fundError,
+    fallbackActionErrorMessage: 'Failed to fund loan request',
+    onActionError: (errorMessage) => {
       console.error('Fund error:', fundError);
-      const errorMessage = fundError.message || 'Failed to fund loan request';
       setSimulationError(errorMessage);
-      toast.error(errorMessage);
       setIsFunding(false);
-    }
-  }, [fundError]);
+    },
+  });
 
   const openFundModal = () => {
     if (!request || requestId === undefined) {

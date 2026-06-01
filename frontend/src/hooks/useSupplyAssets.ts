@@ -3,7 +3,7 @@
 import { useMemo } from 'react';
 import { useAccount, useReadContracts, useBalance } from 'wagmi';
 import { Address, Abi } from 'viem';
-import { TOKEN_LIST, CONTRACT_ADDRESSES, getActiveChainId } from '@/config/contracts';
+import { TOKEN_LIST, CONTRACT_ADDRESSES } from '@/config/contracts';
 import ConfigurationABIJson from '@/contracts/ConfigurationABI.json';
 import { useNetwork } from '@/contexts/NetworkContext';
 import {
@@ -63,13 +63,12 @@ export function useCryptoAssets() {
   const { selectedNetwork } = useNetwork();
 
   // Get native ETH balance
-  const { data: ethBalance, isLoading: isEthLoading } = useBalance({
+  const { isLoading: isEthLoading } = useBalance({
     address,
     query: { enabled: isConnected },
   });
 
   // Prepare contract calls for all ERC20 token balances
-  // selectedNetwork.id in deps ensures re-computation when chain switches
   const tokenContracts = useMemo(() => {
     if (!address) return [];
     return TOKEN_LIST.map((token) => ({
@@ -78,7 +77,7 @@ export function useCryptoAssets() {
       functionName: 'balanceOf' as const,
       args: [address] as const,
     }));
-  }, [address, selectedNetwork.id]);
+  }, [address]);
 
   // Batch fetch all token balances
   const { data: balancesData, isLoading: isTokensLoading } = useReadContracts({
@@ -93,7 +92,7 @@ export function useCryptoAssets() {
       abi: ConfigurationABI,
       functionName: 'isAssetSupported' as const,
       args: [token.address] as const,
-      chainId: getActiveChainId(),
+      chainId: selectedNetwork.id,
     }));
   }, [selectedNetwork.id]);
 
@@ -130,7 +129,7 @@ export function useCryptoAssets() {
     });
 
     return result;
-  }, [ethBalance, isEthLoading, balancesData, isTokensLoading, supportedData, selectedNetwork.id]);
+  }, [balancesData, isTokensLoading, supportedData]);
 
   return {
     assets,

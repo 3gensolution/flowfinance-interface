@@ -19,7 +19,7 @@ import {
   useLoansByBorrower,
   useLoansByLender,
   useFiatLoansByBorrower,
-} from '@/stores/contractStore';
+} from '@/hooks/useContractData';
 import {
   ArrowDownLeft,
   ArrowUpRight,

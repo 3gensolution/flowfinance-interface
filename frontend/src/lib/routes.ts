@@ -3,6 +3,9 @@ const API_VERSION = "api";
 // TODO: Add other routes spec as needed
 export const ROUTES_SPEC = {
   generateLink: `/${API_VERSION}/kyc/links/generate`,
+  leaderboardActiveSeason: `/${API_VERSION}/leaderboard/season/active`,
+  leaderboard: `/${API_VERSION}/leaderboard`,
+  leaderboardMe: `/${API_VERSION}/leaderboard/me`,
 } as const;
 
 export const ROUTES = Object.fromEntries(Object.keys(ROUTES_SPEC).map((key) => [key, key])) as {
@@ -34,4 +37,3 @@ export function resolveRoute<K extends keyof typeof ROUTES_SPEC>(
   // @ts-expect-error - route is a function when not a string, args typing is complex
   return route(...args);
 }
-

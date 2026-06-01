@@ -19,7 +19,7 @@ import {
 } from '@/hooks/useContracts';
 import { CONTRACT_ADDRESSES, getTokenByAddress } from '@/config/contracts';
 import { simulateContractWrite, formatSimulationError } from '@/lib/contractSimulation';
-import { useLoansByBorrower, useLoansByLender } from '@/stores/contractStore';
+import { useLoansByBorrower, useLoansByLender } from '@/hooks/useContractData';
 import { useUIStore } from '@/stores/uiStore';
 import LoanMarketPlaceABIJson from '@/contracts/LoanMarketPlaceABI.json';
 

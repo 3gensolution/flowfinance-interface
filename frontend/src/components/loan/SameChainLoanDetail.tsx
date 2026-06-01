@@ -47,6 +47,7 @@ import toast from 'react-hot-toast';
 import { DEFAULT_CHAIN } from '@/config/contracts';
 import { CONTRACT_ADDRESSES } from '@/config/contracts';
 import { simulateContractWrite, formatSimulationError } from '@/lib/contractSimulation';
+import { useTransactionFlowEffects } from '@/features/transactions/hooks/useTransactionFlowEffects';
 import LoanMarketPlaceABIJson from '@/contracts/LoanMarketPlaceABI.json';
 import { Abi } from 'viem';
 
@@ -161,35 +162,27 @@ export default function SameChainLoanDetail({ request, requestId }: SameChainLoa
   const { approveAsync, isPending: approveIsPending, isConfirming: isApprovalConfirming, isSuccess: approveSuccess } = useApproveToken();
   const { fundRequestAsync, isPending: fundIsPending, isSuccess: fundSuccess, error: fundError } = useFundLoanRequest();
 
-  // Handle approval success
-  useEffect(() => {
-    if (approveSuccess) {
-      toast.success('Approval successful!');
-      refetchAllowance();
-      setFundingStep('fund');
-    }
-  }, [approveSuccess, refetchAllowance]);
-
-  // Handle funding success
-  useEffect(() => {
-    if (fundSuccess) {
-      toast.success('Loan funded successfully! The loan is now active.');
+  useTransactionFlowEffects({
+    approvalSuccess: approveSuccess,
+    approvalSuccessMessage: 'Approval successful!',
+    refetchAllowance,
+    setStep: setFundingStep,
+    nextStep: 'fund',
+    actionSuccess: fundSuccess,
+    actionSuccessMessage: 'Loan funded successfully! The loan is now active.',
+    onActionSuccess: () => {
       setShowFundModal(false);
       setIsFunding(false);
       router.push('/dashboard');
-    }
-  }, [fundSuccess, router]);
-
-  // Handle funding error
-  useEffect(() => {
-    if (fundError) {
+    },
+    actionError: fundError,
+    fallbackActionErrorMessage: 'Failed to fund loan request',
+    onActionError: (errorMessage) => {
       console.error('Fund error:', fundError);
-      const errorMessage = fundError.message || 'Failed to fund loan request';
       setSimulationError(errorMessage);
-      toast.error(errorMessage);
       setIsFunding(false);
-    }
-  }, [fundError]);
+    },
+  });
 
   // Handler to open fund modal
   const openFundModal = () => {

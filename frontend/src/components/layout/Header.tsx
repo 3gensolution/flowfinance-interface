@@ -13,6 +13,7 @@ const navLinks = [
   { href: '/marketplace', label: 'Marketplace' },
   { href: '/borrow', label: 'Get a Loan' },
   { href: '/lend', label: 'Earn Interest' },
+  { href: '/leaderboard', label: 'Leaderboard' },
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/faucet', label: 'Faucet' },
 ];
@@ -30,6 +31,10 @@ export function Header() {
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [pathname]);
 
   const isSupplyPage = pathname === '/supply';
 
@@ -58,7 +63,7 @@ export function Header() {
 
   return (
     <>
-      <header className={cn('fixed top-0 left-0 right-0 z-40 transition-all duration-300', headerClasses)}>
+      <header className={cn('fixed top-0 left-0 right-0 z-[60] transition-all duration-300', headerClasses)}>
         <nav className="max-w-[1920px] mx-auto px-4 sm:px-5 md:px-10 lg:px-20">
           <div className="flex items-center justify-between h-16">
             {/* Logo */}
@@ -99,6 +104,10 @@ export function Header() {
 
               {/* Mobile/Tablet menu button */}
               <button
+                type="button"
+                aria-label={mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+                aria-expanded={mobileMenuOpen}
+                aria-controls="mobile-navigation-drawer"
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                 className={cn('xl:hidden p-2 rounded-lg transition-colors', mobileButtonClasses)}
               >
@@ -112,16 +121,17 @@ export function Header() {
       {/* Drawer overlay - outside header to avoid backdrop-filter containing block issue */}
       {mobileMenuOpen && (
         <div
-          className="xl:hidden fixed inset-0 bg-black/60 z-40"
+          className="xl:hidden fixed inset-0 bg-black/60 z-[50]"
           onClick={() => setMobileMenuOpen(false)}
         />
       )}
 
       {/* Slide-in drawer - outside header so fixed positioning uses viewport */}
       <div
+        id="mobile-navigation-drawer"
         className={cn(
-          'xl:hidden fixed top-0 right-0 h-screen w-full sm:w-3/4 md:w-1/2 bg-black border-l border-white/10 z-50 transform transition-transform duration-300 ease-in-out',
-          mobileMenuOpen ? 'translate-x-0' : 'translate-x-full'
+          'xl:hidden fixed top-0 right-0 h-screen w-full sm:w-3/4 md:w-1/2 bg-black border-l border-white/10 z-[70] transform transition-transform duration-300 ease-in-out',
+          mobileMenuOpen ? 'translate-x-0 pointer-events-auto' : 'translate-x-full pointer-events-none'
         )}
       >
         <div className="flex flex-col h-full">
@@ -135,6 +145,8 @@ export function Header() {
               className="h-8 w-auto"
             />
             <button
+              type="button"
+              aria-label="Close navigation menu"
               onClick={() => setMobileMenuOpen(false)}
               className="p-2 rounded-lg text-white hover:bg-white/10 transition-colors"
             >
