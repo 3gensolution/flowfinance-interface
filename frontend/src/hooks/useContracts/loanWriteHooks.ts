@@ -4,16 +4,21 @@ import {
   useWriteContract,
   useWaitForTransactionReceipt,
   usePublicClient,
+  useAccount,
   Address,
   CONTRACT_ADDRESSES,
   getActiveChainId,
   getGasOverrides,
   LoanMarketPlaceABI,
 } from './shared';
+import { useInvalidateLeaderboardOnSuccess } from '@/hooks/useInvalidateLeaderboardOnSuccess';
 
 export function useCreateLoanRequest() {
   const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const { address } = useAccount();
+
+  useInvalidateLeaderboardOnSuccess(isSuccess, address);
 
   const createRequest = async (
     collateralToken: Address,
@@ -39,6 +44,9 @@ export function useCreateLoanRequest() {
 export function useFundLoanRequest() {
   const { writeContract, writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const { address } = useAccount();
+
+  useInvalidateLeaderboardOnSuccess(isSuccess, address);
 
   const fundRequest = (requestId: bigint) => {
     writeContract({
@@ -69,6 +77,9 @@ export function useCreateLenderOffer() {
   const { writeContract, writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
   const publicClient = usePublicClient();
+  const { address } = useAccount();
+
+  useInvalidateLeaderboardOnSuccess(isSuccess, address);
 
   const simulateCreateOffer = async (
     lendAsset: Address,
@@ -148,6 +159,9 @@ export function useCreateLenderOffer() {
 export function useAcceptLenderOffer() {
   const { writeContract, writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const { address } = useAccount();
+
+  useInvalidateLeaderboardOnSuccess(isSuccess, address);
 
   const acceptOffer = (offerId: bigint, collateralAsset: `0x${string}`, collateralAmount: bigint, borrowAmount: bigint) => {
     writeContract({
@@ -177,6 +191,9 @@ export function useAcceptLenderOffer() {
 export function useRepayLoan(options?: { contractAddress?: Address; chainId?: number; isCrossChain?: boolean }) {
   const { writeContract, writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const { address } = useAccount();
+
+  useInvalidateLeaderboardOnSuccess(isSuccess, address);
 
   const resolvedAddress = options?.contractAddress || CONTRACT_ADDRESSES.loanMarketPlace;
   const resolvedChainId = options?.chainId || getActiveChainId();
@@ -210,6 +227,9 @@ export function useRepayLoan(options?: { contractAddress?: Address; chainId?: nu
 export function useCancelLoanRequest() {
   const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const { address } = useAccount();
+
+  useInvalidateLeaderboardOnSuccess(isSuccess, address);
 
   const cancelRequest = (requestId: bigint) => {
     writeContract({
@@ -228,6 +248,9 @@ export function useCancelLoanRequest() {
 export function useCancelLenderOffer() {
   const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const { address } = useAccount();
+
+  useInvalidateLeaderboardOnSuccess(isSuccess, address);
 
   const cancelOffer = (offerId: bigint) => {
     writeContract({

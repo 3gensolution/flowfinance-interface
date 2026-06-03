@@ -7,6 +7,7 @@ import { getContractAddresses, CHAIN_CONFIG, getActiveChainId, ZERO_ADDRESS } fr
 import FiatLoanBridgeABIJson from '@/contracts/FiatLoanBridgeABI.json';
 import { convertToUSDCents } from './useFiatOracle';
 import { queryClient } from '@/lib/react-query-client';
+import { useInvalidateLeaderboardOnSuccess } from '@/hooks/useInvalidateLeaderboardOnSuccess';
 
 const FiatLoanBridgeABI = FiatLoanBridgeABIJson as Abi;
 
@@ -525,6 +526,8 @@ export function useCreateFiatLoanRequest() {
   const { address } = useAccount();
   const publicClient = usePublicClient();
 
+  useInvalidateLeaderboardOnSuccess(isSuccess, address);
+
   useEffect(() => {
     if (isSuccess) {
       void queryClient.invalidateQueries();
@@ -616,6 +619,9 @@ export function useCreateFiatLoanRequest() {
 export function useCancelFiatLoanRequest() {
   const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const { address } = useAccount();
+
+  useInvalidateLeaderboardOnSuccess(isSuccess, address);
 
   useEffect(() => {
     if (isSuccess) {
@@ -640,6 +646,9 @@ export function useCancelFiatLoanRequest() {
 export function useAcceptFiatLoanRequest() {
   const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const { address } = useAccount();
+
+  useInvalidateLeaderboardOnSuccess(isSuccess, address);
 
   useEffect(() => {
     if (isSuccess) {
@@ -664,6 +673,9 @@ export function useAcceptFiatLoanRequest() {
 export function useCreateFiatLenderOffer() {
   const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const { address } = useAccount();
+
+  useInvalidateLeaderboardOnSuccess(isSuccess, address);
 
   useEffect(() => {
     if (isSuccess) {
@@ -696,6 +708,9 @@ export function useCreateFiatLenderOffer() {
 export function useAcceptFiatLenderOffer() {
   const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const { address } = useAccount();
+
+  useInvalidateLeaderboardOnSuccess(isSuccess, address);
 
   useEffect(() => {
     if (isSuccess) {
@@ -732,6 +747,9 @@ export function useAcceptFiatLenderOffer() {
 export function useCancelFiatLenderOffer() {
   const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const { address } = useAccount();
+
+  useInvalidateLeaderboardOnSuccess(isSuccess, address);
 
   useEffect(() => {
     if (isSuccess) {

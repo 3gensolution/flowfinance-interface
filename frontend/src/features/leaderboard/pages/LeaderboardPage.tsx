@@ -22,6 +22,10 @@ export default function LeaderboardPage() {
   const activeSeasonQuery = useQuery({
     queryKey: ['leaderboard', 'activeSeason'],
     queryFn: async () => (await fetchActiveLeaderboardSeason()).data.data,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+    refetchInterval: 10_000,
   });
 
   const seasonId = activeSeasonQuery.data?.id;
@@ -30,6 +34,10 @@ export default function LeaderboardPage() {
     queryKey: ['leaderboard', 'season', seasonId, page, limit],
     queryFn: async () => (await fetchLeaderboard({ seasonId, page, limit })).data.data,
     enabled: !!seasonId,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+    refetchInterval: 10_000,
   });
 
   const items = leaderboardQuery.data?.items ?? [];
@@ -40,6 +48,10 @@ export default function LeaderboardPage() {
     queryKey: ['leaderboard', 'me', address],
     queryFn: async () => (await fetchLeaderboardMe(address!)).data.data,
     enabled: !!address,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+    refetchInterval: 10_000,
   });
 
   return (
@@ -152,7 +164,7 @@ export default function LeaderboardPage() {
                   </div>
                   {meQuery.data?.isLinked === false && (
                     <div className="text-xs text-amber-300/90">
-                      Wallet not linked to an Awinfi account yet — XP will show as 0 until linked.
+                      Wallet-first scoring is enabled. Complete KYC to unlock the extra 5000 lifetime XP bonus.
                     </div>
                   )}
                 </div>

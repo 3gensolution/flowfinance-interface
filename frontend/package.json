@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@guideai/scanner": "^0.1.1",
     "@lottiefiles/dotlottie-react": "^0.17.14",
     "@rainbow-me/rainbowkit": "^2.1.2",
     "@react-three/fiber": "^8.18.0",
